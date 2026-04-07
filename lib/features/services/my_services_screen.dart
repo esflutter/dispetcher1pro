@@ -43,13 +43,17 @@ class MyServicesScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        backgroundColor: AppColors.background,
+        backgroundColor: AppColors.navBarDark,
+        foregroundColor: Colors.white,
         elevation: 0,
         centerTitle: true,
-        title: Text('Мои услуги', style: AppTextStyles.titleS),
+        title: Text(
+          'Мои услуги',
+          style: AppTextStyles.titleS.copyWith(color: Colors.white),
+        ),
         leading: IconButton(
           icon: Icon(Icons.arrow_back_ios_new,
-              size: 20.sp, color: AppColors.textPrimary),
+              size: 20.sp, color: Colors.white),
           onPressed: () => Navigator.of(context).maybePop(),
         ),
       ),

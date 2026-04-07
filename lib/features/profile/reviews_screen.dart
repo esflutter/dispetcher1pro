@@ -37,15 +37,19 @@ class ReviewsScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        backgroundColor: AppColors.background,
+        backgroundColor: AppColors.navBarDark,
+        foregroundColor: Colors.white,
         elevation: 0,
         leading: IconButton(
           icon: Icon(Icons.arrow_back_ios_new_rounded,
-              size: 20.r, color: AppColors.textPrimary),
+              size: 20.r, color: Colors.white),
           onPressed: () => Navigator.of(context).maybePop(),
         ),
         centerTitle: true,
-        title: Text('Отзывы', style: AppTextStyles.titleS),
+        title: Text(
+          'Отзывы',
+          style: AppTextStyles.titleS.copyWith(color: Colors.white),
+        ),
       ),
       body: empty
           ? const _Empty()

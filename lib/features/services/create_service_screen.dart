@@ -67,16 +67,17 @@ class _CreateServiceScreenState extends State<CreateServiceScreen>
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        backgroundColor: AppColors.background,
+        backgroundColor: AppColors.navBarDark,
+        foregroundColor: Colors.white,
         elevation: 0,
         centerTitle: true,
         title: Text(
           _isEdit ? 'Редактирование услуги' : 'Создание услуги',
-          style: AppTextStyles.titleS,
+          style: AppTextStyles.titleS.copyWith(color: Colors.white),
         ),
         leading: IconButton(
           icon: Icon(Icons.arrow_back_ios_new,
-              size: 20.sp, color: AppColors.textPrimary),
+              size: 20.sp, color: Colors.white),
           onPressed: () => Navigator.of(context).maybePop(),
         ),
       ),
@@ -316,7 +317,14 @@ class _Label extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: EdgeInsets.only(bottom: AppSpacing.xs),
-      child: Text(text, style: AppTextStyles.bodyMedium),
+      child: Text(
+        text,
+        style: AppTextStyles.bodyMedium.copyWith(
+          fontSize: 20.sp,
+          fontWeight: FontWeight.w700,
+          color: AppColors.textPrimary,
+        ),
+      ),
     );
   }
 }
@@ -348,7 +356,7 @@ class _Field extends StatelessWidget {
         hintStyle:
             AppTextStyles.body.copyWith(color: AppColors.textTertiary),
         filled: true,
-        fillColor: AppColors.surfaceVariant,
+        fillColor: AppColors.fieldFill,
         suffixIcon: suffix,
         suffixIconConstraints: BoxConstraints(minWidth: 32.w, minHeight: 24.h),
         contentPadding: EdgeInsets.symmetric(

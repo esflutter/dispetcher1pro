@@ -43,6 +43,8 @@ class AppTextStyles {
 
   // H3 — 24
   static TextStyle get h3 => _t(size: 24, weight: FontWeight.w600, height: 28.125);
+  static TextStyle get h3Medium =>
+      _t(size: 24, weight: FontWeight.w500, height: 33.6);
   static TextStyle get h3Tight =>
       _t(size: 24, weight: FontWeight.w600, height: 28.8, letterSpacing: -0.72);
 

@@ -87,11 +87,16 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        backgroundColor: AppColors.background,
+        backgroundColor: AppColors.navBarDark,
+        foregroundColor: Colors.white,
         elevation: 0,
         centerTitle: false,
         titleSpacing: AppSpacing.screenH,
-        title: Text('Мои заказы', style: AppTextStyles.h1SemiBold),
+        toolbarHeight: 81.h,
+        title: Text(
+          'Мои заказы',
+          style: AppTextStyles.h1.copyWith(color: Colors.white),
+        ),
         bottom: PreferredSize(
           preferredSize: Size.fromHeight(48.h),
           child: Align(

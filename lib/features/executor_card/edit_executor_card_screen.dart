@@ -74,15 +74,19 @@ class _EditExecutorCardScreenState extends State<EditExecutorCardScreen> {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        backgroundColor: AppColors.background,
+        backgroundColor: AppColors.navBarDark,
+        foregroundColor: Colors.white,
         elevation: 0,
         centerTitle: true,
         leading: IconButton(
           icon: Icon(Icons.arrow_back_ios_new_rounded,
-              size: 20.r, color: AppColors.textPrimary),
+              size: 20.r, color: Colors.white),
           onPressed: () => Navigator.of(context).maybePop(),
         ),
-        title: Text('Моя карточка исполнителя', style: AppTextStyles.titleS),
+        title: Text(
+          'Моя карточка исполнителя',
+          style: AppTextStyles.titleS.copyWith(color: Colors.white),
+        ),
       ),
       body: SafeArea(
         child: SingleChildScrollView(
@@ -220,7 +224,7 @@ class _TintField extends StatelessWidget {
         prefixIcon: Icon(icon, size: 22.r, color: AppColors.textSecondary),
         suffixIcon: trailing,
         filled: true,
-        fillColor: const Color(0xFFFFF9EF),
+        fillColor: AppColors.fieldFill,
         contentPadding: EdgeInsets.symmetric(
             horizontal: AppSpacing.md, vertical: AppSpacing.sm),
         border: OutlineInputBorder(

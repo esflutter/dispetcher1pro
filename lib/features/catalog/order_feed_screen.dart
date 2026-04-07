@@ -9,7 +9,7 @@ import 'package:dispatcher_1/features/catalog/order_detail_screen.dart';
 import 'package:dispatcher_1/features/catalog/orders_map_screen.dart';
 import 'package:dispatcher_1/features/catalog/widgets/order_card.dart';
 
-/// Лента заказов категории — табы «Список / Карта».
+/// Лента заказов категории — табы «Список / На карте».
 class OrderFeedScreen extends StatefulWidget {
   const OrderFeedScreen({
     super.key,
@@ -24,9 +24,8 @@ class OrderFeedScreen extends StatefulWidget {
   State<OrderFeedScreen> createState() => _OrderFeedScreenState();
 }
 
-class _OrderFeedScreenState extends State<OrderFeedScreen>
-    with SingleTickerProviderStateMixin {
-  late final TabController _tab = TabController(length: 2, vsync: this);
+class _OrderFeedScreenState extends State<OrderFeedScreen> {
+  int _tab = 0;
 
   static const List<_MockOrder> _orders = <_MockOrder>[
     _MockOrder(
@@ -56,22 +55,21 @@ class _OrderFeedScreenState extends State<OrderFeedScreen>
   ];
 
   @override
-  void dispose() {
-    _tab.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        backgroundColor: AppColors.surface,
+        backgroundColor: AppColors.navBarDark,
+        foregroundColor: Colors.white,
         elevation: 0,
-        title: Text(widget.categoryTitle, style: AppTextStyles.titleL),
+        centerTitle: true,
+        title: Text(
+          widget.categoryTitle,
+          style: AppTextStyles.titleS.copyWith(color: Colors.white),
+        ),
         actions: <Widget>[
           IconButton(
-            icon: const Icon(Icons.tune, color: AppColors.textPrimary),
+            icon: Icon(Icons.tune, color: Colors.white, size: 24.r),
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute<void>(
                 builder: (_) => const CatalogFilterScreen(),
@@ -79,46 +77,104 @@ class _OrderFeedScreenState extends State<OrderFeedScreen>
             ),
           ),
         ],
-        bottom: PreferredSize(
-          preferredSize: Size.fromHeight(48.h),
-          child: TabBar(
-            controller: _tab,
-            indicatorColor: AppColors.primary,
-            labelColor: AppColors.primary,
-            unselectedLabelColor: AppColors.textTertiary,
-            labelStyle: AppTextStyles.tabActive,
-            unselectedLabelStyle: AppTextStyles.tabInactive,
-            tabs: const <Widget>[
-              Tab(text: 'Списком'),
-              Tab(text: 'На карте'),
-            ],
-          ),
-        ),
       ),
-      body: TabBarView(
-        controller: _tab,
+      body: Column(
         children: <Widget>[
-          ListView.separated(
-            padding: EdgeInsets.all(AppSpacing.screenH),
-            itemCount: _orders.length,
-            separatorBuilder: (_, _) => SizedBox(height: AppSpacing.sm),
-            itemBuilder: (BuildContext context, int i) {
-              final _MockOrder o = _orders[i];
-              return OrderCard(
-                title: o.title,
-                price: o.price,
-                address: o.address,
-                dateTime: o.dateTime,
-                equipment: o.equipment,
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => OrderDetailScreen(orderId: o.id),
+          Padding(
+            padding: EdgeInsets.fromLTRB(16.w, 8.h, 16.w, 8.h),
+            child: _SegmentedControl(
+              index: _tab,
+              items: const <String>['Списком', 'На карте'],
+              onChanged: (int v) => setState(() => _tab = v),
+            ),
+          ),
+          Expanded(
+            child: _tab == 0
+                ? ListView.separated(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: AppSpacing.screenH,
+                      vertical: 8.h,
+                    ),
+                    itemCount: _orders.length,
+                    separatorBuilder: (_, _) => SizedBox(height: 8.h),
+                    itemBuilder: (BuildContext context, int i) {
+                      final _MockOrder o = _orders[i];
+                      return OrderCard(
+                        title: o.title,
+                        price: o.price,
+                        address: o.address,
+                        dateTime: o.dateTime,
+                        equipment: o.equipment,
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => OrderDetailScreen(orderId: o.id),
+                          ),
+                        ),
+                      );
+                    },
+                  )
+                : const OrdersMapScreen(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SegmentedControl extends StatelessWidget {
+  const _SegmentedControl({
+    required this.index,
+    required this.items,
+    required this.onChanged,
+  });
+
+  final int index;
+  final List<String> items;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 36.h,
+      padding: EdgeInsets.all(4.r),
+      decoration: BoxDecoration(
+        color: AppColors.primaryTint,
+        borderRadius: BorderRadius.circular(100.r),
+      ),
+      child: Row(
+        children: <Widget>[
+          for (int i = 0; i < items.length; i++)
+            Expanded(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => onChanged(i),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: i == index ? AppColors.surface : Colors.transparent,
+                    borderRadius: BorderRadius.circular(7.r),
+                    boxShadow: i == index
+                        ? <BoxShadow>[
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.08),
+                              blurRadius: 4,
+                              offset: const Offset(0, 1),
+                            ),
+                          ]
+                        : null,
+                  ),
+                  child: Text(
+                    items[i],
+                    style: AppTextStyles.tabActive.copyWith(
+                      color: AppColors.textPrimary,
+                      fontWeight:
+                          i == index ? FontWeight.w600 : FontWeight.w400,
+                    ),
                   ),
                 ),
-              );
-            },
-          ),
-          const OrdersMapScreen(),
+              ),
+            ),
         ],
       ),
     );

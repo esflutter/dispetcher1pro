@@ -38,14 +38,18 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        backgroundColor: AppColors.background,
+        backgroundColor: AppColors.navBarDark,
+        foregroundColor: Colors.white,
         elevation: 0,
         leading: IconButton(
           icon: Icon(Icons.arrow_back_ios_new_rounded,
-              size: 20.r, color: AppColors.textPrimary),
+              size: 20.r, color: Colors.white),
           onPressed: () => Navigator.of(context).maybePop(),
         ),
-        title: Text('Информация о подписке', style: AppTextStyles.titleS),
+        title: Text(
+          'Информация о подписке',
+          style: AppTextStyles.titleS.copyWith(color: Colors.white),
+        ),
         centerTitle: true,
       ),
       body: SafeArea(
@@ -130,12 +134,7 @@ class _StatusCard extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(title,
-            style: TextStyle(
-              fontSize: 24.sp,
-              fontWeight: FontWeight.w500,
-              color: AppColors.textPrimary,
-            )),
+        Text(title, style: AppTextStyles.h3Medium),
         SizedBox(height: AppSpacing.xs),
         Text(subtitle,
             style: AppTextStyles.body.copyWith(color: AppColors.textPrimary)),

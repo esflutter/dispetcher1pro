@@ -117,13 +117,17 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        backgroundColor: AppColors.surface,
+        backgroundColor: AppColors.navBarDark,
+        foregroundColor: Colors.white,
         elevation: 0,
         centerTitle: true,
-        title: Text('Мой график', style: AppTextStyles.titleS),
+        title: Text(
+          'Мой график',
+          style: AppTextStyles.titleS.copyWith(color: Colors.white),
+        ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.tune, color: AppColors.textPrimary),
+            icon: Icon(Icons.edit_outlined, color: Colors.white, size: 24.r),
             onPressed: _openDaySettings,
             tooltip: 'Параметры дня',
           ),

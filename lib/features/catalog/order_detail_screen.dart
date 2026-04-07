@@ -167,15 +167,18 @@ class _Section extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.only(bottom: AppSpacing.md),
+      padding: EdgeInsets.only(bottom: 16.h),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Text(title,
-              style: AppTextStyles.caption
-                  .copyWith(color: AppColors.textTertiary)),
-          SizedBox(height: AppSpacing.xxs),
-          child,
+          Text(title, style: AppTextStyles.bodyMedium),
+          SizedBox(height: 4.h),
+          DefaultTextStyle.merge(
+            style: AppTextStyles.subBody.copyWith(
+              color: AppColors.textPrimary,
+            ),
+            child: child,
+          ),
         ],
       ),
     );

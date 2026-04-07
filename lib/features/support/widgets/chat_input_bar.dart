@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import 'package:dispatcher_1/core/theme/app_colors.dart';
-import 'package:dispatcher_1/core/theme/app_spacing.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
 
 /// Нижняя панель ввода чата: текстовое поле + микрофон + скрепка + send.
@@ -62,16 +61,8 @@ class _ChatInputBarState extends State<ChatInputBar> {
     return SafeArea(
       top: false,
       child: Container(
-        padding: EdgeInsets.fromLTRB(
-          AppSpacing.screenH,
-          8.h,
-          AppSpacing.screenH,
-          8.h,
-        ),
-        decoration: const BoxDecoration(
-          color: AppColors.background,
-          border: Border(top: BorderSide(color: AppColors.divider, width: 1)),
-        ),
+        padding: EdgeInsets.fromLTRB(16.w, 16.h, 16.w, 16.h),
+        decoration: const BoxDecoration(color: AppColors.navBarDark),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
@@ -83,8 +74,8 @@ class _ChatInputBarState extends State<ChatInputBar> {
                   vertical: 6.h,
                 ),
                 decoration: BoxDecoration(
-                  color: AppColors.surfaceVariant,
-                  borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(8.r),
                 ),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.center,

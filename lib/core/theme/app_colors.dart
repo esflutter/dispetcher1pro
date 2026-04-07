@@ -9,6 +9,7 @@ class AppColors {
   static const Color primary = Color(0xFFFFAC26); // оранжевый
   static const Color primaryDark = Color(0xFFC77E1F);
   static const Color primaryTint = Color(0xFFFFF9F0); // светлый бренд-фон
+  static const Color fieldFill = Color(0xFFFFF9EF); // фон полей ввода
   static const Color primaryTintStrong = Color(0xFFFBE4C6);
 
   // Поверхности

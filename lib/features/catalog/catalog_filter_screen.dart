@@ -171,7 +171,7 @@ class _SectionTitle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Text(text, style: AppTextStyles.titleL.copyWith(fontSize: 20.sp));
+    return Text(text, style: AppTextStyles.bodyMedium);
   }
 }
 

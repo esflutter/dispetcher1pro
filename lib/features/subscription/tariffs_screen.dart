@@ -48,12 +48,7 @@ class TariffsScreen extends StatelessWidget {
                 children: [
                   Text(
                     'Получите доступ к заказам',
-                    style: TextStyle(
-                      fontSize: 28.sp,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textBlack,
-                      height: 1.17,
-                    ),
+                    style: AppTextStyles.h2.copyWith(color: AppColors.textBlack),
                   ),
                   SizedBox(height: AppSpacing.md),
                   for (final b in _bullets) ...[

@@ -51,14 +51,18 @@ class MyOrderDetailScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        backgroundColor: AppColors.background,
+        backgroundColor: AppColors.navBarDark,
+        foregroundColor: Colors.white,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
           onPressed: () => Navigator.of(context).maybePop(),
         ),
-        title: Text('Заказ', style: AppTextStyles.titleS),
         centerTitle: true,
+        title: Text(
+          'Заказ',
+          style: AppTextStyles.titleS.copyWith(color: Colors.white),
+        ),
       ),
       body: SafeArea(
         child: Column(
