@@ -1,106 +1,127 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:go_router/go_router.dart';
 
 import 'package:dispatcher_1/core/theme/app_colors.dart';
-import 'package:dispatcher_1/core/theme/app_spacing.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
-import 'package:dispatcher_1/features/support/chat_screen.dart';
-import 'package:dispatcher_1/features/support/widgets/chat_input_bar.dart';
 
-/// Стартовый экран ИИ-ассистента поддержки «Диспетчер №1».
-/// Приветствие, рекомендованные теги, поле ввода.
+/// Стартовый экран ИИ-ассистента: «С чего хотите начать?».
+/// Поле «Задать вопрос», два жёлтых action-chip'а и «Пропустить».
 class SupportHomeScreen extends StatelessWidget {
   const SupportHomeScreen({super.key});
 
-  static const List<String> _tags = <String>[
-    'Задать вопрос',
-    'Разместить услугу',
-    'Создать карточку исполнителя',
-    'Пропустить',
-  ];
-
   void _openChat(BuildContext context, {String? initialMessage}) {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => ChatScreen(initialMessage: initialMessage),
-      ),
-    );
+    final extra = initialMessage == null ? null : {'initial': initialMessage};
+    GoRouter.of(context).push('/assistant/chat', extra: extra);
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: AppBar(
-        backgroundColor: AppColors.background,
-        elevation: 0,
-        centerTitle: true,
-        title: Text('Поддержка', style: AppTextStyles.titleS),
-        iconTheme: const IconThemeData(color: AppColors.textPrimary),
-      ),
       body: SafeArea(
-        child: Column(
-          children: [
-            Expanded(
-              child: SingleChildScrollView(
-                padding: EdgeInsets.symmetric(
-                  horizontal: AppSpacing.screenH,
-                  vertical: AppSpacing.lg,
+        child: Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16.w),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SizedBox(height: 16.h),
+              Text(
+                'С чего хотите начать?',
+                style: AppTextStyles.h1Phone.copyWith(color: AppColors.textBlack),
+              ),
+              SizedBox(height: 16.h),
+              Text(
+                'Задайте вопрос или выберите тему\nиз предложенных',
+                style: AppTextStyles.body.copyWith(
+                  color: AppColors.textBlack,
+                  fontSize: 16.sp,
                 ),
+              ),
+              Expanded(
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.center,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    SizedBox(
+                      width: double.infinity,
+                      child: _AskQuestionField(onTap: () => _openChat(context)),
+                    ),
                     SizedBox(height: 24.h),
-                    Container(
-                      width: 96.w,
-                      height: 96.w,
-                      decoration: const BoxDecoration(
-                        color: AppColors.primaryTint,
-                        shape: BoxShape.circle,
-                      ),
-                      alignment: Alignment.center,
-                      child: Icon(
-                        Icons.support_agent,
-                        size: 52.sp,
-                        color: AppColors.primary,
-                      ),
+                    _ActionChip(
+                      label: 'Разместить услугу',
+                      onTap: () => _openChat(context, initialMessage: 'Разместить услугу'),
                     ),
-                    SizedBox(height: AppSpacing.lg),
-                    Text(
-                      'С чего хотите начать?',
-                      style: AppTextStyles.h3,
-                      textAlign: TextAlign.center,
-                    ),
-                    SizedBox(height: AppSpacing.xs),
-                    Text(
-                      'Задайте вопрос или выберите тему\nиз предложенных',
-                      style: AppTextStyles.body.copyWith(
-                        color: AppColors.textTertiary,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    SizedBox(height: AppSpacing.xxl),
-                    Wrap(
-                      alignment: WrapAlignment.center,
-                      spacing: AppSpacing.xs,
-                      runSpacing: AppSpacing.xs,
-                      children: [
-                        for (final t in _tags)
-                          _SuggestionChip(
-                            label: t,
-                            onTap: () => _openChat(context, initialMessage: t),
-                          ),
-                      ],
+                    SizedBox(height: 8.h),
+                    _ActionChip(
+                      label: 'Создать карточку исполнителя',
+                      onTap: () => _openChat(context, initialMessage: 'Создать карточку исполнителя'),
                     ),
                   ],
                 ),
               ),
+              Center(
+                child: GestureDetector(
+                  onTap: () => context.go('/shell'),
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(vertical: 12.h, horizontal: 24.w),
+                    child: Text(
+                      'Пропустить',
+                      style: AppTextStyles.body.copyWith(
+                        color: AppColors.textBlack,
+                        fontSize: 16.sp,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              SizedBox(height: 16.h),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AskQuestionField extends StatelessWidget {
+  const _AskQuestionField({required this.onTap});
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        height: 64.h,
+        padding: EdgeInsets.fromLTRB(20.w, 8.h, 8.w, 8.h),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(16.r),
+          border: Border.all(color: AppColors.primary, width: 1.5),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Задать вопрос',
+                style: AppTextStyles.body.copyWith(
+                  color: AppColors.textBlack,
+                  fontSize: 16.sp,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
             ),
-            ChatInputBar(
-              hint: 'Написать... ',
-              showAttach: false,
-              onSend: (text) => _openChat(context, initialMessage: text),
-              onMicTap: () => _openChat(context),
+            Container(
+              width: 48.w,
+              height: 48.w,
+              decoration: BoxDecoration(
+                color: AppColors.primary,
+                borderRadius: BorderRadius.circular(8.r),
+              ),
+              alignment: Alignment.center,
+              child: Icon(Icons.arrow_forward, color: Colors.white, size: 22.r),
             ),
           ],
         ),
@@ -109,28 +130,32 @@ class SupportHomeScreen extends StatelessWidget {
   }
 }
 
-class _SuggestionChip extends StatelessWidget {
-  const _SuggestionChip({required this.label, required this.onTap});
-
+class _ActionChip extends StatelessWidget {
+  const _ActionChip({required this.label, required this.onTap});
   final String label;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: AppColors.primaryTint,
-      borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
-        child: Padding(
-          padding: EdgeInsets.symmetric(
-            horizontal: 16.w,
-            vertical: 10.h,
-          ),
-          child: Text(
-            label,
-            style: AppTextStyles.chip.copyWith(color: AppColors.primaryDark),
+    return IntrinsicWidth(
+      child: Material(
+        color: AppColors.primary,
+        borderRadius: BorderRadius.circular(8.r),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(8.r),
+          child: Container(
+            height: 36.h,
+            padding: EdgeInsets.symmetric(horizontal: 20.w),
+            alignment: Alignment.centerLeft,
+            child: Text(
+              label,
+              style: AppTextStyles.body.copyWith(
+                color: Colors.white,
+                fontSize: 15.sp,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
           ),
         ),
       ),

@@ -2,30 +2,27 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import 'package:dispatcher_1/core/theme/app_colors.dart';
-import 'package:dispatcher_1/core/theme/app_spacing.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
 
-/// Тип сообщения чата.
 enum ChatMessageType { text, image }
 
-/// Модель одного сообщения для ленты чата поддержки.
 class ChatMessage {
   const ChatMessage({
     required this.id,
     required this.text,
     required this.fromUser,
     this.type = ChatMessageType.text,
-    this.imageAsset,
+    this.imageAssets = const <String>[],
   });
 
   final String id;
   final String text;
   final bool fromUser;
   final ChatMessageType type;
-  final String? imageAsset;
+  final List<String> imageAssets;
 }
 
-/// Пузырь сообщения. Входящие — серый surfaceVariant слева,
+/// Пузырь сообщения. Входящие — кремовый primaryTint слева,
 /// исходящие — оранжевый primary справа.
 class ChatBubble extends StatelessWidget {
   const ChatBubble({super.key, required this.message});
@@ -36,78 +33,105 @@ class ChatBubble extends StatelessWidget {
   Widget build(BuildContext context) {
     final isUser = message.fromUser;
     final bg = isUser ? AppColors.primary : AppColors.primaryTint;
-    final fg = isUser ? Colors.white : AppColors.textPrimary;
-    final radius = Radius.circular(8.r);
-    final tail = Radius.circular(2.r);
+    final fg = isUser ? Colors.white : AppColors.textBlack;
+
+    if (message.type == ChatMessageType.image) {
+      return Align(
+        alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
+        child: Container(
+          constraints: BoxConstraints(maxWidth: 312.w), // 88*3 + 8*2 + 16*2
+          margin: EdgeInsets.symmetric(vertical: 8.h),
+          padding: EdgeInsets.all(16.w),
+          decoration: BoxDecoration(
+            color: bg,
+            borderRadius: BorderRadius.circular(16.r),
+          ),
+          child: Wrap(
+            spacing: 8.w,
+            runSpacing: 8.h,
+            children: [
+              for (final asset in message.imageAssets)
+                GestureDetector(
+                  onTap: () => _showFullscreenImage(context, asset),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(8.r),
+                    child: Image.asset(
+                      asset,
+                      width: 88.w,
+                      height: 88.w,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Container(
+                        width: 88.w,
+                        height: 88.w,
+                        color: AppColors.surfaceMuted,
+                        child: Icon(Icons.image_outlined,
+                            color: AppColors.textTertiary, size: 32.r),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      );
+    }
 
     return Align(
       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
         constraints: BoxConstraints(maxWidth: 280.w),
-        margin: EdgeInsets.symmetric(vertical: 6.h),
-        padding: message.type == ChatMessageType.image
-            ? EdgeInsets.all(4.w)
-            : EdgeInsets.symmetric(horizontal: 14.w, vertical: 10.h),
+        margin: EdgeInsets.symmetric(vertical: 8.h),
+        padding: EdgeInsets.all(16.w),
         decoration: BoxDecoration(
           color: bg,
-          borderRadius: BorderRadius.only(
-            topLeft: radius,
-            topRight: radius,
-            bottomLeft: isUser ? radius : tail,
-            bottomRight: isUser ? tail : radius,
+          borderRadius: BorderRadius.circular(12.r),
+        ),
+        child: Text(
+          message.text,
+          style: AppTextStyles.body.copyWith(
+            color: fg,
+            fontSize: 16.sp,
           ),
         ),
-        child: message.type == ChatMessageType.image
-            ? _ImageContent(message: message, fg: fg)
-            : Text(
-                message.text,
-                style: AppTextStyles.body.copyWith(color: fg),
-              ),
       ),
     );
   }
-}
 
-class _ImageContent extends StatelessWidget {
-  const _ImageContent({required this.message, required this.fg});
-
-  final ChatMessage message;
-  final Color fg;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        ClipRRect(
-          borderRadius: BorderRadius.circular(AppSpacing.radiusM),
+  void _showFullscreenImage(BuildContext context, String asset) {
+    showDialog<void>(
+      context: context,
+      useSafeArea: false,
+      builder: (context) {
+        return GestureDetector(
+          onTap: () => Navigator.of(context).pop(),
           child: Container(
-            width: 220.w,
-            height: 160.h,
-            color: AppColors.surfaceMuted,
-            alignment: Alignment.center,
-            child: Icon(
-              Icons.image_outlined,
-              size: 48.sp,
-              color: AppColors.textTertiary,
+            color: Colors.black,
+            child: Stack(
+              children: [
+                Center(
+                  child: InteractiveViewer(
+                    maxScale: 4.0,
+                    child: Image.asset(asset),
+                  ),
+                ),
+                Positioned(
+                  top: MediaQuery.of(context).padding.top + 10,
+                  right: 20,
+                  child: IconButton(
+                    icon: const Icon(Icons.close, color: Colors.white, size: 30),
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                ),
+              ],
             ),
           ),
-        ),
-        if (message.text.isNotEmpty)
-          Padding(
-            padding: EdgeInsets.fromLTRB(10.w, 8.h, 10.w, 4.h),
-            child: Text(
-              message.text,
-              style: AppTextStyles.body.copyWith(color: fg),
-            ),
-          ),
-      ],
+        );
+      },
     );
   }
 }
 
-/// Индикатор «печатает…» — три точки в сером пузыре.
+/// Индикатор «печатает…» — три точки в кремовом пузыре.
 class TypingBubble extends StatefulWidget {
   const TypingBubble({super.key});
 
@@ -139,11 +163,11 @@ class _TypingBubbleState extends State<TypingBubble>
     return Align(
       alignment: Alignment.centerLeft,
       child: Container(
-        margin: EdgeInsets.symmetric(vertical: 6.h),
+        margin: EdgeInsets.symmetric(vertical: 8.h),
         padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 12.h),
         decoration: BoxDecoration(
           color: AppColors.primaryTint,
-          borderRadius: BorderRadius.circular(8.r),
+          borderRadius: BorderRadius.circular(12.r),
         ),
         child: AnimatedBuilder(
           animation: _c,
