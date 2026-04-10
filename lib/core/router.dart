@@ -80,10 +80,7 @@ final GoRouter appRouter = GoRouter(
     ),
     GoRoute(
       path: '/catalog/orders-map',
-      builder: (_, _) => Scaffold(
-        appBar: AppBar(title: const Text('Заказы на карте')),
-        body: const OrdersMapScreen(),
-      ),
+      builder: (_, _) => const OrdersMapFullScreen(),
     ),
     GoRoute(
       path: '/catalog/order/:id/map',
@@ -161,6 +158,18 @@ final GoRouter appRouter = GoRouter(
     // Поддержка
     GoRoute(path: '/support', builder: (_, _) => const SupportHomeScreen()),
     GoRoute(path: '/support/chat', builder: (_, _) => const ChatScreen()),
+    GoRoute(path: '/assistant', builder: (_, _) => const SupportHomeScreen()),
+    GoRoute(
+      path: '/assistant/chat',
+      builder: (context, state) {
+        final extra = state.extra;
+        String? initial;
+        if (extra is Map && extra['initial'] is String) {
+          initial = extra['initial'] as String;
+        }
+        return ChatScreen(initialMessage: initial);
+      },
+    ),
   ],
   errorBuilder: (context, state) => Scaffold(
     body: Center(child: Text('Маршрут не найден: ${state.uri}')),

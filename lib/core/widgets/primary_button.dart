@@ -28,14 +28,22 @@ class PrimaryButton extends StatelessWidget {
         onPressed: enabled ? onPressed : null,
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.primary,
-          disabledBackgroundColor: AppColors.primary.withValues(alpha: 0.4),
+          disabledBackgroundColor: AppColors.primary.withValues(alpha: 0.1),
           foregroundColor: Colors.white,
+          disabledForegroundColor: AppColors.primary.withValues(alpha: 0.5),
           elevation: 0,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16.r),
           ),
         ),
-        child: Text(label, style: AppTextStyles.button.copyWith(color: Colors.white)),
+        child: Text(
+          label,
+          style: AppTextStyles.button.copyWith(
+            color: enabled
+                ? Colors.white
+                : AppColors.primary.withValues(alpha: 0.5),
+          ),
+        ),
       ),
     );
   }

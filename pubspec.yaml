@@ -16,6 +16,8 @@ dependencies:
   mask_text_input_formatter: ^2.9.0
   smooth_page_indicator: ^1.2.0+3
   pinput: ^5.0.1
+  connectivity_plus: ^6.0.5
+  geolocator: ^13.0.1
 
 dev_dependencies:
   flutter_test:
@@ -30,6 +32,7 @@ flutter_launcher_icons:
   image_path: "assets/icons/app_icon.png"
   adaptive_icon_background: "#FFFFFF"
   adaptive_icon_foreground: "assets/icons/app_icon.png"
+  remove_alpha_ios: true
 
 flutter:
   uses-material-design: true
@@ -38,9 +41,11 @@ flutter:
     - assets/images/
     - assets/images/onboarding/
     - assets/images/categories/
+    - assets/images/catalog/
     - assets/icons/
     - assets/icons/nav/
     - assets/icons/ui/
+    - assets/icons/support/
 
   fonts:
     - family: Roboto

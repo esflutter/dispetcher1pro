@@ -16,7 +16,7 @@ class DispatcherApp extends StatelessWidget {
       splitScreenMode: false,
       builder: (context, child) {
         return MaterialApp.router(
-          title: 'Диспетчер №1',
+          title: 'Диспетчер №1 PRO',
           debugShowCheckedModeBanner: false,
           theme: AppTheme.light,
           routerConfig: appRouter,

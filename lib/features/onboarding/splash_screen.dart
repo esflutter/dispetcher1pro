@@ -37,26 +37,49 @@ class _SplashScreenState extends State<SplashScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
-      body: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+      body: SafeArea(
+        child: Stack(
           children: [
-            Image.asset(
-              'assets/images/onboarding/splash_logo.webp',
-              width: 100.w,
-              height: 100.w,
-              fit: BoxFit.contain,
-              errorBuilder: (BuildContext _, Object _, StackTrace? _) => Icon(
-                Icons.engineering,
-                size: 80.r,
-                color: AppColors.primary,
+            Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Image.asset(
+                    'assets/images/onboarding/splash_logo.webp',
+                    width: 130.w,
+                    height: 130.w,
+                    fit: BoxFit.contain,
+                    errorBuilder: (BuildContext _, Object _, StackTrace? _) => Icon(
+                      Icons.engineering,
+                      size: 80.r,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                  SizedBox(height: 24.h),
+                  Text(
+                    'Диспетчер №1 PRO',
+                    style: AppTextStyles.h3.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
               ),
             ),
-            SizedBox(height: 16.h),
-            Text(
-              'Диспетчер №1 PRO',
-              style: AppTextStyles.h3,
-              textAlign: TextAlign.center,
+            Align(
+              alignment: Alignment.bottomCenter,
+              child: Padding(
+                padding: EdgeInsets.only(bottom: 64.h),
+                child: SizedBox(
+                  width: 44.r,
+                  height: 44.r,
+                  child: CircularProgressIndicator(
+                    color: AppColors.primary,
+                    strokeWidth: 4.r,
+                  ),
+                ),
+              ),
             ),
           ],
         ),

@@ -2,13 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import 'package:dispatcher_1/core/theme/app_colors.dart';
-import 'package:dispatcher_1/core/theme/app_spacing.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
-import 'package:dispatcher_1/core/widgets/primary_button.dart';
 import 'package:dispatcher_1/features/catalog/order_detail_screen.dart';
+import 'package:dispatcher_1/features/catalog/orders_map_screen.dart';
 
-/// Просмотр заказа на карте — плейсхолдер карты + bottom-sheet с краткой
-/// карточкой заказа.
+/// Просмотр заказа на карте — карта во весь экран и нижняя карточка
+/// заказа (по Figma «Просмотр заказа на карте»).
 class OrderOnMapScreen extends StatelessWidget {
   const OrderOnMapScreen({super.key, required this.orderId});
 
@@ -20,92 +19,104 @@ class OrderOnMapScreen extends StatelessWidget {
       backgroundColor: AppColors.background,
       body: Stack(
         children: <Widget>[
-          Container(
-            color: AppColors.surfaceVariant,
-            child: Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  Icon(Icons.map_outlined,
-                      size: 80.sp, color: AppColors.textTertiary),
-                  SizedBox(height: AppSpacing.sm),
-                  Text('Карта (демо)',
-                      style: AppTextStyles.bodyMedium
-                          .copyWith(color: AppColors.textTertiary)),
-                ],
-              ),
-            ),
-          ),
+          const Positioned.fill(child: OrdersMapScreen()),
           Positioned(
             top: MediaQuery.of(context).padding.top + 8,
-            left: AppSpacing.screenH,
-            child: CircleAvatar(
-              backgroundColor: AppColors.surface,
-              child: IconButton(
-                icon: const Icon(Icons.arrow_back,
-                    color: AppColors.textPrimary),
-                onPressed: () => Navigator.of(context).pop(),
-              ),
+            left: 8.w,
+            child: IconButton(
+              icon: Icon(Icons.arrow_back_ios_new_rounded,
+                  color: AppColors.textPrimary, size: 20.r),
+              onPressed: () => Navigator.of(context).maybePop(),
             ),
           ),
           Align(
             alignment: Alignment.bottomCenter,
             child: Container(
-              margin: EdgeInsets.all(AppSpacing.screenH),
-              padding: EdgeInsets.all(AppSpacing.md),
+              margin: EdgeInsets.fromLTRB(16.w, 0, 16.w, 24.h),
+              padding: EdgeInsets.all(16.w),
               decoration: BoxDecoration(
                 color: AppColors.surface,
-                borderRadius: BorderRadius.circular(AppSpacing.radiusL),
+                borderRadius: BorderRadius.circular(16.r),
                 boxShadow: <BoxShadow>[
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.08),
+                    color: Colors.black.withValues(alpha: 0.10),
                     blurRadius: 16,
                     offset: const Offset(0, 4),
                   ),
                 ],
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: <Widget>[
-                      Text('Экскаватор', style: AppTextStyles.bodyMMedium),
-                      Text('2 часа назад',
-                          style: AppTextStyles.caption
-                              .copyWith(color: AppColors.textTertiary)),
-                    ],
+              child: InkWell(
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => OrderDetailScreen(orderId: orderId),
                   ),
-                  SizedBox(height: AppSpacing.xs),
-                  Text('Нужен экскаватор для копки траншеи',
-                      style: AppTextStyles.titleS),
-                  SizedBox(height: AppSpacing.xs),
-                  Text('Дата аренды:',
-                      style: AppTextStyles.caption
-                          .copyWith(color: AppColors.textTertiary)),
-                  Text('15-19 июня · 09:00–18:00',
-                      style: AppTextStyles.bodyMRegular),
-                  SizedBox(height: AppSpacing.xxs),
-                  Text('Адрес:',
-                      style: AppTextStyles.caption
-                          .copyWith(color: AppColors.textTertiary)),
-                  Text('Московская область, Москва, Улица1, д 144',
-                      style: AppTextStyles.bodyMRegular),
-                  SizedBox(height: AppSpacing.xs),
-                  Text('80 000 – 100 000 ₽',
-                      style: AppTextStyles.bodyMMedium
-                          .copyWith(color: AppColors.primary)),
-                  SizedBox(height: AppSpacing.md),
-                  PrimaryButton(
-                    label: 'Контакты',
-                    onPressed: () => Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => OrderDetailScreen(orderId: orderId),
-                      ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: <Widget>[
+                        Text('Экскаватор',
+                            style: AppTextStyles.caption.copyWith(
+                                color: AppColors.textTertiary)),
+                        Text('2 часа назад',
+                            style: AppTextStyles.caption.copyWith(
+                                color: AppColors.textTertiary)),
+                      ],
                     ),
-                  ),
-                ],
+                    SizedBox(height: 6.h),
+                    Text('Нужен экскаватор для копки траншеи',
+                        style: AppTextStyles.titleS
+                            .copyWith(fontWeight: FontWeight.w700)),
+                    SizedBox(height: 8.h),
+                    _Line(label: 'Дата аренды:',
+                        value: '15-19 июня · 09:00–18:00'),
+                    SizedBox(height: 2.h),
+                    _Line(label: 'Адрес:',
+                        value: 'Московская область, Москва, Улица1, д 144'),
+                    SizedBox(height: 8.h),
+                    Text('80 000 – 100 000 ₽',
+                        style: AppTextStyles.bodyMMedium.copyWith(
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.w700,
+                        )),
+                  ],
+                ),
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Line extends StatelessWidget {
+  const _Line({required this.label, required this.value});
+  final String label;
+  final String value;
+  @override
+  Widget build(BuildContext context) {
+    return RichText(
+      text: TextSpan(
+        style: TextStyle(
+          fontFamily: 'Roboto',
+          fontSize: 12.sp,
+          color: AppColors.textPrimary,
+          height: 1.4,
+        ),
+        children: <TextSpan>[
+          TextSpan(
+            text: '$label ',
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+          TextSpan(
+            text: value,
+            style: TextStyle(
+              fontWeight: FontWeight.w400,
+              color: AppColors.textSecondary,
             ),
           ),
         ],

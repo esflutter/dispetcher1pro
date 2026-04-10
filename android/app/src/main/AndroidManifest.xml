@@ -1,6 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <application
-        android:label="dispatcher_1"
+        android:label="Диспетчер №1 PRO"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

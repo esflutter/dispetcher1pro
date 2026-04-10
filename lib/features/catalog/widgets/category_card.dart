@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import 'package:dispatcher_1/core/theme/app_colors.dart';
-import 'package:dispatcher_1/core/theme/app_spacing.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
 
 /// Карточка категории каталога — фон, иллюстрация (asset) или иконка-fallback,
@@ -13,6 +12,7 @@ class CategoryCard extends StatelessWidget {
     required this.title,
     this.background = AppColors.categoryCard,
     this.imageAsset,
+    this.imageTight = false,
     this.icon,
     this.onTap,
   });
@@ -20,6 +20,9 @@ class CategoryCard extends StatelessWidget {
   final String title;
   final Color background;
   final String? imageAsset;
+  /// Если true — картинка без встроенных полей, показываем её
+  /// уменьшенной в правом нижнем углу (как старые webp-иллюстрации).
+  final bool imageTight;
   final IconData? icon;
   final VoidCallback? onTap;
 
@@ -27,7 +30,7 @@ class CategoryCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Material(
       color: background,
-      borderRadius: BorderRadius.circular(AppSpacing.radiusM),
+      borderRadius: BorderRadius.circular(20.r),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
@@ -36,17 +39,39 @@ class CategoryCard extends StatelessWidget {
           children: <Widget>[
             Positioned.fill(
               child: imageAsset != null
-                  ? Image.asset(
+                  ? (imageTight
+                      ? Align(
+                          alignment: Alignment.bottomRight,
+                          child: FractionallySizedBox(
+                            widthFactor: 0.62,
+                            heightFactor: 0.78,
+                            child: Padding(
+                              padding:
+                                  EdgeInsets.only(right: 6.w, bottom: 6.h),
+                              child: Image.asset(
+                                imageAsset!,
+                                fit: BoxFit.contain,
+                                alignment: Alignment.bottomRight,
+                              ),
+                            ),
+                          ),
+                        )
+                      : Image.asset(
                       imageAsset!,
                       fit: BoxFit.cover,
-                      errorBuilder: (BuildContext _, Object _, StackTrace? _) => Center(
-                        child: Icon(
-                          icon ?? Icons.image_outlined,
-                          size: 56.r,
-                          color: AppColors.textTertiary,
+                      errorBuilder:
+                          (BuildContext _, Object _, StackTrace? _) => Align(
+                        alignment: Alignment.bottomRight,
+                        child: Padding(
+                          padding: EdgeInsets.only(right: 16.w, bottom: 12.h),
+                          child: Icon(
+                            icon ?? Icons.image_outlined,
+                            size: 56.r,
+                            color: AppColors.textTertiary,
+                          ),
                         ),
                       ),
-                    )
+                    ))
                   : Center(
                       child: Icon(
                         icon ?? Icons.image_outlined,

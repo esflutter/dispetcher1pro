@@ -104,7 +104,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
               child: PrimaryButton(
                 label: 'Готово',
                 enabled: _isValid,
-                onPressed: _isValid ? () => context.go('/shell') : () {},
+                onPressed: _isValid ? () => context.go('/assistant') : () {},
               ),
             ),
           ],

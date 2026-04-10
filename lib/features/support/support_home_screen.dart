@@ -62,7 +62,20 @@ class SupportHomeScreen extends StatelessWidget {
               ),
               Center(
                 child: GestureDetector(
-                  onTap: () => context.go('/shell'),
+                  onTap: () {
+                    // Экран ассистента пушится поверх MainShell обычным
+                    // Navigator.push (см. main_shell.dart), поэтому
+                    // «Пропустить» — это просто закрытие текущего роута.
+                    // context.go('/shell') здесь не сработал бы: go_router
+                    // переключается под этим MaterialPageRoute, и визуально
+                    // ничего не меняется.
+                    final NavigatorState nav = Navigator.of(context);
+                    if (nav.canPop()) {
+                      nav.pop();
+                    } else {
+                      context.go('/shell');
+                    }
+                  },
                   child: Padding(
                     padding: EdgeInsets.symmetric(vertical: 12.h, horizontal: 24.w),
                     child: Text(
