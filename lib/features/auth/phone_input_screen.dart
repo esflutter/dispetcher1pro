@@ -7,6 +7,7 @@ import 'package:mask_text_input_formatter/mask_text_input_formatter.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
+import 'photo_crop_screen.dart';
 
 class PhoneInputScreen extends StatefulWidget {
   const PhoneInputScreen({super.key});
@@ -88,7 +89,14 @@ class _PhoneInputScreenState extends State<PhoneInputScreen> {
               child: PrimaryButton(
                 label: 'Далее',
                 enabled: _isComplete,
-                onPressed: _isComplete ? () => context.go('/auth/otp') : null,
+                onPressed: _isComplete
+                    ? () {
+                        final d = _maskFormatter.getUnmaskedText();
+                        CropResult.userPhone =
+                            '+7 ${d.substring(0, 3)} ${d.substring(3, 6)}-${d.substring(6, 8)}-${d.substring(8, 10)}';
+                        context.go('/auth/otp');
+                      }
+                    : null,
               ),
             ),
           ],

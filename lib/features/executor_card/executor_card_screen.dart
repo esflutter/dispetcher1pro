@@ -278,7 +278,7 @@ class _HeaderRow extends StatelessWidget {
                       width: 20.r, height: 20.r),
                   SizedBox(width: 4.w),
                   Text('4,5', style: AppTextStyles.body),
-                  SizedBox(width: 8.w),
+                  SizedBox(width: 16.w),
                   GestureDetector(
                     onTap: () => context.push('/profile/reviews'),
                     child: Text(

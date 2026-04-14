@@ -224,7 +224,7 @@ class _Header extends StatelessWidget {
                     SizedBox(width: 4.w),
                     Text(rating.toStringAsFixed(1).replaceAll('.', ','),
                         style: AppTextStyles.body),
-                    SizedBox(width: 8.w),
+                    SizedBox(width: 16.w),
                     Text(
                       '$reviewsCount отзывов',
                       style: AppTextStyles.body.copyWith(

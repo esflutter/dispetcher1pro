@@ -444,7 +444,7 @@ class _CustomerHeader extends StatelessWidget {
                         color: AppColors.textPrimary,
                       ),
                     ),
-                    SizedBox(width: 12.w),
+                    SizedBox(width: 16.w),
                     Text(
                       '15 отзывов',
                       style: TextStyle(

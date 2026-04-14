@@ -15,6 +15,9 @@ class CropResult {
 
   /// Имя пользователя, введённое при регистрации.
   static String userName = 'Александр Иванов';
+
+  /// Телефон пользователя, введённый при регистрации.
+  static String userPhone = '+7 999 123-45-67';
 }
 
 class PhotoCropScreen extends StatefulWidget {

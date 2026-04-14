@@ -27,9 +27,9 @@ class EditProfileScreen extends StatelessWidget {
               SizedBox(height: 16.h),
               Center(child: _PhotoPicker()),
               SizedBox(height: AppSpacing.xl),
-              const _TintField(text: 'Александр Иванов'),
+              _TintField(text: CropResult.userName),
               SizedBox(height: AppSpacing.sm),
-              const _TintField(text: '+7 999 123-45-67'),
+              _TintField(text: CropResult.userPhone),
               const Spacer(),
               _ActionTile(
                 iconAsset: 'assets/icons/profile/logout.webp',

@@ -246,12 +246,12 @@ class _EditExecutorCardScreenState extends State<EditExecutorCardScreen> {
                           ),
                         ),
                       ),
-                      Icon(
+                      Image.asset(
                         _statusExpanded
-                            ? Icons.keyboard_arrow_up_rounded
-                            : Icons.keyboard_arrow_down_rounded,
-                        size: 22.r,
-                        color: AppColors.textPrimary,
+                            ? 'assets/icons/ui/arrow_up.webp'
+                            : 'assets/icons/ui/arrow_down.webp',
+                        width: 22.r,
+                        height: 22.r,
                       ),
                     ],
                   ),
@@ -283,8 +283,8 @@ class _EditExecutorCardScreenState extends State<EditExecutorCardScreen> {
                                   child: Text(s, style: AppTextStyles.body),
                                 ),
                                 if (_selectedStatus == s)
-                                  Icon(Icons.check_rounded,
-                                      color: AppColors.primary, size: 22.r),
+                                  Image.asset('assets/icons/ui/check_black.webp',
+                                      width: 22.r, height: 22.r),
                               ],
                             ),
                           ),
@@ -403,7 +403,7 @@ class _HeaderRowState extends State<_HeaderRow> {
                       width: 20.r, height: 20.r),
                   SizedBox(width: 4.w),
                   Text('4,5', style: AppTextStyles.body),
-                  SizedBox(width: 8.w),
+                  SizedBox(width: 16.w),
                   GestureDetector(
                     onTap: () => context.push('/profile/reviews'),
                     child: Text('10 отзывов',

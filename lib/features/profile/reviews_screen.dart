@@ -85,7 +85,7 @@ class _Empty extends StatelessWidget {
             errorBuilder: (_, _, _) => Icon(Icons.star_rounded,
                 size: 128.r, color: AppColors.primary),
           ),
-          SizedBox(height: 16.h),
+          SizedBox(height: 8.h),
           Text('Пока нет отзывов',
               style: AppTextStyles.bodyMRegular.copyWith(color: AppColors.textPrimary)),
           ],
