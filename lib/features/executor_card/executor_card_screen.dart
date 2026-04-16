@@ -9,6 +9,7 @@ import 'package:dispatcher_1/core/widgets/dark_sub_app_bar.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
 import 'package:dispatcher_1/features/catalog/widgets/catalog_search_bar.dart';
 import 'package:dispatcher_1/core/widgets/cropped_avatar.dart';
+import 'package:dispatcher_1/features/profile/account_block.dart';
 import 'package:dispatcher_1/features/profile/widgets/verification_badge.dart';
 
 import 'widgets/executor_card_alerts.dart';
@@ -28,10 +29,14 @@ class ExecutorCardScreen extends StatefulWidget {
 class _ExecutorCardScreenState extends State<ExecutorCardScreen> {
   static bool _alertShown = false;
 
-  bool get _filled => VerificationStatus.current == VerificationStatus.blocked ||
-      (VerificationStatus.current.isVerified && VerificationStatus.hasSubscription && ExecutorCardScreen.cardCreated);
+  bool get _filled =>
+      AccountBlock.isBlocked ||
+      (VerificationStatus.current.isVerified &&
+          VerificationStatus.hasSubscription &&
+          ExecutorCardScreen.cardCreated);
 
   ExecutorCardStatus get _status {
+    if (AccountBlock.isBlocked) return ExecutorCardStatus.blocked;
     switch (VerificationStatus.current) {
       case VerificationStatus.verified:
         return ExecutorCardScreen.cardCreated
@@ -39,8 +44,6 @@ class _ExecutorCardScreenState extends State<ExecutorCardScreen> {
             : ExecutorCardStatus.empty;
       case VerificationStatus.inProgress:
         return ExecutorCardStatus.inReview;
-      case VerificationStatus.blocked:
-        return ExecutorCardStatus.blocked;
       case VerificationStatus.rejected:
       case VerificationStatus.notVerified:
         return ExecutorCardStatus.empty;
@@ -50,6 +53,7 @@ class _ExecutorCardScreenState extends State<ExecutorCardScreen> {
   @override
   void initState() {
     super.initState();
+    AccountBlock.notifier.addListener(_refresh);
     if (_status == ExecutorCardStatus.inReview) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && !_alertShown) {
@@ -60,7 +64,21 @@ class _ExecutorCardScreenState extends State<ExecutorCardScreen> {
     }
   }
 
+  @override
+  void dispose() {
+    AccountBlock.notifier.removeListener(_refresh);
+    super.dispose();
+  }
+
+  void _refresh() {
+    if (mounted) setState(() {});
+  }
+
   Future<void> _onCreateTap() async {
+    if (AccountBlock.isBlocked) {
+      await showExecutorCardStatusDialog(context, ExecutorCardStatus.blocked);
+      return;
+    }
     if (_status == ExecutorCardStatus.inReview) {
       await showExecutorCardStatusDialog(context, _status);
       return;

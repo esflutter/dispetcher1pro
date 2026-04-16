@@ -9,6 +9,7 @@ import 'package:dispatcher_1/features/catalog/customer_card_screen.dart';
 import 'package:dispatcher_1/features/catalog/widgets/catalog_search_bar.dart';
 import 'package:dispatcher_1/features/catalog/widgets/respond_bottom_sheet.dart';
 import 'package:dispatcher_1/features/catalog/widgets/subscription_paywall.dart';
+import 'package:dispatcher_1/features/profile/account_block.dart';
 import 'package:dispatcher_1/features/profile/widgets/verification_badge.dart';
 
 /// Карточка заказа (детали). По Figma — заголовок заказчика сверху,
@@ -38,6 +39,22 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     'Автовышка',
   ];
 
+  @override
+  void initState() {
+    super.initState();
+    AccountBlock.notifier.addListener(_refresh);
+  }
+
+  @override
+  void dispose() {
+    AccountBlock.notifier.removeListener(_refresh);
+    super.dispose();
+  }
+
+  void _refresh() {
+    if (mounted) setState(() {});
+  }
+
   bool get _verified => VerificationStatus.current.isVerified;
   bool get _hasSubscription => VerificationStatus.hasSubscription;
 
@@ -47,6 +64,15 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
       : const <String>['Экскаватор', 'Автокран', 'Манипулятор', 'Погрузчик', 'Автовышка'];
 
   Future<void> _onRespondTap() async {
+    if (AccountBlock.isBlocked) {
+      await showDialog<void>(
+        context: context,
+        barrierColor: Colors.black.withValues(alpha: 0.35),
+        builder: (_) => _BlockedDialog(),
+      );
+      return;
+    }
+
     // 1. Проверка верификации — в процессе.
     if (VerificationStatus.current == VerificationStatus.inProgress) {
       if (!mounted) return;
@@ -259,7 +285,8 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                 16.h + MediaQuery.of(context).padding.bottom),
             child: PrimaryButton(
               label: 'Откликнуться',
-              onPressed: _onRespondTap,
+              enabled: !AccountBlock.isBlocked,
+              onPressed: AccountBlock.isBlocked ? null : _onRespondTap,
             ),
           ),
         ],
@@ -518,6 +545,58 @@ class _InProgressDialog extends StatelessWidget {
             SizedBox(height: 8.h),
             Text(
               'Вы получите уведомление, когда проверка завершится',
+              textAlign: TextAlign.center,
+              style: AppTextStyles.bodyMRegular
+                  .copyWith(color: AppColors.textSecondary),
+            ),
+            SizedBox(height: 18.h),
+            PrimaryButton(
+              label: 'Ок',
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+            SizedBox(height: 12.h),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Диалог «Ваш профиль заблокирован на 30 дней» — показывается, если
+/// исполнитель пытается откликнуться при активной блокировке.
+class _BlockedDialog extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      insetPadding: EdgeInsets.symmetric(horizontal: 16.w),
+      backgroundColor: Colors.transparent,
+      child: Container(
+        padding: EdgeInsets.fromLTRB(16.r, 14.r, 16.r, 22.r),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(20.r),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Align(
+              alignment: Alignment.centerRight,
+              child: GestureDetector(
+                onTap: () => Navigator.of(context).pop(),
+                child: Icon(Icons.close_rounded,
+                    size: 22.r, color: AppColors.textTertiary),
+              ),
+            ),
+            SizedBox(height: 20.h),
+            Text(
+              'Ваш профиль заблокирован\nна 30 дней',
+              textAlign: TextAlign.center,
+              style: AppTextStyles.titleL.copyWith(fontWeight: FontWeight.w700),
+            ),
+            SizedBox(height: 8.h),
+            Text(
+              'Во избежание дальнейших блокировок избегайте отзывов с низкой оценкой',
               textAlign: TextAlign.center,
               style: AppTextStyles.bodyMRegular
                   .copyWith(color: AppColors.textSecondary),

@@ -6,6 +6,7 @@ import 'package:dispatcher_1/core/widgets/primary_button.dart';
 import 'package:dispatcher_1/features/orders/order_detail_screen.dart';
 import 'package:dispatcher_1/features/orders/widgets/my_order_card.dart';
 import 'package:dispatcher_1/features/orders/widgets/order_status_pill.dart';
+import 'package:dispatcher_1/features/profile/account_block.dart';
 
 /// Экран «Мои заказы» — две вкладки «Принятые / Не принятые».
 /// Когда обоих списков пусто — показываем заглушку «Здесь появятся ваши отклики».
@@ -151,16 +152,24 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
   bool get _isEmpty =>
       _newOrders.isEmpty && _accepted.isEmpty && _rejected.isEmpty;
 
+  bool get _blocked => AccountBlock.isBlocked || widget.isBlocked;
+
   @override
   void initState() {
     super.initState();
     _tab = TabController(length: 3, vsync: this);
+    AccountBlock.notifier.addListener(_refresh);
   }
 
   @override
   void dispose() {
+    AccountBlock.notifier.removeListener(_refresh);
     _tab.dispose();
     super.dispose();
+  }
+
+  void _refresh() {
+    if (mounted) setState(() {});
   }
 
   @override
@@ -259,7 +268,7 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
                       onRefuse: () =>
                           _moveToRejected(o, MyOrderStatus.rejectedDeclined),
                       onConfirm: () => _moveToAccepted(o),
-                      isBlocked: widget.isBlocked,
+                      isBlocked: _blocked,
                     ),
                   ),
                 ),

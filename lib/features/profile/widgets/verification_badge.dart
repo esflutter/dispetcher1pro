@@ -5,13 +5,14 @@ import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_spacing.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
 
-/// Статус верификации профиля исполнителя.
+/// Статус верификации профиля исполнителя. Блокировка профиля
+/// (рейтинг < 2★) вынесена в отдельное состояние `AccountBlock`
+/// и не присутствует в этом перечислении.
 enum VerificationStatus {
   verified,
   inProgress,
   rejected,
-  notVerified,
-  blocked;
+  notVerified;
 
   static final ValueNotifier<VerificationStatus> _notifier =
       ValueNotifier<VerificationStatus>(VerificationStatus.notVerified);
@@ -62,12 +63,6 @@ _BadgeConfig _configFor(VerificationStatus s) {
     case VerificationStatus.notVerified:
       return const _BadgeConfig(
         label: 'Верификация не пройдена',
-        fg: AppColors.error,
-        bg: Color(0xFFFCE1E1),
-      );
-    case VerificationStatus.blocked:
-      return const _BadgeConfig(
-        label: 'Ваш профиль заблокирован',
         fg: AppColors.error,
         bg: Color(0xFFFCE1E1),
       );
