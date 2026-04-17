@@ -84,6 +84,9 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
         if (mounted && _hasError) {
           _pinController.clear();
           setState(() => _hasError = false);
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) _pinFocusNode.requestFocus();
+          });
         }
       });
     } else {
@@ -220,7 +223,10 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
                                 _codeResent = true;
                               });
                               _startTimer();
-                              _pinFocusNode.requestFocus();
+                              WidgetsBinding.instance
+                                  .addPostFrameCallback((_) {
+                                if (mounted) _pinFocusNode.requestFocus();
+                              });
                             },
                             child: RichText(
                               text: TextSpan(

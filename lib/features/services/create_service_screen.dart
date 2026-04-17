@@ -252,7 +252,7 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
                 SizedBox(height: 8.h),
                 _TintField(
                   controller: _titleCtrl,
-                  hint: 'Например: Экскаватор для земляных работ',
+                  hint: 'Например: Автовышка для фасада',
                   maxLength: 25,
                 ),
                 SizedBox(height: 16.h),
@@ -855,7 +855,7 @@ class _AddPhotosButton extends StatelessWidget {
       onTap: onTap,
       child: Container(
         width: double.infinity,
-        height: 48.h,
+        height: 42.h,
         decoration: BoxDecoration(
           color: AppColors.primary,
           borderRadius: BorderRadius.circular(16.r),
@@ -863,19 +863,22 @@ class _AddPhotosButton extends StatelessWidget {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Container(
+            Image.asset(
+              'assets/icons/ui/add_circle.webp',
               width: 24.r,
               height: 24.r,
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.3),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(Icons.add, size: 16.r, color: Colors.white),
+              fit: BoxFit.contain,
             ),
             SizedBox(width: 8.w),
             Text(
               'Добавить изображения',
-              style: AppTextStyles.button.copyWith(color: Colors.white),
+              style: TextStyle(
+                fontFamily: 'Roboto',
+                fontSize: 15.sp,
+                fontWeight: FontWeight.w600,
+                height: 1.3,
+                color: Colors.white,
+              ),
             ),
           ],
         ),
