@@ -67,13 +67,45 @@ class _CatalogFilterScreenState extends State<CatalogFilterScreen> {
   /// 'timeFrom' / 'timeTo'. Одновременно виден только один.
   String? _openPicker;
 
+  @override
+  void initState() {
+    super.initState();
+    _selectedCategories.addAll(AppliedFilter.categories);
+    _selectedEquipment.addAll(AppliedFilter.equipment);
+    _dateFrom = AppliedFilter.dateFrom;
+    _dateTo = AppliedFilter.dateTo;
+    _exactDate = AppliedFilter.exactDate;
+    _timeFrom = AppliedFilter.timeFrom;
+    _timeTo = AppliedFilter.timeTo;
+    _wholeDay = AppliedFilter.wholeDay;
+    _radiusKm = AppliedFilter.radiusKm;
+    _address = AppliedFilter.address;
+  }
+
+  void _applyFilter() {
+    AppliedFilter.categories
+      ..clear()
+      ..addAll(_selectedCategories);
+    AppliedFilter.equipment
+      ..clear()
+      ..addAll(_selectedEquipment);
+    AppliedFilter.dateFrom = _dateFrom;
+    AppliedFilter.dateTo = _dateTo;
+    AppliedFilter.exactDate = _exactDate;
+    AppliedFilter.timeFrom = _timeFrom;
+    AppliedFilter.timeTo = _timeTo;
+    AppliedFilter.wholeDay = _wholeDay;
+    AppliedFilter.radiusKm = _radiusKm;
+    AppliedFilter.address = _address;
+    AppliedFilter.revision.value = AppliedFilter.revision.value + 1;
+    Navigator.of(context).pop(true);
+  }
+
   String _formatDate(DateTime d) =>
       '${d.day.toString().padLeft(2, '0')}.${d.month.toString().padLeft(2, '0')}.${(d.year % 100).toString().padLeft(2, '0')}';
 
   String _formatTime(TimeOfDay t) =>
       '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
-
-  int _toMinutes(TimeOfDay t) => t.hour * 60 + t.minute;
 
   void _togglePicker(String key) {
     setState(() => _openPicker = _openPicker == key ? null : key);
@@ -260,15 +292,8 @@ class _CatalogFilterScreenState extends State<CatalogFilterScreen> {
                             setState(() {
                               if (_openPicker == 'timeFrom') {
                                 _timeFrom = t;
-                                if (_timeTo != null && _toMinutes(_timeTo!) <= _toMinutes(t)) {
-                                  _timeTo = t.replacing(hour: (t.hour + 1) % 24);
-                                }
                               } else {
-                                if (_timeFrom != null && _toMinutes(t) <= _toMinutes(_timeFrom!)) {
-                                  _timeTo = _timeFrom!.replacing(hour: (_timeFrom!.hour + 1) % 24);
-                                } else {
-                                  _timeTo = t;
-                                }
+                                _timeTo = t;
                               }
                               _openPicker = null;
                             });
@@ -336,7 +361,6 @@ class _CatalogFilterScreenState extends State<CatalogFilterScreen> {
                           selected: _radiusKm == km,
                           onTap: () => setState(() => _radiusKm = km),
                         ),
-                      SizedBox(height: 24.h),
                     ],
                   ),
                 ),
@@ -361,7 +385,7 @@ class _CatalogFilterScreenState extends State<CatalogFilterScreen> {
                 16.h + MediaQuery.of(context).padding.bottom),
             child: PrimaryButton(
               label: 'Применить',
-              onPressed: () => Navigator.of(context).pop(),
+              onPressed: _applyFilter,
             ),
           ),
         ],
@@ -1187,7 +1211,7 @@ class AddressBottomSheetState extends State<AddressBottomSheet> {
                         height: 20.r,
                         fit: BoxFit.contain,
                       ),
-                      SizedBox(width: 8.w),
+                      SizedBox(width: 12.w),
                       Expanded(
                         child: TextField(
                           controller: _ctrl,
@@ -1276,6 +1300,39 @@ class AddressBottomSheetState extends State<AddressBottomSheet> {
         );
       },
     );
+  }
+}
+
+/// Глобальное состояние применённого фильтра каталога. Лента заказов
+/// слушает `revision` и пересчитывает выдачу при изменении.
+class AppliedFilter {
+  AppliedFilter._();
+
+  static final Set<String> categories = <String>{};
+  static final Set<String> equipment = <String>{};
+  static DateTime? dateFrom;
+  static DateTime? dateTo;
+  static bool exactDate = false;
+  static TimeOfDay? timeFrom;
+  static TimeOfDay? timeTo;
+  static bool wholeDay = false;
+  static int? radiusKm;
+  static String? address;
+
+  static final ValueNotifier<int> revision = ValueNotifier<int>(0);
+
+  static void clear() {
+    categories.clear();
+    equipment.clear();
+    dateFrom = null;
+    dateTo = null;
+    exactDate = false;
+    timeFrom = null;
+    timeTo = null;
+    wholeDay = false;
+    radiusKm = null;
+    address = null;
+    revision.value = revision.value + 1;
   }
 }
 

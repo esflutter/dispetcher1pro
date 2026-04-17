@@ -5,6 +5,7 @@ import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
 import 'package:dispatcher_1/features/catalog/catalog_filter_screen.dart';
 import 'package:dispatcher_1/features/catalog/order_detail_screen.dart';
+import 'package:dispatcher_1/features/catalog/widgets/applied_filter_chips.dart';
 import 'package:dispatcher_1/features/catalog/widgets/catalog_search_bar.dart';
 
 /// Плейсхолдер карты со списком заказов. Используется как контент таба
@@ -54,6 +55,23 @@ class _OrdersMapFullScreenState extends State<OrdersMapFullScreen> {
   int _current = 0;
   int _direction = 1;
 
+  @override
+  void initState() {
+    super.initState();
+    AppliedFilter.revision.addListener(_onFilterChanged);
+  }
+
+  void _onFilterChanged() {
+    if (mounted) setState(() => _current = 0);
+  }
+
+  List<_MapOrder> get _visibleOrders {
+    if (AppliedFilter.equipment.isEmpty) return _orders;
+    return _orders
+        .where((_MapOrder o) => AppliedFilter.equipment.contains(o.equipment))
+        .toList();
+  }
+
   static const List<_MapOrder> _orders = [
     _MapOrder(
       id: '1',
@@ -85,15 +103,18 @@ class _OrdersMapFullScreenState extends State<OrdersMapFullScreen> {
   ];
 
   void _shift(int delta) {
+    final int count = _visibleOrders.length;
+    if (count == 0) return;
     setState(() {
       _direction = delta;
-      _current = (_current + delta) % _orders.length;
-      if (_current < 0) _current += _orders.length;
+      _current = (_current + delta) % count;
+      if (_current < 0) _current += count;
     });
   }
 
   @override
   void dispose() {
+    AppliedFilter.revision.removeListener(_onFilterChanged);
     _searchCtrl.dispose();
     super.dispose();
   }
@@ -101,6 +122,9 @@ class _OrdersMapFullScreenState extends State<OrdersMapFullScreen> {
   @override
   Widget build(BuildContext context) {
     final double searchTop = MediaQuery.of(context).padding.top + 48.h;
+    final bool active = hasActiveFilter();
+    final List<_MapOrder> orders = _visibleOrders;
+    final int idx = orders.isEmpty ? 0 : _current % orders.length;
     return Scaffold(
       backgroundColor: AppColors.background,
       body: Stack(
@@ -119,18 +143,25 @@ class _OrdersMapFullScreenState extends State<OrdersMapFullScreen> {
             top: searchTop,
             left: 0,
             right: 0,
-            child: CatalogSearchBar(
-              controller: _searchCtrl,
-              hintText: 'Поиск по адресу',
-              onFilterTap: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => const CatalogFilterScreen(),
+            child: Column(
+              children: <Widget>[
+                CatalogSearchBar(
+                  controller: _searchCtrl,
+                  hintText: 'Поиск по адресу',
+                  onFilterTap: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const CatalogFilterScreen(),
+                    ),
+                  ),
+                  onChanged: (String v) => setState(() {
+                    _query = v;
+                    _addressSelected = false;
+                  }),
+                  showFilterBadge: active,
                 ),
-              ),
-              onChanged: (String v) => setState(() {
-                _query = v;
-                _addressSelected = false;
-              }),
+                if (active)
+                  AppliedFilterChips(onChanged: () => setState(() {})),
+              ],
             ),
           ),
           if (_query.trim().isNotEmpty && !_addressSelected)
@@ -149,78 +180,80 @@ class _OrdersMapFullScreenState extends State<OrdersMapFullScreen> {
                 },
               ),
             ),
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onVerticalDragEnd: (DragEndDetails d) {
-                final double v = d.primaryVelocity ?? 0;
-                if (v < -150) {
-                  _shift(1);
-                } else if (v > 150) {
-                  _shift(-1);
-                }
-              },
-              onTap: () {
-                final o = _orders[_current];
-                Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => OrderDetailScreen(
-                      orderId: o.id,
-                      price: o.price,
-                    ),
-                  ),
-                );
-              },
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 450),
-                reverseDuration: const Duration(milliseconds: 300),
-                switchInCurve: Curves.easeOutQuint,
-                switchOutCurve: Curves.easeInCubic,
-                layoutBuilder: (Widget? current, List<Widget> previous) =>
-                    Stack(
-                  alignment: Alignment.bottomCenter,
-                  children: [...previous, if (current != null) current],
-                ),
-                transitionBuilder: (Widget child, Animation<double> anim) {
-                  final bool isIn = child.key == ValueKey<int>(_current);
-                  final double dir = _direction.toDouble();
-                  final slide = Tween<Offset>(
-                    begin: isIn ? Offset(0, 0.55 * dir) : Offset.zero,
-                    end: isIn ? Offset.zero : Offset(0, -0.9 * dir),
-                  ).animate(anim);
-                  final scale = Tween<double>(
-                    begin: isIn ? 0.88 : 1.0,
-                    end: isIn ? 1.0 : 0.94,
-                  ).animate(anim);
-                  final fade = CurvedAnimation(
-                    parent: anim,
-                    curve: isIn
-                        ? const Interval(0.15, 1.0, curve: Curves.easeOut)
-                        : const Interval(0.0, 0.7, curve: Curves.easeIn),
-                  );
-                  return SlideTransition(
-                    position: slide,
-                    child: ScaleTransition(
-                      scale: scale,
-                      child: FadeTransition(opacity: fade, child: child),
+          if (orders.isNotEmpty)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onVerticalDragEnd: (DragEndDetails d) {
+                  final double v = d.primaryVelocity ?? 0;
+                  if (v < -150) {
+                    _shift(1);
+                  } else if (v > 150) {
+                    _shift(-1);
+                  }
+                },
+                onTap: () {
+                  final _MapOrder o = orders[idx];
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => OrderDetailScreen(
+                        orderId: o.id,
+                        price: o.price,
+                      ),
                     ),
                   );
                 },
-                child: _buildOrderCard(_orders[_current]),
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 450),
+                  reverseDuration: const Duration(milliseconds: 300),
+                  switchInCurve: Curves.easeOutQuint,
+                  switchOutCurve: Curves.easeInCubic,
+                  layoutBuilder: (Widget? current, List<Widget> previous) =>
+                      Stack(
+                    alignment: Alignment.bottomCenter,
+                    children: [...previous, if (current != null) current],
+                  ),
+                  transitionBuilder: (Widget child, Animation<double> anim) {
+                    final bool isIn = child.key == ValueKey<int>(idx);
+                    final double dir = _direction.toDouble();
+                    final slide = Tween<Offset>(
+                      begin: isIn ? Offset(0, 0.55 * dir) : Offset.zero,
+                      end: isIn ? Offset.zero : Offset(0, -0.9 * dir),
+                    ).animate(anim);
+                    final scale = Tween<double>(
+                      begin: isIn ? 0.88 : 1.0,
+                      end: isIn ? 1.0 : 0.94,
+                    ).animate(anim);
+                    final fade = CurvedAnimation(
+                      parent: anim,
+                      curve: isIn
+                          ? const Interval(0.15, 1.0, curve: Curves.easeOut)
+                          : const Interval(0.0, 0.7, curve: Curves.easeIn),
+                    );
+                    return SlideTransition(
+                      position: slide,
+                      child: ScaleTransition(
+                        scale: scale,
+                        child: FadeTransition(opacity: fade, child: child),
+                      ),
+                    );
+                  },
+                  child: _buildOrderCard(orders[idx], idx),
+                ),
               ),
             ),
-          ),
         ],
       ),
     );
   }
 
-  Widget _buildOrderCard(_MapOrder o) {
+  Widget _buildOrderCard(_MapOrder o, int idx) {
+    final bool matched = AppliedFilter.equipment.contains(o.equipment);
     return Container(
-      key: ValueKey<int>(_current),
+      key: ValueKey<int>(idx),
       margin: EdgeInsets.fromLTRB(12.w, 0, 12.w,
           20.h + MediaQuery.of(context).padding.bottom),
       padding: EdgeInsets.fromLTRB(14.w, 12.h, 14.w, 12.h),
@@ -246,7 +279,9 @@ class _OrdersMapFullScreenState extends State<OrdersMapFullScreen> {
                   style: TextStyle(
                     fontFamily: 'Roboto',
                     fontSize: 12.sp,
-                    color: AppColors.textTertiary,
+                    color: matched
+                        ? AppColors.primary
+                        : AppColors.textTertiary,
                     height: 1.3,
                   )),
               Text(o.publishedAgo,

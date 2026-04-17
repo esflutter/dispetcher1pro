@@ -8,6 +8,7 @@ import 'package:dispatcher_1/core/theme/app_text_styles.dart';
 import 'package:dispatcher_1/features/catalog/catalog_filter_screen.dart';
 import 'package:dispatcher_1/features/catalog/order_detail_screen.dart';
 import 'package:dispatcher_1/features/catalog/orders_map_screen.dart';
+import 'package:dispatcher_1/features/catalog/widgets/applied_filter_chips.dart';
 import 'package:dispatcher_1/features/catalog/widgets/catalog_search_bar.dart';
 import 'package:dispatcher_1/features/catalog/widgets/order_card.dart';
 import 'package:dispatcher_1/features/shell/main_shell.dart';
@@ -37,22 +38,49 @@ class _OrderFeedScreenState extends State<OrderFeedScreen> {
   bool _addressSelected = false;
 
   @override
+  void initState() {
+    super.initState();
+    AppliedFilter.revision.addListener(_onFilterChanged);
+  }
+
+  @override
   void dispose() {
+    AppliedFilter.revision.removeListener(_onFilterChanged);
     _searchCtrl.dispose();
     super.dispose();
   }
 
+  void _onFilterChanged() {
+    if (mounted) setState(() {});
+  }
+
+  bool get _hasActiveFilter => hasActiveFilter();
+
   List<_MockOrder> get _visibleOrders {
     final String q = _query.trim().toLowerCase();
-    if (q.isEmpty) return _orders;
-    return _orders.where((_MockOrder o) {
-      if (o.title.toLowerCase().contains(q)) return true;
-      if (o.address.toLowerCase().contains(q)) return true;
-      for (final String e in o.equipment) {
-        if (e.toLowerCase().contains(q)) return true;
-      }
-      return false;
-    }).toList();
+    Iterable<_MockOrder> res = _orders;
+
+    if (AppliedFilter.categories.isNotEmpty) {
+      res = res.where((_MockOrder o) =>
+          o.categories.any(AppliedFilter.categories.contains));
+    }
+    if (AppliedFilter.equipment.isNotEmpty) {
+      res = res.where((_MockOrder o) =>
+          o.equipment.any(AppliedFilter.equipment.contains));
+    }
+
+    if (q.isNotEmpty) {
+      res = res.where((_MockOrder o) {
+        if (o.title.toLowerCase().contains(q)) return true;
+        if (o.address.toLowerCase().contains(q)) return true;
+        for (final String e in o.equipment) {
+          if (e.toLowerCase().contains(q)) return true;
+        }
+        return false;
+      });
+    }
+
+    return res.toList();
   }
 
   static const List<_MockOrder> _orders = <_MockOrder>[
@@ -63,6 +91,7 @@ class _OrderFeedScreenState extends State<OrderFeedScreen> {
       rentDate: '15 июня · 09:00–18:00',
       publishedAgo: '2 часа назад',
       equipment: <String>['Экскаватор'],
+      categories: <String>['Земляные работы'],
     ),
     _MockOrder(
       id: '2',
@@ -71,6 +100,7 @@ class _OrderFeedScreenState extends State<OrderFeedScreen> {
       rentDate: '15 июня · 09:00–18:00',
       publishedAgo: 'Сегодня в 11:30',
       equipment: <String>['Автокран', 'Экскаватор'],
+      categories: <String>['Земляные работы', 'Строительные работы'],
       price: '120 000 – 150 000 ₽',
     ),
     _MockOrder(
@@ -86,6 +116,7 @@ class _OrderFeedScreenState extends State<OrderFeedScreen> {
         'Манипулятор',
         'Автовышка',
       ],
+      categories: <String>['Земляные работы', 'Строительные работы'],
     ),
     _MockOrder(
       id: '4',
@@ -94,6 +125,7 @@ class _OrderFeedScreenState extends State<OrderFeedScreen> {
       rentDate: '15 июня · 09:00–18:00',
       publishedAgo: '2 часа назад',
       equipment: <String>['Экскаватор'],
+      categories: <String>['Земляные работы'],
     ),
   ];
 
@@ -171,6 +203,7 @@ class _OrderFeedScreenState extends State<OrderFeedScreen> {
                     _query = v;
                     _addressSelected = false;
                   }),
+                  showFilterBadge: _hasActiveFilter,
                 ),
               ),
               SizedBox(height: 12.h),
@@ -182,7 +215,10 @@ class _OrderFeedScreenState extends State<OrderFeedScreen> {
                   if (v == 1) ensureLocationPermission();
                 },
               ),
-              SizedBox(height: 12.h),
+              if (_hasActiveFilter)
+                AppliedFilterChips(onChanged: () => setState(() {}))
+              else
+                SizedBox(height: 12.h),
               Expanded(
                 // IndexedStack вместо ternary — чтобы состояние обоих табов
                 // (ввод в поиске, позиция скролла, карта) сохранялось при
@@ -190,44 +226,52 @@ class _OrderFeedScreenState extends State<OrderFeedScreen> {
                 child: IndexedStack(
                   index: _tab,
                   children: <Widget>[
-                    MediaQuery.removePadding(
-                      context: context,
-                      removeTop: true,
-                      child: ListView.builder(
-                      padding: EdgeInsets.only(bottom: 24.h),
-                      itemCount: _visibleOrders.length,
-                      itemBuilder: (BuildContext context, int i) {
-                        final _MockOrder o = _visibleOrders[i];
-                        return Column(
-                          children: <Widget>[
-                            OrderCard(
-                              title: o.title,
-                              address: o.address,
-                              rentDate: o.rentDate,
-                              publishedAgo: o.publishedAgo,
-                              equipment: o.equipment,
-                              price: o.price,
-                              onTap: () => Navigator.of(context).push(
-                                MaterialPageRoute<void>(
-                                  builder: (_) => OrderDetailScreen(
-                                    orderId: o.id,
-                                    multipleEquipment:
-                                        o.equipment.length > 1,
-                                    price: o.price,
-                                  ),
-                                ),
-                              ),
+                    _visibleOrders.isEmpty
+                        ? const _EmptyOrdersState()
+                        : MediaQuery.removePadding(
+                            context: context,
+                            removeTop: true,
+                            child: ListView.builder(
+                              padding: EdgeInsets.zero,
+                              itemCount: _visibleOrders.length,
+                              itemBuilder: (BuildContext context, int i) {
+                                final _MockOrder o = _visibleOrders[i];
+                                final bool isLast =
+                                    i == _visibleOrders.length - 1;
+                                return Column(
+                                  children: <Widget>[
+                                    OrderCard(
+                                      title: o.title,
+                                      address: o.address,
+                                      rentDate: o.rentDate,
+                                      publishedAgo: o.publishedAgo,
+                                      equipment: o.equipment,
+                                      highlightEquipment:
+                                          AppliedFilter.equipment,
+                                      price: o.price,
+                                      onTap: () => Navigator.of(context).push(
+                                        MaterialPageRoute<void>(
+                                          builder: (_) => OrderDetailScreen(
+                                            orderId: o.id,
+                                            multipleEquipment:
+                                                o.equipment.length > 1,
+                                            price: o.price,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    if (!isLast)
+                                      Container(
+                                        height: 1 /
+                                            MediaQuery.of(context)
+                                                .devicePixelRatio,
+                                        color: AppColors.primary,
+                                      ),
+                                  ],
+                                );
+                              },
                             ),
-                            Container(
-                              height: 1 /
-                                  MediaQuery.of(context).devicePixelRatio,
-                              color: AppColors.primary,
-                            ),
-                          ],
-                        );
-                      },
-                    ),
-                    ),
+                          ),
                     _OrdersMapWithCard(orders: _visibleOrders),
                   ],
                 ),
@@ -260,6 +304,54 @@ class _OrderFeedScreenState extends State<OrderFeedScreen> {
   }
 }
 
+class _EmptyOrdersState extends StatelessWidget {
+  const _EmptyOrdersState();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(16, 0, 16, 12.h),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Center(
+            child: Image.asset(
+              'assets/icons/profile/no_orders.webp',
+              width: 80.r,
+              height: 80.r,
+            ),
+          ),
+          SizedBox(height: 12.h),
+          Text(
+            'Заказы не найдены',
+            style: TextStyle(
+              fontFamily: 'Roboto',
+              fontSize: 20.sp,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textPrimary,
+              height: 1.3,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          SizedBox(height: 6.h),
+          Text(
+            'Попробуйте изменить фильтры',
+            style: TextStyle(
+              fontFamily: 'Roboto',
+              fontSize: 16.sp,
+              fontWeight: FontWeight.w400,
+              height: 1.3,
+              color: AppColors.textTertiary,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _MockOrder {
   const _MockOrder({
     required this.id,
@@ -268,6 +360,7 @@ class _MockOrder {
     required this.rentDate,
     required this.publishedAgo,
     required this.equipment,
+    this.categories = const <String>[],
     this.price = '80 000 – 100 000 ₽',
   });
   final String id;
@@ -276,6 +369,7 @@ class _MockOrder {
   final String rentDate;
   final String publishedAgo;
   final List<String> equipment;
+  final List<String> categories;
   final String price;
 }
 
@@ -296,6 +390,26 @@ class _OrdersMapWithCardState extends State<_OrdersMapWithCard> {
   // -1 — вниз (предыдущий). Используется, чтобы задать направление
   // слайд-анимации в AnimatedSwitcher.
   int _direction = 1;
+
+  @override
+  void didUpdateWidget(covariant _OrdersMapWithCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Если набор заказов поменялся (например, применили/сняли фильтр),
+    // возвращаемся к первой карточке — иначе пользователь увидит
+    // произвольный заказ из середины отфильтрованного списка.
+    if (!_sameOrders(oldWidget.orders, widget.orders)) {
+      _current = 0;
+      _direction = 1;
+    }
+  }
+
+  bool _sameOrders(List<_MockOrder> a, List<_MockOrder> b) {
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i].id != b[i].id) return false;
+    }
+    return true;
+  }
 
   void _shift(int delta) {
     if (widget.orders.isEmpty) return;
@@ -413,7 +527,10 @@ class _OrdersMapWithCardState extends State<_OrdersMapWithCard> {
                           style: TextStyle(
                             fontFamily: 'Roboto',
                             fontSize: 12.sp,
-                            color: AppColors.textTertiary,
+                            color: AppliedFilter.equipment
+                                    .contains(o.equipment.first)
+                                ? AppColors.primary
+                                : AppColors.textTertiary,
                             height: 1.3,
                           ),
                         ),

@@ -23,9 +23,13 @@ class SubscriptionScreen extends StatefulWidget {
 }
 
 class _SubscriptionScreenState extends State<SubscriptionScreen> {
-  SubscriptionStatus get _status => VerificationStatus.hasSubscription
-      ? SubscriptionStatus.active
-      : SubscriptionStatus.inactive;
+  SubscriptionStatus get _status {
+    if (VerificationStatus.hasSubscription) return SubscriptionStatus.active;
+    if (VerificationStatus.subscriptionPaidUntilText != null) {
+      return SubscriptionStatus.paused;
+    }
+    return SubscriptionStatus.inactive;
+  }
 
   Future<void> _openPaywall() async {
     final bool? paid = await Navigator.of(context).push<bool>(
@@ -35,15 +39,26 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
       ),
     );
     if (paid == true && mounted) {
-      setState(() => VerificationStatus.hasSubscription = true);
+      setState(() {
+        VerificationStatus.hasSubscription = true;
+        // В моке фиксируем дату оплаченного периода. В проде это придёт
+        // с бэкенда вместе с ответом об успешной оплате.
+        VerificationStatus.subscriptionPaidUntilText ??= '15 июля';
+      });
     }
   }
 
   Future<void> _onToggle(bool value) async {
     if (!value && _status == SubscriptionStatus.active) {
+      // Выключение активной — переводит в «Приостановлена»: флаг
+      // подписки снимаем, но оплаченный период оставляем.
       final bool? ok = await _showDisableDialog();
       if (ok != true) return;
       setState(() => VerificationStatus.hasSubscription = false);
+    } else if (value && _status == SubscriptionStatus.paused) {
+      // Возврат из «Приостановлена» в «Активна» — без повторной оплаты,
+      // т. к. платёжный период ещё не закончился.
+      setState(() => VerificationStatus.hasSubscription = true);
     } else if (value && _status == SubscriptionStatus.inactive) {
       if (!mounted) return;
       await _openPaywall();
@@ -174,15 +189,18 @@ class _StatusCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final String? paidUntil = VerificationStatus.subscriptionPaidUntilText;
     String title;
     String subtitle;
     switch (status) {
       case SubscriptionStatus.active:
         title = 'Подписка активна';
-        subtitle = 'Бесплатный период до 15 июля';
+        subtitle = paidUntil != null
+            ? 'Оплачено до $paidUntil'
+            : 'Бесплатный период до 15 июля';
       case SubscriptionStatus.paused:
         title = 'Подписка приостановлена';
-        subtitle = 'Оплачено до 15 июля';
+        subtitle = 'Оплачено до ${paidUntil ?? '15 июля'}';
       case SubscriptionStatus.inactive:
         title = 'Подписка неактивна';
         subtitle =

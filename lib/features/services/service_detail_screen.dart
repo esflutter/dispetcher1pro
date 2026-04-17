@@ -9,6 +9,16 @@ import 'package:dispatcher_1/core/widgets/primary_button.dart';
 import 'package:dispatcher_1/features/catalog/widgets/catalog_search_bar.dart';
 import 'package:dispatcher_1/features/services/my_services_screen.dart';
 
+/// Склонение «час» после предлога «от» (род. падеж).
+String _hoursWord(String text) {
+  final int? n = int.tryParse(text);
+  if (n == null) return 'часов';
+  final int mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 14) return 'часов';
+  if (n % 10 == 1) return 'часа';
+  return 'часов';
+}
+
 /// Экран «Детали услуги».
 class ServiceDetailScreen extends StatefulWidget {
   const ServiceDetailScreen({super.key, required this.serviceId});
@@ -52,7 +62,7 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
         children: [
           Expanded(
             child: SingleChildScrollView(
-              padding: EdgeInsets.fromLTRB(16.w, 16.h, 16.w, 24.h),
+              padding: EdgeInsets.fromLTRB(16.w, 16.h, 16.w, 0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -63,12 +73,14 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
                       height: 1.2,
                     ),
                   ),
-                  SizedBox(height: 12.h),
+                  SizedBox(height: 16.h),
                   Row(
                     children: [
                       Text('₽ / час',
-                          style: AppTextStyles.body
-                              .copyWith(color: AppColors.primary)),
+                          style: AppTextStyles.body.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textPrimary,
+                          )),
                       SizedBox(width: 6.w),
                       Text('${s.pricePerHour} ₽',
                           style: AppTextStyles.bodyMedium.copyWith(
@@ -76,8 +88,10 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
                               color: AppColors.primary)),
                       SizedBox(width: 24.w),
                       Text('₽ / день',
-                          style: AppTextStyles.body
-                              .copyWith(color: AppColors.primary)),
+                          style: AppTextStyles.body.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textPrimary,
+                          )),
                       SizedBox(width: 6.w),
                       Text('${s.pricePerDay} ₽',
                           style: AppTextStyles.bodyMedium.copyWith(
@@ -85,21 +99,26 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
                               color: AppColors.primary)),
                     ],
                   ),
-                  SizedBox(height: 8.h),
+                  SizedBox(height: 16.h),
                   Row(
                     children: [
                       Text('Минимальный заказ:',
-                          style: AppTextStyles.body
-                              .copyWith(color: AppColors.textSecondary)),
+                          style: AppTextStyles.body.copyWith(
+                            fontSize: 14.sp,
+                            color: AppColors.textSecondary,
+                          )),
                       SizedBox(width: 6.w),
-                      Text('от ${s.minOrder} часов',
-                          style: AppTextStyles.bodyMedium
-                              .copyWith(fontWeight: FontWeight.w600)),
+                      Text('от ${s.minOrder} ${_hoursWord(s.minOrder)}',
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            fontSize: 14.sp,
+                            fontWeight: FontWeight.w600,
+                          )),
                     ],
                   ),
-                  SizedBox(height: 12.h),
+                  SizedBox(height: 16.h),
                   Text(s.description,
-                      style: AppTextStyles.body.copyWith(height: 1.4)),
+                      style: AppTextStyles.body
+                          .copyWith(fontSize: 14.sp, height: 1.4)),
                   SizedBox(height: 16.h),
                   _SectionTitle('Спецтехника'),
                   SizedBox(height: 8.h),

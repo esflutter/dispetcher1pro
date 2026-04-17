@@ -223,10 +223,35 @@ class _FilledCard extends StatelessWidget {
 
   String _val(String? v) => (v != null && v.isNotEmpty) ? v : '—';
 
+  /// Форматирует опыт работы: «5 лет», «1 год», «2 года» или «Не указано».
+  String _experienceText(String? v) {
+    final int? n = v != null ? int.tryParse(v) : null;
+    if (n == null) return 'Не указано';
+    final int mod100 = n % 100;
+    final String word;
+    if (mod100 >= 11 && mod100 <= 14) {
+      word = 'лет';
+    } else {
+      switch (n % 10) {
+        case 1:
+          word = 'год';
+          break;
+        case 2:
+        case 3:
+        case 4:
+          word = 'года';
+          break;
+        default:
+          word = 'лет';
+      }
+    }
+    return '$n $word';
+  }
+
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
-      padding: EdgeInsets.fromLTRB(16.w, 16.h, 16.w, 24.h),
+      padding: EdgeInsets.fromLTRB(16.w, 16.h, 16.w, 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -260,7 +285,8 @@ class _FilledCard extends StatelessWidget {
           SizedBox(height: 16.h),
           _SectionTitle('Опыт работы'),
           SizedBox(height: 4.h),
-          Text(_val(ExecutorCardData.experience), style: AppTextStyles.body),
+          Text(_experienceText(ExecutorCardData.experience),
+              style: AppTextStyles.body),
           SizedBox(height: 16.h),
           _SectionTitle('Статус'),
           SizedBox(height: 4.h),
@@ -344,7 +370,8 @@ class _ChipWrap extends StatelessWidget {
                 padding:
                     EdgeInsets.symmetric(horizontal: 12.w, vertical: 6.h),
                 decoration: BoxDecoration(
-                  color: AppColors.fieldFill,
+                  color: AppColors.surface,
+                  border: Border.all(color: AppColors.primary, width: 1),
                   borderRadius:
                       BorderRadius.circular(AppSpacing.radiusPill),
                 ),
@@ -352,6 +379,7 @@ class _ChipWrap extends StatelessWidget {
                   label,
                   style: AppTextStyles.chip.copyWith(
                     fontSize: 13.sp,
+                    fontWeight: FontWeight.w400,
                     color: AppColors.textPrimary,
                   ),
                 ),

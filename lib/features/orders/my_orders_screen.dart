@@ -236,10 +236,11 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
       context: context,
       removeTop: true,
       child: ListView.builder(
-        padding: EdgeInsets.only(bottom: 24.h),
+        padding: EdgeInsets.zero,
         itemCount: items.length,
         itemBuilder: (BuildContext context, int i) {
           final _OrderMock o = items[i];
+          final bool isLast = i == items.length - 1;
           return Column(
             children: <Widget>[
               MyOrderCard(
@@ -281,10 +282,11 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
                   ),
                 ),
               ),
-              Container(
-                height: 1 / MediaQuery.of(context).devicePixelRatio,
-                color: AppColors.primary,
-              ),
+              if (!isLast)
+                Container(
+                  height: 1 / MediaQuery.of(context).devicePixelRatio,
+                  color: AppColors.primary,
+                ),
             ],
           );
         },

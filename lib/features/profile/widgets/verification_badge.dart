@@ -24,7 +24,14 @@ enum VerificationStatus {
   static ValueNotifier<VerificationStatus> get notifier => _notifier;
 
   /// Глобальный флаг активной подписки (до появления бэкенда).
+  /// `true` — подписка включена; `false` — приостановлена или неактивна,
+  /// различаются по наличию [subscriptionPaidUntilText].
   static bool hasSubscription = false;
+
+  /// Дата, до которой оплачен текущий платёжный период подписки
+  /// (текстом, как его выдаст бэкенд, например «15 июля»).
+  /// `null` — не оплачено, платёжного «хвоста» нет.
+  static String? subscriptionPaidUntilText;
 
   bool get isVerified => this == VerificationStatus.verified;
 }

@@ -209,8 +209,6 @@ class _DaySettingsScreenState extends State<DaySettingsScreen> {
   String _fmtTime(TimeOfDay t) =>
       '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
 
-  int _toMinutes(TimeOfDay t) => t.hour * 60 + t.minute;
-
   void _togglePicker(String key) {
     setState(() => _openPicker = _openPicker == key ? null : key);
   }
@@ -255,15 +253,8 @@ class _DaySettingsScreenState extends State<DaySettingsScreen> {
             setState(() {
               if (_openPicker == 'timeFrom') {
                 _timeFrom = t;
-                if (_timeTo != null && _toMinutes(_timeTo!) <= _toMinutes(t)) {
-                  _timeTo = t.replacing(hour: (t.hour + 1) % 24);
-                }
               } else {
-                if (_timeFrom != null && _toMinutes(t) <= _toMinutes(_timeFrom!)) {
-                  _timeTo = _timeFrom!.replacing(hour: (_timeFrom!.hour + 1) % 24);
-                } else {
-                  _timeTo = t;
-                }
+                _timeTo = t;
               }
               _openPicker = null;
             });

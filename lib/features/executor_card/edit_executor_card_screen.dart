@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 
@@ -215,11 +216,7 @@ class _EditExecutorCardScreenState extends State<EditExecutorCardScreen> {
               SizedBox(height: AppSpacing.lg),
               _SectionTitle('Опыт работы'),
               SizedBox(height: AppSpacing.xs),
-              _TintField(
-                controller: _experience,
-                hint: 'Например: 5 лет',
-                maxLength: 25,
-              ),
+              _ExperienceField(controller: _experience),
               SizedBox(height: AppSpacing.lg),
               _SectionTitle('Статус'),
               SizedBox(height: AppSpacing.xs),
@@ -578,6 +575,106 @@ class _ChipGrid extends StatelessWidget {
           ),
         );
       }).toList(),
+    );
+  }
+}
+
+/// Склонение слова «год» для числа лет опыта.
+String experienceYearsWord(int n) {
+  final int mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 14) return 'лет';
+  switch (n % 10) {
+    case 1:
+      return 'год';
+    case 2:
+    case 3:
+    case 4:
+      return 'года';
+    default:
+      return 'лет';
+  }
+}
+
+/// Поле «Опыт работы» — только цифры 0–99, справа автоматически
+/// дорисовывается «год / года / лет» в зависимости от значения.
+class _ExperienceField extends StatefulWidget {
+  const _ExperienceField({required this.controller});
+  final TextEditingController controller;
+
+  @override
+  State<_ExperienceField> createState() => _ExperienceFieldState();
+}
+
+class _ExperienceFieldState extends State<_ExperienceField> {
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_onChange);
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_onChange);
+    super.dispose();
+  }
+
+  void _onChange() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final String text = widget.controller.text;
+    final int? value = int.tryParse(text);
+    final bool hasText = value != null;
+    final String suffix = hasText ? '$text ${experienceYearsWord(value)}' : '';
+
+    return Stack(
+      children: <Widget>[
+        TextField(
+          controller: widget.controller,
+          keyboardType: TextInputType.number,
+          inputFormatters: <TextInputFormatter>[
+            FilteringTextInputFormatter.digitsOnly,
+            LengthLimitingTextInputFormatter(2),
+          ],
+          style: hasText
+              ? AppTextStyles.body.copyWith(color: Colors.transparent)
+              : AppTextStyles.body,
+          decoration: InputDecoration(
+            hintText: hasText ? null : 'Например, 5 лет',
+            hintStyle:
+                AppTextStyles.body.copyWith(color: AppColors.textTertiary),
+            filled: true,
+            fillColor: AppColors.fieldFill,
+            contentPadding: EdgeInsets.symmetric(
+                horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(AppSpacing.radiusM),
+              borderSide: BorderSide.none,
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(AppSpacing.radiusM),
+              borderSide: BorderSide.none,
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(AppSpacing.radiusM),
+              borderSide: const BorderSide(color: AppColors.primary),
+            ),
+          ),
+        ),
+        if (hasText)
+          Positioned.fill(
+            child: IgnorePointer(
+              child: Container(
+                padding: EdgeInsets.symmetric(
+                    horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+                alignment: Alignment.centerLeft,
+                child: Text(suffix, style: AppTextStyles.body),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

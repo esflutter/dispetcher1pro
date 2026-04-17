@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_spacing.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
+import 'package:dispatcher_1/features/catalog/catalog_filter_screen.dart';
 import 'package:dispatcher_1/features/catalog/order_detail_screen.dart';
 import 'package:dispatcher_1/features/catalog/order_feed_screen.dart';
 import 'package:dispatcher_1/features/catalog/widgets/category_card.dart';
@@ -159,6 +160,14 @@ class _CatalogCategoriesScreenState extends State<CatalogCategoriesScreen> {
             imageAsset: c.asset,
             imageTight: c.tight,
             onTap: () {
+              // Выбор категории = быстрый фильтр: заменяем список техники
+              // на одну выбранную и инкрементим ревизию, чтобы лента
+              // перерисовалась с учётом фильтра.
+              AppliedFilter.equipment
+                ..clear()
+                ..add(c.title);
+              AppliedFilter.revision.value =
+                  AppliedFilter.revision.value + 1;
               Navigator.of(context).push(
                 MaterialPageRoute<void>(
                   builder: (_) => OrderFeedScreen(
@@ -187,7 +196,7 @@ class _CatalogCategoriesScreenState extends State<CatalogCategoriesScreen> {
       );
     }
     return ListView.separated(
-      padding: EdgeInsets.only(bottom: 24.h),
+      padding: EdgeInsets.zero,
       itemCount: results.length,
       separatorBuilder: (_, _) => Divider(
         height: 1,
@@ -306,16 +315,25 @@ class _CatalogHeader extends StatelessWidget {
               ),
               SizedBox(width: 8.w),
               GestureDetector(
-                onTap: () => context.push('/catalog/filter'),
-                child: Container(
-                  width: 44.r,
-                  height: 44.r,
-                  decoration: BoxDecoration(
-                    color: AppColors.primary,
-                    borderRadius: BorderRadius.circular(AppSpacing.radiusM),
-                  ),
-                  child: Icon(Icons.tune,
-                      color: AppColors.surface, size: 20.r),
+                onTap: () async {
+                  final bool? applied =
+                      await context.push<bool>('/catalog/filter');
+                  if (applied == true && context.mounted) {
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const OrderFeedScreen(
+                          categoryId: 'all',
+                          categoryTitle: 'Лента заказов',
+                        ),
+                      ),
+                    );
+                  }
+                },
+                child: Image.asset(
+                  'assets/icons/ui/filter.webp',
+                  width: 44.h,
+                  height: 44.h,
+                  fit: BoxFit.contain,
                 ),
               ),
             ],

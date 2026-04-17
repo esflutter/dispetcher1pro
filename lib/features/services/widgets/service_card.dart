@@ -28,7 +28,10 @@ class ServiceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final labelStyle = AppTextStyles.body.copyWith(color: AppColors.primary);
+    final labelStyle = AppTextStyles.body.copyWith(
+      fontWeight: FontWeight.w600,
+      color: AppColors.textPrimary,
+    );
     final valueStyle = AppTextStyles.bodyMedium.copyWith(
       fontWeight: FontWeight.w700,
       color: AppColors.primary,

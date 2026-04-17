@@ -15,6 +15,7 @@ class OrderCard extends StatelessWidget {
     required this.rentDate,
     required this.publishedAgo,
     required this.equipment,
+    this.highlightEquipment = const <String>{},
     this.price,
     this.onTap,
   });
@@ -24,6 +25,7 @@ class OrderCard extends StatelessWidget {
   final String rentDate;
   final String publishedAgo;
   final List<String> equipment;
+  final Set<String> highlightEquipment;
   final String? price;
   final VoidCallback? onTap;
 
@@ -47,8 +49,20 @@ class OrderCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 Expanded(
-                  child: Text(
-                    equipment.join('   '),
+                  child: Text.rich(
+                    TextSpan(
+                      children: <TextSpan>[
+                        for (int i = 0; i < equipment.length; i++) ...<TextSpan>[
+                          if (i > 0) const TextSpan(text: '   '),
+                          TextSpan(
+                            text: equipment[i],
+                            style: highlightEquipment.contains(equipment[i])
+                                ? const TextStyle(color: AppColors.primary)
+                                : null,
+                          ),
+                        ],
+                      ],
+                    ),
                     style: tagStyle,
                   ),
                 ),

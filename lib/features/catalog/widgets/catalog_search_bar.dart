@@ -15,17 +15,22 @@ class CatalogSearchBar extends StatelessWidget {
     this.controller,
     this.onChanged,
     this.hintText = 'Поиск',
+    this.showFilterBadge = false,
   });
 
   final VoidCallback onFilterTap;
   final TextEditingController? controller;
   final ValueChanged<String>? onChanged;
   final String hintText;
+  final bool showFilterBadge;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.fromLTRB(16.w, 0, 16.w, 12.h),
+      // Небольшой top: оставляем место, чтобы красная точка-бейдж
+      // могла выступать за правый верхний угол кнопки фильтра
+      // и не обрезалась по краю тёмной шапки.
+      padding: EdgeInsets.fromLTRB(16.w, 8.h, 16.w, 12.h),
       child: Row(
         children: <Widget>[
           Expanded(
@@ -69,14 +74,29 @@ class CatalogSearchBar extends StatelessWidget {
           SizedBox(width: 8.w),
           GestureDetector(
             onTap: onFilterTap,
-            child: Container(
-              width: 44.r,
-              height: 44.r,
-              decoration: BoxDecoration(
-                color: AppColors.primary,
-                borderRadius: BorderRadius.circular(10.r),
-              ),
-              child: Icon(Icons.tune, color: Colors.white, size: 20.r),
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: <Widget>[
+                Image.asset(
+                  'assets/icons/ui/filter.webp',
+                  width: 44.h,
+                  height: 44.h,
+                  fit: BoxFit.contain,
+                ),
+                if (showFilterBadge)
+                  Positioned(
+                    top: -5.r,
+                    right: -5.r,
+                    child: Container(
+                      width: 16.r,
+                      height: 16.r,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFDE271D),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ),
         ],
