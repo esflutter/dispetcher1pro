@@ -25,12 +25,15 @@ class CatalogCategoriesScreen extends StatefulWidget {
 class _CatalogCategoriesScreenState extends State<CatalogCategoriesScreen> {
   static const List<_Category> _categories = <_Category>[
     _Category('excavator_loader', 'Экскаватор-погрузчик',
-        'assets/images/catalog/excavator_loader.webp'),
-    _Category('excavator', 'Экскаватор',
-        'assets/images/catalog/excavator.webp', tight: true),
-    _Category('loader', 'Погрузчик', 'assets/images/catalog/loader.webp'),
+        'assets/images/catalog/excavator_loader.webp',
+        scale: 0.90),
+    _Category('excavator', 'Экскаватор', 'assets/images/catalog/excavator.webp',
+        offset: Offset(-2, 0)),
+    _Category('loader', 'Погрузчик', 'assets/images/catalog/loader.webp',
+        scale: 1.15),
     _Category('mini_excavator', 'Миниэкскаватор',
-        'assets/images/catalog/mini_excavator.webp'),
+        'assets/images/catalog/mini_excavator.webp',
+        scale: 0.95, offset: Offset(-2, 0)),
     _Category('auger', 'Буроям', 'assets/images/catalog/auger.webp'),
     _Category('samogruz', 'Самогруз', 'assets/images/catalog/samogruz.webp'),
     _Category('autocrane', 'Автокран', 'assets/images/catalog/autocrane.webp'),
@@ -38,15 +41,20 @@ class _CatalogCategoriesScreenState extends State<CatalogCategoriesScreen> {
         'assets/images/catalog/concrete_pump.webp'),
     _Category('tow_truck', 'Эвакуатор', 'assets/images/catalog/tow_truck.webp'),
     _Category('aerial_platform', 'Автовышка',
-        'assets/images/catalog/aerial_platform.webp'),
+        'assets/images/catalog/aerial_platform.webp',
+        offset: Offset(-2, 0)),
     _Category('manipulator', 'Манипулятор',
-        'assets/images/catalog/manipulator.webp'),
+        'assets/images/catalog/manipulator.webp',
+        scale: 1.03),
     _Category('mini_loader', 'Минипогрузчик',
-        'assets/images/catalog/mini_loader.webp', tight: true),
+        'assets/images/catalog/mini_loader.webp',
+        scale: 0.95),
     _Category('dump_truck', 'Самосвал',
-        'assets/images/catalog/dump_truck.webp', tight: true),
+        'assets/images/catalog/dump_truck.webp',
+        scale: 1.03),
     _Category('mini_tractor', 'Минитрактор',
-        'assets/images/catalog/mini_tractor.webp', tight: true),
+        'assets/images/catalog/mini_tractor.webp',
+        scale: 0.9025),
   ];
 
   static const List<_SearchableOrder> _allOrders = <_SearchableOrder>[
@@ -158,7 +166,8 @@ class _CatalogCategoriesScreenState extends State<CatalogCategoriesScreen> {
           return CategoryCard(
             title: c.title,
             imageAsset: c.asset,
-            imageTight: c.tight,
+            imageScale: c.scale,
+            imageOffset: c.offset,
             onTap: () {
               // Выбор категории = быстрый фильтр: заменяем список техники
               // на одну выбранную и инкрементим ревизию, чтобы лента
@@ -345,11 +354,20 @@ class _CatalogHeader extends StatelessWidget {
 }
 
 class _Category {
-  const _Category(this.id, this.title, this.asset, {this.tight = false});
+  const _Category(
+    this.id,
+    this.title,
+    this.asset, {
+    this.scale = 1.0,
+    this.offset = Offset.zero,
+  });
   final String id;
   final String title;
   final String asset;
-  final bool tight;
+  /// Множитель визуального размера иллюстрации (см. CategoryCard.imageScale).
+  final double scale;
+  /// Пиксельный сдвиг иллюстрации (см. CategoryCard.imageOffset).
+  final Offset offset;
 }
 
 class _SearchableOrder {

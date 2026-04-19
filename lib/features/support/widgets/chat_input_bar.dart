@@ -140,47 +140,60 @@ class _TextInputBar extends StatelessWidget {
           SizedBox(width: 16.w),
         ],
         Expanded(
-          child: Container(
-            height: 40.h,
-            padding: EdgeInsets.symmetric(horizontal: 16.w),
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(8.r),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: controller,
-                    minLines: 1,
-                    maxLines: 1,
-                    inputFormatters: [LengthLimitingTextInputFormatter(1000)],
-                    textInputAction: TextInputAction.send,
-                    onSubmitted: (_) => onSubmit(),
-                    textAlignVertical: TextAlignVertical.center,
-                    style: AppTextStyles.body.copyWith(
-                      color: AppColors.textBlack,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
+                height: 40.h,
+                padding: EdgeInsets.only(
+                  left: 16.w,
+                  // Резервируем справа место под иконку микрофона, чтобы
+                  // текст в поле не заезжал под неё.
+                  right: hasText ? 16.w : 36.w,
+                ),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(8.r),
+                ),
+                alignment: Alignment.centerLeft,
+                child: TextField(
+                  controller: controller,
+                  minLines: 1,
+                  maxLines: 1,
+                  inputFormatters: [LengthLimitingTextInputFormatter(1000)],
+                  textInputAction: TextInputAction.send,
+                  onSubmitted: (_) => onSubmit(),
+                  textAlignVertical: TextAlignVertical.center,
+                  style: AppTextStyles.body.copyWith(
+                    color: AppColors.textBlack,
+                    fontSize: 16.sp,
+                  ),
+                  decoration: InputDecoration(
+                    isCollapsed: true,
+                    contentPadding: EdgeInsets.zero,
+                    border: InputBorder.none,
+                    hintText: hint,
+                    hintStyle: AppTextStyles.body.copyWith(
+                      color: AppColors.textTertiary,
                       fontSize: 16.sp,
-                    ),
-                    decoration: InputDecoration(
-                      isCollapsed: true,
-                      contentPadding: EdgeInsets.zero,
-                      border: InputBorder.none,
-                      hintText: hint,
-                      hintStyle: AppTextStyles.body.copyWith(
-                        color: AppColors.textTertiary,
-                        fontSize: 16.sp,
-                      ),
                     ),
                   ),
                 ),
-                if (!hasText)
-                  Transform.translate(
-                    offset: Offset(8.w, 0),
-                    child: GestureDetector(
-                      onTap: onMicTap,
-                      child: Padding(
-                        padding: EdgeInsets.only(left: 8.w),
+              ),
+              // Иконка + хит-зона в верхнем слое — ничто не перехватывает
+              // тап, а сама зона 40×40 симметрична относительно иконки.
+              if (!hasText)
+                Positioned(
+                  right: -2.w,
+                  top: 0,
+                  bottom: 0,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: onMicTap,
+                    child: SizedBox(
+                      width: 40.r,
+                      height: 40.r,
+                      child: Center(
                         child: Image.asset(
                           'assets/icons/support/mic.webp',
                           width: 20.r,
@@ -189,8 +202,8 @@ class _TextInputBar extends StatelessWidget {
                       ),
                     ),
                   ),
-              ],
-            ),
+                ),
+            ],
           ),
         ),
         SizedBox(width: 16.w),

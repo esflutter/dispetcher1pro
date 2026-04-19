@@ -37,6 +37,10 @@ class _DaySettingsScreenState extends State<DaySettingsScreen> {
   int _radiusIndex = -1;
   String? _location;
 
+  /// Якорь на раскрываемый пикер времени — чтобы после открытия
+  /// скроллить форму до центра вьюпорта и пикер не выпадал ниже.
+  final GlobalKey _pickerAnchorKey = GlobalKey();
+
   final Set<String> _selMach = {};
   final Set<String> _selCat = {};
 
@@ -210,7 +214,19 @@ class _DaySettingsScreenState extends State<DaySettingsScreen> {
       '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
 
   void _togglePicker(String key) {
-    setState(() => _openPicker = _openPicker == key ? null : key);
+    final bool willOpen = _openPicker != key;
+    setState(() => _openPicker = willOpen ? key : null);
+    if (!willOpen) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final BuildContext? ctx = _pickerAnchorKey.currentContext;
+      if (ctx == null) return;
+      Scrollable.ensureVisible(
+        ctx,
+        alignment: 0.5,
+        duration: const Duration(milliseconds: 280),
+        curve: Curves.easeOut,
+      );
+    });
   }
 
   List<Widget> _acceptingBody() {
@@ -248,6 +264,7 @@ class _DaySettingsScreenState extends State<DaySettingsScreen> {
       if (_openPicker == 'timeFrom' || _openPicker == 'timeTo') ...[
         SizedBox(height: 8.h),
         InlineTimePicker(
+          key: _pickerAnchorKey,
           selected: _openPicker == 'timeFrom' ? _timeFrom : _timeTo,
           onDone: (TimeOfDay t) {
             setState(() {

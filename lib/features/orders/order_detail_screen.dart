@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
+import 'package:dispatcher_1/features/auth/photo_crop_screen.dart';
 import 'package:dispatcher_1/features/catalog/widgets/catalog_search_bar.dart';
 import 'package:dispatcher_1/features/orders/review_screen.dart';
 import 'package:dispatcher_1/features/orders/widgets/order_alerts.dart';
@@ -48,6 +49,7 @@ class MyOrderDetailScreen extends StatefulWidget {
     this.address = 'Московская область, Москва, Улица1, д 144',
     this.customerName = 'Александр Иванов',
     this.customerPhone = '+7 999 123-45-67',
+    this.customerEmail,
     this.publishedAgo = 'Вчера в 14:30',
     this.orderNumber = '№123456',
     this.workDescription = const <String>[
@@ -70,6 +72,7 @@ class MyOrderDetailScreen extends StatefulWidget {
   final String address;
   final String customerName;
   final String customerPhone;
+  final String? customerEmail;
   final String publishedAgo;
   final String orderNumber;
   final List<String> workDescription;
@@ -206,6 +209,26 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
                       style: AppTextStyles.subBody
                           .copyWith(fontWeight: FontWeight.w400),
                     ),
+                    if (widget.customerEmail != null &&
+                        widget.customerEmail!.trim().isNotEmpty) ...<Widget>[
+                      SizedBox(height: 12.h),
+                      Text(
+                        'Электронная почта',
+                        style: TextStyle(
+                          fontFamily: 'Roboto',
+                          fontSize: 16.sp,
+                          fontWeight: FontWeight.w600,
+                          height: 1.3,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                      SizedBox(height: 4.h),
+                      Text(
+                        widget.customerEmail!,
+                        style: AppTextStyles.subBody
+                            .copyWith(fontWeight: FontWeight.w400),
+                      ),
+                    ],
                   ],
                   SizedBox(height: 11.h),
                   Text(
@@ -347,10 +370,7 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
                 context,
                 onDecline: () {
                   widget.onDecline?.call();
-                  setState(() {
-                    _state = MyOrderDetailState.rejected;
-                    _rejectedStatus = MyOrderStatus.rejectedDeclined;
-                  });
+                  if (mounted) Navigator.of(context).maybePop();
                 },
               ),
             ),
@@ -363,10 +383,7 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
             context,
             onRefuse: () {
               widget.onRefuse?.call();
-              setState(() {
-                _state = MyOrderDetailState.rejected;
-                _rejectedStatus = MyOrderStatus.rejectedDeclined;
-              });
+              if (mounted) Navigator.of(context).maybePop();
             },
           ),
         );
@@ -417,7 +434,7 @@ class _CustomerHeader extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 Text(
-                  name,
+                  name.trim().isEmpty ? CropResult.namePlaceholder : name,
                   style: TextStyle(
                     fontFamily: 'Roboto',
                     fontSize: 16.sp,

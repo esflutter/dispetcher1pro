@@ -87,11 +87,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               itemBuilder: (_, i) => Image.asset(
                 _steps[i].image,
                 fit: BoxFit.cover,
-                // Верх картинки прижат к верху контейнера.
-                // Если картинка выше контейнера — низ уйдёт под шторку,
-                // если ниже — cover увеличит и обрежет по бокам
-                // (чтобы низ дошёл хотя бы до линии скругления шторки).
-                alignment: Alignment.topCenter,
+                // Центрируем по вертикали: сверху обрезается столько же,
+                // сколько снизу (по линии, где заканчивается скругление
+                // шторки). Даёт визуальный баланс вместо прижатия к верху.
+                alignment: Alignment.center,
                 errorBuilder: (BuildContext _, Object _, StackTrace? _) =>
                     Container(
                   color: AppColors.surfaceVariant,

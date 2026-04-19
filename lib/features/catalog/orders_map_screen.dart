@@ -5,6 +5,7 @@ import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
 import 'package:dispatcher_1/features/catalog/catalog_filter_screen.dart';
 import 'package:dispatcher_1/features/catalog/order_detail_screen.dart';
+import 'package:dispatcher_1/features/catalog/order_feed_screen.dart';
 import 'package:dispatcher_1/features/catalog/widgets/applied_filter_chips.dart';
 import 'package:dispatcher_1/features/catalog/widgets/catalog_search_bar.dart';
 
@@ -72,35 +73,21 @@ class _OrdersMapFullScreenState extends State<OrdersMapFullScreen> {
         .toList();
   }
 
-  static const List<_MapOrder> _orders = [
-    _MapOrder(
-      id: '1',
-      equipment: 'Экскаватор',
-      title: 'Нужен экскаватор для копки траншеи',
-      rentDate: '15 июня · 09:00–18:00',
-      address: 'Московская область, Москва, Улица1, д 144',
-      price: '80 000 – 100 000 ₽',
-      publishedAgo: '2 часа назад',
-    ),
-    _MapOrder(
-      id: '2',
-      equipment: 'Автокран',
-      title: 'Монтаж металлоконструкций',
-      rentDate: '17 июня · 08:00–17:00',
-      address: 'Московская область, Москва, ул. Пушкина, д 25',
-      price: '45 000 ₽',
-      publishedAgo: 'Вчера',
-    ),
-    _MapOrder(
-      id: '3',
-      equipment: 'Погрузчик',
-      title: 'Разгрузка стройматериалов',
-      rentDate: '16 июня · 10:00–14:00',
-      address: 'Московская область, Москва, пр. Мира, д 3',
-      price: '25 000 ₽',
-      publishedAgo: '5 часов назад',
-    ),
-  ];
+  /// Источник данных — общий [CatalogOrderMock.all]. Карта показывает тот же
+  /// набор заказов, что и лента; при открытии деталей данные совпадают.
+  /// Модель [_MapOrder] хранит одно значение техники, поэтому берём первое
+  /// из списка `equipment`.
+  static List<_MapOrder> get _orders => CatalogOrderMock.all
+      .map((CatalogOrderMock o) => _MapOrder(
+            id: o.id,
+            equipment: o.equipment.isNotEmpty ? o.equipment.first : '',
+            title: o.title,
+            rentDate: o.rentDate,
+            address: o.address,
+            price: o.price,
+            publishedAgo: o.publishedAgo,
+          ))
+      .toList();
 
   void _shift(int delta) {
     final int count = _visibleOrders.length;

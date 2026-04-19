@@ -74,14 +74,11 @@ class AppliedFilterChips extends StatelessWidget {
       }));
     }
 
+    // Один чип на «адрес + радиус» — это одна логическая настройка.
+    // Показываем радиус, по крестику снимаем оба поля.
     if (AppliedFilter.radiusKm != null) {
       chips.add(_ChipSpec('В радиусе ${AppliedFilter.radiusKm} км', () {
         AppliedFilter.radiusKm = null;
-        _bump();
-      }));
-    }
-    if (AppliedFilter.address != null && AppliedFilter.address!.isNotEmpty) {
-      chips.add(_ChipSpec(AppliedFilter.address!, () {
         AppliedFilter.address = null;
         _bump();
       }));
@@ -108,18 +105,22 @@ class AppliedFilterChips extends StatelessWidget {
   }
 }
 
-/// Есть ли хотя бы один активный фильтр — удобный геттер для красной
-/// точки-бейджа над иконкой фильтров.
+/// True только если реально отрисуется хотя бы один chip. Значения,
+/// которые не попадают ни в один chip (например, одиночный `timeFrom`
+/// без `timeTo`, `address` без `radiusKm`), не делают фильтр
+/// «активным» — иначе зажигалась бы красная точка над иконкой без
+/// видимой причины, и чип-ряд прибавлял бы ноль-высотный паддинг,
+/// прижимая верхнюю карточку к AppBar.
 bool hasActiveFilter() {
-  return AppliedFilter.categories.isNotEmpty ||
-      AppliedFilter.equipment.isNotEmpty ||
-      AppliedFilter.dateFrom != null ||
-      AppliedFilter.dateTo != null ||
-      AppliedFilter.timeFrom != null ||
-      AppliedFilter.timeTo != null ||
-      AppliedFilter.wholeDay ||
-      AppliedFilter.radiusKm != null ||
-      (AppliedFilter.address != null && AppliedFilter.address!.isNotEmpty);
+  if (AppliedFilter.categories.isNotEmpty) return true;
+  if (AppliedFilter.equipment.isNotEmpty) return true;
+  if (AppliedFilter.dateFrom != null) return true;
+  if (AppliedFilter.wholeDay) return true;
+  if (AppliedFilter.timeFrom != null && AppliedFilter.timeTo != null) {
+    return true;
+  }
+  if (AppliedFilter.radiusKm != null) return true;
+  return false;
 }
 
 class _ChipSpec {

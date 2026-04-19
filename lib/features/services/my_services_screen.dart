@@ -13,6 +13,8 @@ import 'widgets/service_card.dart';
 class ServiceData {
   ServiceData._();
 
+  static const int maxServices = 30;
+
   static final List<ServiceMock> services = [];
 
   static const List<ServiceMock> presets = [
@@ -129,6 +131,17 @@ class _MyServicesScreenState extends State<MyServicesScreen> {
               child: PrimaryButton(
                 label: 'Создать услугу',
                 onPressed: () async {
+                  if (ServiceData.services.length >= ServiceData.maxServices) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          'Достигнут лимит ${ServiceData.maxServices} услуг. '
+                          'Удалите ненужные, чтобы добавить новые.',
+                        ),
+                      ),
+                    );
+                    return;
+                  }
                   await context.push('/services/create');
                   if (mounted) setState(() {});
                 },

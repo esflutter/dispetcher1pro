@@ -178,6 +178,17 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
   }
 
   Future<void> _onCreateTap() async {
+    if (ServiceData.services.length >= ServiceData.maxServices) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Достигнут лимит ${ServiceData.maxServices} услуг. '
+            'Удалите ненужные, чтобы добавить новые.',
+          ),
+        ),
+      );
+      return;
+    }
     // Открываем paywall оплаты размещения
     final bool? paid = await Navigator.of(context).push<bool>(
       MaterialPageRoute<bool>(

@@ -3,6 +3,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
+import 'package:dispatcher_1/features/auth/photo_crop_screen.dart';
 import 'package:dispatcher_1/features/orders/order_detail_screen.dart';
 import 'package:dispatcher_1/features/orders/widgets/my_order_card.dart';
 import 'package:dispatcher_1/features/orders/widgets/order_status_pill.dart';
@@ -76,6 +77,7 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
       publishedAgo: '2 часа назад',
       customerName: 'Александр Иванов',
       customerPhone: '+7 999 123-45-67',
+      customerEmail: 'alex.ivanov@example.ru',
     ),
     _OrderMock(
       id: 'a2',
@@ -93,6 +95,7 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
       publishedAgo: 'Сегодня в 11:30',
       customerName: 'Пётр Иванов',
       customerPhone: '+7 999 123-45-67',
+      customerEmail: 'petrov.ivanov@example.ru',
     ),
     _OrderMock(
       id: 'a3',
@@ -260,8 +263,9 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
                       rentDate: o.rentDate,
                       address: o.address,
                       publishedAgo: o.publishedAgo,
-                      customerName: o.customerName ?? 'Александр Иванов',
+                      customerName: o.customerName ?? CropResult.namePlaceholder,
                       customerPhone: o.customerPhone ?? '+7 999 123-45-67',
+                      customerEmail: o.customerEmail,
                       state: _detailStateForCard(o.status),
                       rejectedStatus: o.status,
                       onDecline: () =>
@@ -341,6 +345,7 @@ class _OrderMock {
     required this.publishedAgo,
     this.customerName,
     this.customerPhone,
+    this.customerEmail,
   });
 
   final String id;
@@ -352,6 +357,7 @@ class _OrderMock {
   final String publishedAgo;
   final String? customerName;
   final String? customerPhone;
+  final String? customerEmail;
 
   _OrderMock copyWith({MyOrderStatus? status}) {
     return _OrderMock(
@@ -364,6 +370,7 @@ class _OrderMock {
       publishedAgo: publishedAgo,
       customerName: customerName,
       customerPhone: customerPhone,
+      customerEmail: customerEmail,
     );
   }
 

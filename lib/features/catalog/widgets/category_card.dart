@@ -12,17 +12,23 @@ class CategoryCard extends StatelessWidget {
     required this.title,
     this.background = AppColors.categoryCard,
     this.imageAsset,
-    this.imageTight = false,
+    this.imageScale = 1.0,
+    this.imageOffset = Offset.zero,
     this.icon,
     this.onTap,
   });
 
+  static const double _baseWidthFactor = 0.62;
+  static const double _baseHeightFactor = 0.78;
+
   final String title;
   final Color background;
   final String? imageAsset;
-  /// Если true — картинка без встроенных полей, показываем её
-  /// уменьшенной в правом нижнем углу (как старые webp-иллюстрации).
-  final bool imageTight;
+  /// Множитель базовых широты/высоты иллюстрации (1.0 — по умолчанию).
+  /// Нужен, чтобы точечно подогнать визуальный вес отдельных ассетов.
+  final double imageScale;
+  /// Пиксельный сдвиг иллюстрации (px). Применяется через Transform.translate.
+  final Offset imageOffset;
   final IconData? icon;
   final VoidCallback? onTap;
 
@@ -39,39 +45,31 @@ class CategoryCard extends StatelessWidget {
           children: <Widget>[
             Positioned.fill(
               child: imageAsset != null
-                  ? (imageTight
-                      ? Align(
-                          alignment: Alignment.bottomRight,
-                          child: FractionallySizedBox(
-                            widthFactor: 0.62,
-                            heightFactor: 0.78,
-                            child: Padding(
-                              padding:
-                                  EdgeInsets.only(right: 6.w, bottom: 6.h),
-                              child: Image.asset(
-                                imageAsset!,
-                                fit: BoxFit.contain,
-                                alignment: Alignment.bottomRight,
+                  ? Align(
+                      alignment: Alignment.bottomRight,
+                      child: FractionallySizedBox(
+                        widthFactor: _baseWidthFactor * imageScale,
+                        heightFactor: _baseHeightFactor * imageScale,
+                        child: Transform.translate(
+                          offset: imageOffset,
+                          child: Padding(
+                            padding: EdgeInsets.only(right: 2.w, bottom: 2.h),
+                            child: Image.asset(
+                              imageAsset!,
+                              fit: BoxFit.contain,
+                              alignment: Alignment.bottomRight,
+                              errorBuilder:
+                                  (BuildContext _, Object _, StackTrace? _) =>
+                                      Icon(
+                                icon ?? Icons.image_outlined,
+                                size: 56.r,
+                                color: AppColors.textTertiary,
                               ),
                             ),
                           ),
-                        )
-                      : Image.asset(
-                      imageAsset!,
-                      fit: BoxFit.cover,
-                      errorBuilder:
-                          (BuildContext _, Object _, StackTrace? _) => Align(
-                        alignment: Alignment.bottomRight,
-                        child: Padding(
-                          padding: EdgeInsets.only(right: 16.w, bottom: 12.h),
-                          child: Icon(
-                            icon ?? Icons.image_outlined,
-                            size: 56.r,
-                            color: AppColors.textTertiary,
-                          ),
                         ),
                       ),
-                    ))
+                    )
                   : Center(
                       child: Icon(
                         icon ?? Icons.image_outlined,

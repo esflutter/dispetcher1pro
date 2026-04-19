@@ -56,21 +56,21 @@ class _OrderFeedScreenState extends State<OrderFeedScreen> {
 
   bool get _hasActiveFilter => hasActiveFilter();
 
-  List<_MockOrder> get _visibleOrders {
+  List<CatalogOrderMock> get _visibleOrders {
     final String q = _query.trim().toLowerCase();
-    Iterable<_MockOrder> res = _orders;
+    Iterable<CatalogOrderMock> res = CatalogOrderMock.all;
 
     if (AppliedFilter.categories.isNotEmpty) {
-      res = res.where((_MockOrder o) =>
+      res = res.where((CatalogOrderMock o) =>
           o.categories.any(AppliedFilter.categories.contains));
     }
     if (AppliedFilter.equipment.isNotEmpty) {
-      res = res.where((_MockOrder o) =>
+      res = res.where((CatalogOrderMock o) =>
           o.equipment.any(AppliedFilter.equipment.contains));
     }
 
     if (q.isNotEmpty) {
-      res = res.where((_MockOrder o) {
+      res = res.where((CatalogOrderMock o) {
         if (o.title.toLowerCase().contains(q)) return true;
         if (o.address.toLowerCase().contains(q)) return true;
         for (final String e in o.equipment) {
@@ -82,52 +82,6 @@ class _OrderFeedScreenState extends State<OrderFeedScreen> {
 
     return res.toList();
   }
-
-  static const List<_MockOrder> _orders = <_MockOrder>[
-    _MockOrder(
-      id: '1',
-      title: 'Нужен экскаватор для копки траншеи',
-      address: 'Московская область, Москва, Улица1, д 144',
-      rentDate: '15 июня · 09:00–18:00',
-      publishedAgo: '2 часа назад',
-      equipment: <String>['Экскаватор'],
-      categories: <String>['Земляные работы'],
-    ),
-    _MockOrder(
-      id: '2',
-      title: 'Земляные работы',
-      address: 'Московская область, Москва, Улица1, д 144',
-      rentDate: '15 июня · 09:00–18:00',
-      publishedAgo: 'Сегодня в 11:30',
-      equipment: <String>['Автокран', 'Экскаватор'],
-      categories: <String>['Земляные работы', 'Строительные работы'],
-      price: '120 000 – 150 000 ₽',
-    ),
-    _MockOrder(
-      id: '3',
-      title: 'Разработка котлована под фундамент',
-      address: 'Московская область, Москва, Улица1, д 144',
-      rentDate: '15 июня · 09:00–18:00',
-      publishedAgo: 'Сегодня в 11:30',
-      equipment: <String>[
-        'Экскаватор',
-        'Автокран',
-        'Эвакуатор',
-        'Манипулятор',
-        'Автовышка',
-      ],
-      categories: <String>['Земляные работы', 'Строительные работы'],
-    ),
-    _MockOrder(
-      id: '4',
-      title: 'Нужен экскаватор для копки траншеи',
-      address: 'Московская область, Москва, Улица1, д 144',
-      rentDate: '15 июня · 09:00–18:00',
-      publishedAgo: '2 часа назад',
-      equipment: <String>['Экскаватор'],
-      categories: <String>['Земляные работы'],
-    ),
-  ];
 
   void _openFilter() {
     Navigator.of(context).push(
@@ -235,7 +189,7 @@ class _OrderFeedScreenState extends State<OrderFeedScreen> {
                               padding: EdgeInsets.zero,
                               itemCount: _visibleOrders.length,
                               itemBuilder: (BuildContext context, int i) {
-                                final _MockOrder o = _visibleOrders[i];
+                                final CatalogOrderMock o = _visibleOrders[i];
                                 final bool isLast =
                                     i == _visibleOrders.length - 1;
                                 return Column(
@@ -352,8 +306,8 @@ class _EmptyOrdersState extends StatelessWidget {
   }
 }
 
-class _MockOrder {
-  const _MockOrder({
+class CatalogOrderMock {
+  const CatalogOrderMock({
     required this.id,
     required this.title,
     required this.address,
@@ -371,6 +325,59 @@ class _MockOrder {
   final List<String> equipment;
   final List<String> categories;
   final String price;
+
+  static const List<CatalogOrderMock> all = <CatalogOrderMock>[
+    CatalogOrderMock(
+      id: '1',
+      title: 'Нужен экскаватор для копки траншеи',
+      address: 'Московская область, Москва, Улица1, д 144',
+      rentDate: '15 июня · 09:00–18:00',
+      publishedAgo: '2 часа назад',
+      equipment: <String>['Экскаватор'],
+      categories: <String>['Земляные работы'],
+    ),
+    CatalogOrderMock(
+      id: '2',
+      title: 'Земляные работы',
+      address: 'Московская область, Москва, Улица1, д 144',
+      rentDate: '15 июня · 09:00–18:00',
+      publishedAgo: 'Сегодня в 11:30',
+      equipment: <String>['Автокран', 'Экскаватор'],
+      categories: <String>['Земляные работы', 'Строительные работы'],
+      price: '120 000 – 150 000 ₽',
+    ),
+    CatalogOrderMock(
+      id: '3',
+      title: 'Разработка котлована под фундамент',
+      address: 'Московская область, Москва, Улица1, д 144',
+      rentDate: '15 июня · 09:00–18:00',
+      publishedAgo: 'Сегодня в 11:30',
+      equipment: <String>[
+        'Экскаватор',
+        'Автокран',
+        'Эвакуатор',
+        'Манипулятор',
+        'Автовышка',
+      ],
+      categories: <String>['Земляные работы', 'Строительные работы'],
+    ),
+    CatalogOrderMock(
+      id: '4',
+      title: 'Нужен экскаватор для копки траншеи',
+      address: 'Московская область, Москва, Улица1, д 144',
+      rentDate: '15 июня · 09:00–18:00',
+      publishedAgo: '2 часа назад',
+      equipment: <String>['Экскаватор'],
+      categories: <String>['Земляные работы'],
+    ),
+  ];
+
+  static CatalogOrderMock? byId(String id) {
+    for (final CatalogOrderMock o in all) {
+      if (o.id == id) return o;
+    }
+    return null;
+  }
 }
 
 /// Карта-заглушка + плашка снизу с одним заказом. Свайп вверх по плашке
@@ -378,7 +385,7 @@ class _MockOrder {
 class _OrdersMapWithCard extends StatefulWidget {
   const _OrdersMapWithCard({required this.orders});
 
-  final List<_MockOrder> orders;
+  final List<CatalogOrderMock> orders;
 
   @override
   State<_OrdersMapWithCard> createState() => _OrdersMapWithCardState();
@@ -403,7 +410,7 @@ class _OrdersMapWithCardState extends State<_OrdersMapWithCard> {
     }
   }
 
-  bool _sameOrders(List<_MockOrder> a, List<_MockOrder> b) {
+  bool _sameOrders(List<CatalogOrderMock> a, List<CatalogOrderMock> b) {
     if (a.length != b.length) return false;
     for (int i = 0; i < a.length; i++) {
       if (a[i].id != b[i].id) return false;
@@ -428,7 +435,7 @@ class _OrdersMapWithCardState extends State<_OrdersMapWithCard> {
     }
     // Если список отфильтровался короче, держим индекс в пределах.
     final int idx = _current % widget.orders.length;
-    final _MockOrder o = widget.orders[idx];
+    final CatalogOrderMock o = widget.orders[idx];
     return Stack(
       children: <Widget>[
         const Positioned.fill(child: OrdersMapScreen()),

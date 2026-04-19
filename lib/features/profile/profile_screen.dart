@@ -75,7 +75,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   Widget build(BuildContext context) {
     final VerificationStatus status = _status;
-    final String fullName = CropResult.userName;
+    final String fullName = CropResult.displayName;
     final double rating = ReviewsData.aggregate;
     final int reviewsCount = ReviewsData.count;
     final bool isBlocked = _isBlocked;

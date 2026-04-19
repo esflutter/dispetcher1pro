@@ -8,11 +8,14 @@ import 'package:pinput/pinput.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
+import 'package:dispatcher_1/features/auth/photo_crop_screen.dart';
 
 class OtpVerificationScreen extends StatefulWidget {
-  const OtpVerificationScreen({super.key, this.phone = '+7 (900) 123-45-67'});
+  const OtpVerificationScreen({super.key, this.phone});
 
-  final String phone;
+  /// Номер, на который отправлен код. Если не передан — подставляется
+  /// [CropResult.userPhone], сохранённый экраном ввода телефона.
+  final String? phone;
 
   @override
   State<OtpVerificationScreen> createState() => _OtpVerificationScreenState();
@@ -150,7 +153,9 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
                     ),
                     SizedBox(height: 2.h),
                     Text(
-                      widget.phone,
+                      widget.phone?.trim().isNotEmpty == true
+                          ? widget.phone!
+                          : CropResult.userPhone,
                       style: AppTextStyles.body.copyWith(
                         color: AppColors.textBlack,
                         fontSize: 18.sp,
@@ -199,7 +204,7 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
                     _secondsLeft > 0
                         ? RichText(
                             text: TextSpan(
-                              text: 'Не пришел код? ',
+                              text: 'Не пришёл код? ',
                               style: AppTextStyles.body.copyWith(
                                 color: AppColors.textTertiary,
                                 fontSize: 15.sp,
@@ -230,7 +235,7 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
                             },
                             child: RichText(
                               text: TextSpan(
-                                text: 'Не пришел код? ',
+                                text: 'Не пришёл код? ',
                                 style: AppTextStyles.body.copyWith(
                                   color: AppColors.textTertiary,
                                   fontSize: 14.sp,

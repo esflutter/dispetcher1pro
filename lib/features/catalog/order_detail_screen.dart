@@ -6,6 +6,7 @@ import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
 import 'package:dispatcher_1/features/catalog/customer_card_screen.dart';
+import 'package:dispatcher_1/features/catalog/order_feed_screen.dart';
 import 'package:dispatcher_1/features/catalog/widgets/catalog_search_bar.dart';
 import 'package:dispatcher_1/features/catalog/widgets/respond_bottom_sheet.dart';
 import 'package:dispatcher_1/features/catalog/widgets/subscription_paywall.dart';
@@ -133,7 +134,16 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final List<String> equipment = _orderEquipment;
+    final CatalogOrderMock? order = CatalogOrderMock.byId(widget.orderId);
+    final List<String> equipment = order?.equipment ?? _orderEquipment;
+    final String orderTitle = order?.title ?? 'Разработка котлована под фундамент';
+    final String orderAddress =
+        order?.address ?? 'Московская область, Москва, Улица1, д 144';
+    final String orderRentDate = order?.rentDate ?? '15 июня · 09:00–18:00';
+    final String orderPublishedAgo = order?.publishedAgo ?? 'Вчера в 14:30';
+    final List<String> orderCategories = (order?.categories.isNotEmpty ?? false)
+        ? order!.categories
+        : const <String>['Земляные работы', 'Подготовка строительной площадки'];
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -163,7 +173,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
         title: Padding(
           padding: EdgeInsets.only(top: 2.h),
           child: Text(
-            'Нужен экскаватор для копки тран...',
+            orderTitle,
             style: AppTextStyles.titleS.copyWith(color: Colors.white),
             overflow: TextOverflow.ellipsis,
           ),
@@ -194,26 +204,26 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                         ),
                       ),
                       SizedBox(height: 10.h),
-                      Text('№123456',
+                      Text('№${widget.orderId.padLeft(6, '0')}',
                           style: AppTextStyles.caption
                               .copyWith(color: AppColors.textTertiary)),
                       SizedBox(height: 4.h),
-                      Text('Разработка котлована под фундамент',
+                      Text(orderTitle,
                           style: AppTextStyles.titleL.copyWith(height: 1.2)),
                       SizedBox(height: 7.h),
-                      Text('Вчера в 14:30',
+                      Text(orderPublishedAgo,
                           style: AppTextStyles.caption
                               .copyWith(color: AppColors.textTertiary)),
                       SizedBox(height: 11.h),
                       _Section(
                         title: 'Дата и время аренды',
-                        child: Text('15 июня · 09:00–18:00',
+                        child: Text(orderRentDate,
                             style: AppTextStyles.subBody.copyWith(fontWeight: FontWeight.w400)),
                       ),
                       _Section(
                         title: 'Адрес',
                         child: Text(
-                            'Московская область, Москва, Улица1, д 144',
+                            orderAddress,
                             style: AppTextStyles.subBody.copyWith(
                               fontWeight: FontWeight.w400,
                               decoration: TextDecoration.underline,
@@ -234,11 +244,9 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                         child: Wrap(
                           spacing: 8.w,
                           runSpacing: 8.h,
-                          children: const <Widget>[
-                            _OutlinedChip(label: 'Земляные работы'),
-                            _OutlinedChip(
-                                label: 'Подготовка строительной площадки'),
-                          ],
+                          children: orderCategories
+                              .map((String c) => _OutlinedChip(label: c))
+                              .toList(),
                         ),
                       ),
                       _Section(

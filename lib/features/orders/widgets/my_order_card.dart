@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import 'package:dispatcher_1/core/theme/app_colors.dart';
+import 'package:dispatcher_1/features/auth/photo_crop_screen.dart';
 import 'package:dispatcher_1/features/orders/widgets/order_status_pill.dart';
 
 /// Карточка заказа в списке «Мои заказы».
@@ -196,7 +197,7 @@ class _CustomerRow extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               Text(
-                name,
+                name.trim().isEmpty ? CropResult.namePlaceholder : name,
                 style: TextStyle(
                   fontFamily: 'Roboto',
                   fontSize: 16.sp,
