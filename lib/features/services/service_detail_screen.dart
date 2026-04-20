@@ -1,10 +1,14 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
+import 'package:dispatcher_1/core/utils/photo_source.dart';
 import 'package:dispatcher_1/core/widgets/dark_sub_app_bar.dart';
+import 'package:dispatcher_1/core/widgets/photo_gallery_screen.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
 import 'package:dispatcher_1/features/catalog/widgets/catalog_search_bar.dart';
 import 'package:dispatcher_1/features/services/my_services_screen.dart';
@@ -128,9 +132,11 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
                   SizedBox(height: 8.h),
                   _ChipRow(items: s.categories),
                   SizedBox(height: 16.h),
-                  _SectionTitle('Фото'),
-                  SizedBox(height: 8.h),
-                  _PhotosGrid(),
+                  if (s.photos.isNotEmpty) ...<Widget>[
+                    _SectionTitle('Фото'),
+                    SizedBox(height: 8.h),
+                    _PhotosGrid(photos: s.photos),
+                  ],
                 ],
               ),
             ),
@@ -217,14 +223,9 @@ class _ChipRow extends StatelessWidget {
 }
 
 class _PhotosGrid extends StatelessWidget {
-  static const _photos = [
-    'assets/images/profile/photo_1.webp',
-    'assets/images/profile/photo_2.webp',
-    'assets/images/profile/photo_3.webp',
-    'assets/images/profile/photo_4.webp',
-    'assets/images/profile/photo_5.webp',
-    'assets/images/profile/photo_6.webp',
-  ];
+  const _PhotosGrid({required this.photos});
+
+  final List<String> photos;
 
   @override
   Widget build(BuildContext context) {
@@ -236,12 +237,22 @@ class _PhotosGrid extends StatelessWidget {
         mainAxisSpacing: 4.r,
         crossAxisSpacing: 4.r,
       ),
-      itemCount: _photos.length,
-      itemBuilder: (_, i) => ClipRRect(
-        borderRadius: BorderRadius.circular(8.r),
-        child: Image.asset(
-          _photos[i],
-          fit: BoxFit.cover,
+      itemCount: photos.length,
+      itemBuilder: (BuildContext ctx, int i) => GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => Navigator.of(ctx).push<void>(
+          MaterialPageRoute<void>(
+            builder: (_) => PhotoGalleryScreen(
+              photos: photos,
+              initialIndex: i,
+            ),
+          ),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(8.r),
+          child: isAssetPath(photos[i])
+              ? Image.asset(photos[i], fit: BoxFit.cover)
+              : Image.file(File(photos[i]), fit: BoxFit.cover),
         ),
       ),
     );

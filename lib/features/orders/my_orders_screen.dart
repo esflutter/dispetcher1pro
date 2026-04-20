@@ -2,12 +2,218 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import 'package:dispatcher_1/core/theme/app_colors.dart';
+import 'package:dispatcher_1/core/utils/phone_dial.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
 import 'package:dispatcher_1/features/auth/photo_crop_screen.dart';
 import 'package:dispatcher_1/features/orders/order_detail_screen.dart';
 import 'package:dispatcher_1/features/orders/widgets/my_order_card.dart';
 import 'package:dispatcher_1/features/orders/widgets/order_status_pill.dart';
 import 'package:dispatcher_1/features/profile/account_block.dart';
+
+/// Статические данные «Мои заказы» — живут поверх жизненного цикла
+/// экрана, чтобы изменения из других мест (например, отклик в каталоге)
+/// попадали во вкладку «Новые» сразу при следующем открытии экрана.
+class MyOrdersStore {
+  MyOrdersStore._();
+
+  static final List<_OrderMock> _newOrders = <_OrderMock>[
+    _OrderMock(
+      id: 'n0',
+      status: MyOrderStatus.offerSent,
+      title: 'Расчистка строительной площадки',
+      equipment: const <String>['Бульдозер', 'Экскаватор'],
+      rentDate: '18 июня · 08:00–17:00',
+      address: 'Московская область, Москва, Улица1, д 144',
+      publishedAgo: '1 час назад',
+      customerId: '1',
+      customerName: 'Александр Иванов',
+      customerPhone: '+7 999 123-45-67',
+    ),
+    _OrderMock(
+      id: 'n1',
+      status: MyOrderStatus.pendingConfirmation,
+      title: 'Нужен экскаватор для копки траншеи',
+      equipment: const <String>['Экскаватор'],
+      rentDate: '15 июня · 09:00–18:00',
+      address: 'Московская область, Москва, Улица1, д 144',
+      publishedAgo: '2 часа назад',
+      customerId: '2',
+      customerName: 'Пётр Иванов',
+      customerPhone: '+7 999 234-56-78',
+    ),
+    _OrderMock(
+      id: 'n2',
+      status: MyOrderStatus.pendingConfirmation,
+      title: 'Земляные работы',
+      equipment: const <String>['Автокран', 'Экскаватор'],
+      rentDate: '15 июня · 09:00–18:00',
+      address: 'Московская область, Москва, Улица1, д 144',
+      publishedAgo: 'Сегодня в 11:30',
+      customerId: '3',
+      customerName: 'Сергей Петров',
+      customerPhone: '+7 999 345-67-89',
+    ),
+    _OrderMock(
+      id: 'n3',
+      status: MyOrderStatus.pendingConfirmation,
+      title: 'Разработка котлована под фундамент',
+      equipment: const <String>[
+        'Экскаватор',
+        'Автокран',
+        'Эвакуатор',
+        'Манипулятор',
+        'Автовышка',
+      ],
+      rentDate: '15 июня · 09:00–18:00',
+      address: 'Московская область, Москва, Улица1, д 144',
+      publishedAgo: 'Сегодня в 11:30',
+      customerId: '4',
+      customerName: 'Михаил Смирнов',
+      customerPhone: '+7 999 456-78-90',
+    ),
+  ];
+
+  static final List<_OrderMock> _accepted = <_OrderMock>[
+    _OrderMock(
+      id: 'a1',
+      status: MyOrderStatus.accepted,
+      title: 'Нужен экскаватор для копки траншеи',
+      equipment: const <String>['Экскаватор'],
+      rentDate: '15 июня · 09:00–18:00',
+      address: 'Московская область, Москва, Улица1, д 144',
+      publishedAgo: '2 часа назад',
+      customerId: '1',
+      customerName: 'Александр Иванов',
+      customerPhone: '+7 999 123-45-67',
+      customerEmail: 'alex.ivanov@example.ru',
+      customerRating: 4.5,
+      customerReviews: 15,
+    ),
+    _OrderMock(
+      id: 'a2',
+      status: MyOrderStatus.accepted,
+      title: 'Разработка котлована под фундамент',
+      equipment: const <String>[
+        'Экскаватор',
+        'Автокран',
+        'Эвакуатор',
+        'Манипулятор',
+        'Автовышка',
+      ],
+      rentDate: '15 июня · 09:00–18:00',
+      address: 'Московская область, Москва, Улица1, д 144',
+      publishedAgo: 'Сегодня в 11:30',
+      customerId: '2',
+      customerName: 'Пётр Иванов',
+      customerPhone: '+7 999 123-45-67',
+      customerEmail: 'petrov.ivanov@example.ru',
+      customerRating: 4.8,
+      customerReviews: 27,
+    ),
+    _OrderMock(
+      id: 'a3',
+      status: MyOrderStatus.completed,
+      title: 'Нужен экскаватор для копки траншеи',
+      equipment: const <String>['Экскаватор'],
+      rentDate: '15 июня · 09:00–18:00',
+      address: 'Московская область, Москва, Улица1, д 144',
+      publishedAgo: 'Вчера в 14:30',
+      customerId: '1',
+      customerName: 'Александр Иванов',
+      customerPhone: '+7 999 123-45-67',
+      customerRating: 4.5,
+      customerReviews: 15,
+    ),
+  ];
+
+  static final List<_OrderMock> _rejected = <_OrderMock>[
+    _OrderMock(
+      id: 'r1',
+      status: MyOrderStatus.rejectedOther,
+      title: 'Земляные работы',
+      equipment: const <String>['Автокран', 'Экскаватор'],
+      rentDate: '15 июня · 09:00–18:00',
+      address: 'Московская область, Москва, Улица1, д 144',
+      publishedAgo: '2 часа назад',
+      customerId: '3',
+      customerName: 'Сергей Петров',
+    ),
+    _OrderMock(
+      id: 'r2',
+      status: MyOrderStatus.rejectedDeclined,
+      title: 'Разработка котлована под фундамент',
+      equipment: const <String>[
+        'Экскаватор',
+        'Автокран',
+        'Эвакуатор',
+        'Манипулятор',
+        'Автовышка',
+      ],
+      rentDate: '15 июня · 09:00–18:00',
+      address: 'Московская область, Москва, Улица1, д 144',
+      publishedAgo: 'Вчера в 14:30',
+      customerId: '4',
+      customerName: 'Михаил Смирнов',
+    ),
+    _OrderMock(
+      id: 'r3',
+      status: MyOrderStatus.rejectedRemoved,
+      title: 'Разработка котлована под фундамент',
+      equipment: const <String>[
+        'Экскаватор',
+        'Автокран',
+        'Эвакуатор',
+        'Манипулятор',
+        'Автовышка',
+      ],
+      rentDate: '15 июня · 09:00–18:00',
+      address: 'Московская область, Москва, Улица1, д 144',
+      publishedAgo: '3 дня назад',
+      customerId: '5',
+      customerName: 'Виктор Новиков',
+    ),
+  ];
+
+  /// Ключи, уведомляющие подписчиков о добавлении новых записей — через
+  /// инкремент `revision.value` родитель `MyOrdersScreen` делает
+  /// `setState`, чтобы свежий отклик появился, даже если экран уже открыт.
+  static final ValueNotifier<int> revision = ValueNotifier<int>(0);
+
+  /// Добавляет отклик в «Новые» со статусом `offerSent` — вызывается из
+  /// каталога после успешной кнопки «Откликнуться». Идемпотентно: если
+  /// заказ с таким `id` уже в списке — не дублируем.
+  static void addResponded({
+    required String id,
+    required String title,
+    required List<String> equipment,
+    required String rentDate,
+    required String address,
+    required String publishedAgo,
+    required String customerId,
+    required String customerName,
+    required double customerRating,
+    required int customerReviews,
+  }) {
+    if (_newOrders.any((o) => o.id == id)) return;
+    _newOrders.insert(
+      0,
+      _OrderMock(
+        id: id,
+        status: MyOrderStatus.offerSent,
+        title: title,
+        equipment: equipment,
+        rentDate: rentDate,
+        address: address,
+        publishedAgo: publishedAgo,
+        customerId: customerId,
+        customerName: customerName,
+        customerRating: customerRating,
+        customerReviews: customerReviews,
+      ),
+    );
+    revision.value++;
+  }
+}
 
 /// Экран «Мои заказы» — две вкладки «Принятые / Не принятые».
 /// Когда обоих списков пусто — показываем заглушку «Здесь появятся ваши отклики».
@@ -28,129 +234,13 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tab;
 
-  // Моковые данные. Новые: «Ждёт подтверждения» — исполнитель ещё не принял.
-  final List<_OrderMock> _newOrders = <_OrderMock>[
-    _OrderMock(
-      id: 'n1',
-      status: MyOrderStatus.waiting,
-      title: 'Нужен экскаватор для копки траншеи',
-      equipment: const <String>['Экскаватор'],
-      rentDate: '15 июня · 09:00–18:00',
-      address: 'Московская область, Москва, Улица1, д 144',
-      publishedAgo: '2 часа назад',
-    ),
-    _OrderMock(
-      id: 'n2',
-      status: MyOrderStatus.waiting,
-      title: 'Земляные работы',
-      equipment: const <String>['Автокран', 'Экскаватор'],
-      rentDate: '15 июня · 09:00–18:00',
-      address: 'Московская область, Москва, Улица1, д 144',
-      publishedAgo: 'Сегодня в 11:30',
-    ),
-    _OrderMock(
-      id: 'n3',
-      status: MyOrderStatus.waiting,
-      title: 'Разработка котлована под фундамент',
-      equipment: const <String>[
-        'Экскаватор',
-        'Автокран',
-        'Эвакуатор',
-        'Манипулятор',
-        'Автовышка',
-      ],
-      rentDate: '15 июня · 09:00–18:00',
-      address: 'Московская область, Москва, Улица1, д 144',
-      publishedAgo: 'Сегодня в 11:30',
-    ),
-  ];
-
-  // Принятые: «Свяжитесь с заказчиком» + один «Завершён».
-  final List<_OrderMock> _accepted = <_OrderMock>[
-    _OrderMock(
-      id: 'a1',
-      status: MyOrderStatus.accepted,
-      title: 'Нужен экскаватор для копки траншеи',
-      equipment: const <String>['Экскаватор'],
-      rentDate: '15 июня · 09:00–18:00',
-      address: 'Московская область, Москва, Улица1, д 144',
-      publishedAgo: '2 часа назад',
-      customerName: 'Александр Иванов',
-      customerPhone: '+7 999 123-45-67',
-      customerEmail: 'alex.ivanov@example.ru',
-    ),
-    _OrderMock(
-      id: 'a2',
-      status: MyOrderStatus.accepted,
-      title: 'Разработка котлована под фундамент',
-      equipment: const <String>[
-        'Экскаватор',
-        'Автокран',
-        'Эвакуатор',
-        'Манипулятор',
-        'Автовышка',
-      ],
-      rentDate: '15 июня · 09:00–18:00',
-      address: 'Московская область, Москва, Улица1, д 144',
-      publishedAgo: 'Сегодня в 11:30',
-      customerName: 'Пётр Иванов',
-      customerPhone: '+7 999 123-45-67',
-      customerEmail: 'petrov.ivanov@example.ru',
-    ),
-    _OrderMock(
-      id: 'a3',
-      status: MyOrderStatus.completed,
-      title: 'Нужен экскаватор для копки траншеи',
-      equipment: const <String>['Экскаватор'],
-      rentDate: '15 июня · 09:00–18:00',
-      address: 'Московская область, Москва, Улица1, д 144',
-      publishedAgo: 'Вчера в 14:30',
-      customerName: 'Александр Иванов',
-      customerPhone: '+7 999 123-45-67',
-    ),
-  ];
-
-  final List<_OrderMock> _rejected = <_OrderMock>[
-    _OrderMock(
-      id: 'r1',
-      status: MyOrderStatus.rejectedOther,
-      title: 'Земляные работы',
-      equipment: const <String>['Автокран', 'Экскаватор'],
-      rentDate: '15 июня · 09:00–18:00',
-      address: 'Московская область, Москва, Улица1, д 144',
-      publishedAgo: '2 часа назад',
-    ),
-    _OrderMock(
-      id: 'r2',
-      status: MyOrderStatus.rejectedDeclined,
-      title: 'Разработка котлована под фундамент',
-      equipment: const <String>[
-        'Экскаватор',
-        'Автокран',
-        'Эвакуатор',
-        'Манипулятор',
-        'Автовышка',
-      ],
-      rentDate: '15 июня · 09:00–18:00',
-      address: 'Московская область, Москва, Улица1, д 144',
-      publishedAgo: 'Вчера в 14:30',
-    ),
-    _OrderMock(
-      id: 'r3',
-      status: MyOrderStatus.rejectedRemoved,
-      title: 'Разработка котлована под фундамент',
-      equipment: const <String>[
-        'Экскаватор',
-        'Автокран',
-        'Эвакуатор',
-        'Манипулятор',
-        'Автовышка',
-      ],
-      rentDate: '15 июня · 09:00–18:00',
-      address: 'Московская область, Москва, Улица1, д 144',
-      publishedAgo: '3 дня назад',
-    ),
-  ];
+  // Все три списка живут в `MyOrdersStore` — это позволяет каталогу
+  // добавлять заказ в «Новые» сразу после «Откликнуться», а экран
+  // обновится через `MyOrdersStore.revision` либо при повторной
+  // отрисовке (после возврата на вкладку).
+  List<_OrderMock> get _newOrders => MyOrdersStore._newOrders;
+  List<_OrderMock> get _accepted => MyOrdersStore._accepted;
+  List<_OrderMock> get _rejected => MyOrdersStore._rejected;
 
   bool get _isEmpty =>
       _newOrders.isEmpty && _accepted.isEmpty && _rejected.isEmpty;
@@ -162,11 +252,13 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
     super.initState();
     _tab = TabController(length: 3, vsync: this);
     AccountBlock.notifier.addListener(_refresh);
+    MyOrdersStore.revision.addListener(_refresh);
   }
 
   @override
   void dispose() {
     AccountBlock.notifier.removeListener(_refresh);
+    MyOrdersStore.revision.removeListener(_refresh);
     _tab.dispose();
     super.dispose();
   }
@@ -263,14 +355,19 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
                       rentDate: o.rentDate,
                       address: o.address,
                       publishedAgo: o.publishedAgo,
+                      customerId: o.customerId,
                       customerName: o.customerName ?? CropResult.namePlaceholder,
                       customerPhone: o.customerPhone ?? '+7 999 123-45-67',
                       customerEmail: o.customerEmail,
+                      customerRating: o.customerRating,
+                      customerReviews: o.customerReviews,
                       state: _detailStateForCard(o.status),
                       rejectedStatus: o.status,
                       onDecline: () =>
                           _moveToRejected(o, MyOrderStatus.rejectedDeclined),
                       onRefuse: () =>
+                          _moveToRejected(o, MyOrderStatus.rejectedDeclined),
+                      onWithdraw: () =>
                           _moveToRejected(o, MyOrderStatus.rejectedDeclined),
                       onConfirm: () => _moveToAccepted(o),
                       isBlocked: _blocked,
@@ -278,13 +375,7 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
                   ),
                 ),
                 onContact: () =>
-                    ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content:
-                        Text('Звоним: ${o.customerName ?? 'заказчику'}'),
-                    duration: const Duration(seconds: 2),
-                  ),
-                ),
+                    dialPhone(context, o.customerPhone ?? ''),
               ),
               if (!isLast)
                 Container(
@@ -320,7 +411,9 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
 
   MyOrderDetailState _detailStateForCard(MyOrderStatus s) {
     switch (s) {
-      case MyOrderStatus.waiting:
+      case MyOrderStatus.offerSent:
+        return MyOrderDetailState.offerSent;
+      case MyOrderStatus.pendingConfirmation:
         return MyOrderDetailState.waitingConfirm;
       case MyOrderStatus.accepted:
         return MyOrderDetailState.confirmed;
@@ -343,9 +436,12 @@ class _OrderMock {
     required this.rentDate,
     required this.address,
     required this.publishedAgo,
+    this.customerId,
     this.customerName,
     this.customerPhone,
     this.customerEmail,
+    this.customerRating = 4.5,
+    this.customerReviews = 15,
   });
 
   final String id;
@@ -355,9 +451,12 @@ class _OrderMock {
   final String rentDate;
   final String address;
   final String publishedAgo;
+  final String? customerId;
   final String? customerName;
   final String? customerPhone;
   final String? customerEmail;
+  final double customerRating;
+  final int customerReviews;
 
   _OrderMock copyWith({MyOrderStatus? status}) {
     return _OrderMock(
@@ -368,9 +467,12 @@ class _OrderMock {
       rentDate: rentDate,
       address: address,
       publishedAgo: publishedAgo,
+      customerId: customerId,
       customerName: customerName,
       customerPhone: customerPhone,
       customerEmail: customerEmail,
+      customerRating: customerRating,
+      customerReviews: customerReviews,
     );
   }
 

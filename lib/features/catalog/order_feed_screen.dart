@@ -172,7 +172,7 @@ class _OrderFeedScreenState extends State<OrderFeedScreen> {
               if (_hasActiveFilter)
                 AppliedFilterChips(onChanged: () => setState(() {}))
               else
-                SizedBox(height: 12.h),
+                SizedBox(height: 16.h),
               Expanded(
                 // IndexedStack вместо ternary — чтобы состояние обоих табов
                 // (ввод в поиске, позиция скролла, карта) сохранялось при
@@ -185,43 +185,43 @@ class _OrderFeedScreenState extends State<OrderFeedScreen> {
                         : MediaQuery.removePadding(
                             context: context,
                             removeTop: true,
-                            child: ListView.builder(
-                              padding: EdgeInsets.zero,
+                            child: ListView.separated(
+                              // Верхний отступ задают либо чип-ряд (его
+                              // собственный 8.h bottom), либо
+                              // SizedBox(16.h) выше — здесь всегда 0.
+                              padding:
+                                  EdgeInsets.fromLTRB(16.w, 0, 16.w, 16.h),
                               itemCount: _visibleOrders.length,
+                              separatorBuilder: (_, _) =>
+                                  SizedBox(height: 16.h),
                               itemBuilder: (BuildContext context, int i) {
                                 final CatalogOrderMock o = _visibleOrders[i];
-                                final bool isLast =
-                                    i == _visibleOrders.length - 1;
-                                return Column(
-                                  children: <Widget>[
-                                    OrderCard(
-                                      title: o.title,
-                                      address: o.address,
-                                      rentDate: o.rentDate,
-                                      publishedAgo: o.publishedAgo,
-                                      equipment: o.equipment,
-                                      highlightEquipment:
-                                          AppliedFilter.equipment,
-                                      price: o.price,
-                                      onTap: () => Navigator.of(context).push(
-                                        MaterialPageRoute<void>(
-                                          builder: (_) => OrderDetailScreen(
-                                            orderId: o.id,
-                                            multipleEquipment:
-                                                o.equipment.length > 1,
-                                            price: o.price,
-                                          ),
+                                return Container(
+                                  decoration: BoxDecoration(
+                                    color: AppColors.fieldFill,
+                                    borderRadius: BorderRadius.circular(14.r),
+                                  ),
+                                  clipBehavior: Clip.antiAlias,
+                                  child: OrderCard(
+                                    title: o.title,
+                                    address: o.address,
+                                    rentDate: o.rentDate,
+                                    publishedAgo: o.publishedAgo,
+                                    equipment: o.equipment,
+                                    highlightEquipment:
+                                        AppliedFilter.equipment,
+                                    price: o.price,
+                                    onTap: () => Navigator.of(context).push(
+                                      MaterialPageRoute<void>(
+                                        builder: (_) => OrderDetailScreen(
+                                          orderId: o.id,
+                                          multipleEquipment:
+                                              o.equipment.length > 1,
+                                          price: o.price,
                                         ),
                                       ),
                                     ),
-                                    if (!isLast)
-                                      Container(
-                                        height: 1 /
-                                            MediaQuery.of(context)
-                                                .devicePixelRatio,
-                                        color: AppColors.primary,
-                                      ),
-                                  ],
+                                  ),
                                 );
                               },
                             ),
@@ -264,7 +264,7 @@ class _EmptyOrdersState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.fromLTRB(16, 0, 16, 12.h),
+      padding: EdgeInsets.fromLTRB(16.w, 0, 16.w, 12.h),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -316,6 +316,10 @@ class CatalogOrderMock {
     required this.equipment,
     this.categories = const <String>[],
     this.price = '80 000 – 100 000 ₽',
+    required this.customerId,
+    required this.customerName,
+    required this.customerRating,
+    required this.customerReviews,
   });
   final String id;
   final String title;
@@ -326,6 +330,15 @@ class CatalogOrderMock {
   final List<String> categories;
   final String price;
 
+  /// Заказчик, опубликовавший заказ. Держим поля прямо в моке, а не
+  /// отдельным `CustomerMock`, чтобы при тапе карточки в список деталей
+  /// прокинуть ровно те же имя/рейтинг/число отзывов, что видит
+  /// исполнитель в ленте — без рассинхрона с хардкод-плейсхолдером.
+  final String customerId;
+  final String customerName;
+  final double customerRating;
+  final int customerReviews;
+
   static const List<CatalogOrderMock> all = <CatalogOrderMock>[
     CatalogOrderMock(
       id: '1',
@@ -335,6 +348,10 @@ class CatalogOrderMock {
       publishedAgo: '2 часа назад',
       equipment: <String>['Экскаватор'],
       categories: <String>['Земляные работы'],
+      customerId: '1',
+      customerName: 'Александр Иванов',
+      customerRating: 4.5,
+      customerReviews: 15,
     ),
     CatalogOrderMock(
       id: '2',
@@ -345,6 +362,10 @@ class CatalogOrderMock {
       equipment: <String>['Автокран', 'Экскаватор'],
       categories: <String>['Земляные работы', 'Строительные работы'],
       price: '120 000 – 150 000 ₽',
+      customerId: '2',
+      customerName: 'Сергей Петров',
+      customerRating: 4.8,
+      customerReviews: 27,
     ),
     CatalogOrderMock(
       id: '3',
@@ -360,6 +381,10 @@ class CatalogOrderMock {
         'Автовышка',
       ],
       categories: <String>['Земляные работы', 'Строительные работы'],
+      customerId: '3',
+      customerName: 'Дмитрий Сидоров',
+      customerRating: 4.2,
+      customerReviews: 8,
     ),
     CatalogOrderMock(
       id: '4',
@@ -369,6 +394,10 @@ class CatalogOrderMock {
       publishedAgo: '2 часа назад',
       equipment: <String>['Экскаватор'],
       categories: <String>['Земляные работы'],
+      customerId: '4',
+      customerName: 'Андрей Козлов',
+      customerRating: 4.9,
+      customerReviews: 43,
     ),
   ];
 

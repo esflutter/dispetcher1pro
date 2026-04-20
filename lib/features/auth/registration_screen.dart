@@ -6,6 +6,8 @@ import 'package:go_router/go_router.dart';
 
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
+import 'package:dispatcher_1/core/utils/photo_source.dart';
+import 'package:dispatcher_1/core/widgets/cropped_avatar.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
 import 'package:dispatcher_1/features/auth/photo_crop_screen.dart';
 
@@ -38,9 +40,12 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
   bool get _isValid => _firstNameController.text.trim().isNotEmpty && _agreed;
 
   Future<void> _openPhotoSheet() async {
-    // Переходим на экран кропа и получаем геометрию вырезанного круга
+    final String? imagePath = await pickImageFromGallery(context: context);
+    if (imagePath == null || !mounted) return;
     final result = await Navigator.of(context).push<CropResult>(
-      MaterialPageRoute(builder: (_) => const PhotoCropScreen()),
+      MaterialPageRoute(
+        builder: (_) => PhotoCropScreen(imagePath: imagePath),
+      ),
     );
     if (result != null && mounted) {
       setState(() {
@@ -96,7 +101,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                 color: AppColors.background,
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.04),
+                    color: Colors.black.withValues(alpha: 0.04),
                     offset: const Offset(0, -4),
                     blurRadius: 16,
                   ),
@@ -128,54 +133,26 @@ class _AvatarSlot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bool hasPhoto = cropResult != null;
     return GestureDetector(
       onTap: onTap,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          Container(
-            width: 112.r,
-            height: 112.r,
-            decoration: BoxDecoration(
-              color: const Color(0xFFEAEAEA), // Цвет фона-плейсхолдера
-              shape: BoxShape.circle,
-            ),
-            alignment: Alignment.center,
-            clipBehavior: Clip.hardEdge,
-            child: hasPhoto
-                ? Stack(
-                    children: [
-                      Positioned(
-                        left: 0,
-                        top: 0,
-                        child: Transform(
-                          // Матрица трансформации для идеального маппинга кружка кропа в миниатюру
-                          transform: Matrix4.identity()
-                            ..translate(
-                              56.w - cropResult!.center.dx * (56.w / cropResult!.radius),
-                              56.w - cropResult!.center.dy * (56.w / cropResult!.radius),
-                            )
-                            ..scale(56.w / cropResult!.radius),
-                          child: SizedBox(
-                            width: cropResult!.screenSize.width,
-                            height: cropResult!.screenSize.height,
-                            child: Image.asset(
-                              'assets/images/user1.png', 
-                              fit: BoxFit.cover,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  )
-                : Image.asset(
+          cropResult != null
+              ? CroppedAvatar(size: 112.r, cropResult: cropResult)
+              : Container(
+                  width: 112.r,
+                  height: 112.r,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFEAEAEA),
+                    shape: BoxShape.circle,
+                  ),
+                  clipBehavior: Clip.hardEdge,
+                  child: Image.asset(
                     'assets/icons/ui/avatar.webp',
-                    width: 112.r,
-                    height: 112.r,
                     fit: BoxFit.cover,
                   ),
-          ),
+                ),
           Positioned(
             right: -2.w,
             bottom: 0,

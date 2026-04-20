@@ -25,7 +25,7 @@ class PhotoPickerSheet extends StatelessWidget {
       child: Padding(
         padding: EdgeInsets.symmetric(horizontal: 40.w),
         child: Material(
-          color: const Color(0xFFF2F2F2),
+          color: AppColors.surfaceVariant,
           borderRadius: BorderRadius.circular(14.r),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -84,7 +84,7 @@ class _AlertAction extends StatelessWidget {
         child: Center(
           child: Text(
             label,
-            style: AppTextStyles.body.copyWith(color: const Color(0xFF007AFF)),
+            style: AppTextStyles.body.copyWith(color: AppColors.iosBlue),
           ),
         ),
       ),

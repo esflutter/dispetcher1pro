@@ -56,9 +56,46 @@ class _OrdersMapFullScreenState extends State<OrdersMapFullScreen> {
   int _current = 0;
   int _direction = 1;
 
+  // Снимок фильтра каталога на момент открытия карты. На карте фильтр
+  // стартует пустым (пользователь задаёт его заново), но исходное
+  // состояние ленты нужно вернуть при выходе, чтобы каталог не потерял
+  // уже применённые настройки.
+  late final Set<String> _savedCategories;
+  late final Set<String> _savedEquipment;
+  late final DateTime? _savedDateFrom;
+  late final DateTime? _savedDateTo;
+  late final bool _savedExactDate;
+  late final TimeOfDay? _savedTimeFrom;
+  late final TimeOfDay? _savedTimeTo;
+  late final bool _savedWholeDay;
+  late final int? _savedRadiusKm;
+  late final String? _savedAddress;
+
   @override
   void initState() {
     super.initState();
+    _savedCategories = Set<String>.from(AppliedFilter.categories);
+    _savedEquipment = Set<String>.from(AppliedFilter.equipment);
+    _savedDateFrom = AppliedFilter.dateFrom;
+    _savedDateTo = AppliedFilter.dateTo;
+    _savedExactDate = AppliedFilter.exactDate;
+    _savedTimeFrom = AppliedFilter.timeFrom;
+    _savedTimeTo = AppliedFilter.timeTo;
+    _savedWholeDay = AppliedFilter.wholeDay;
+    _savedRadiusKm = AppliedFilter.radiusKm;
+    _savedAddress = AppliedFilter.address;
+
+    AppliedFilter.categories.clear();
+    AppliedFilter.equipment.clear();
+    AppliedFilter.dateFrom = null;
+    AppliedFilter.dateTo = null;
+    AppliedFilter.exactDate = false;
+    AppliedFilter.timeFrom = null;
+    AppliedFilter.timeTo = null;
+    AppliedFilter.wholeDay = false;
+    AppliedFilter.radiusKm = null;
+    AppliedFilter.address = null;
+
     AppliedFilter.revision.addListener(_onFilterChanged);
   }
 
@@ -102,6 +139,21 @@ class _OrdersMapFullScreenState extends State<OrdersMapFullScreen> {
   @override
   void dispose() {
     AppliedFilter.revision.removeListener(_onFilterChanged);
+    AppliedFilter.categories
+      ..clear()
+      ..addAll(_savedCategories);
+    AppliedFilter.equipment
+      ..clear()
+      ..addAll(_savedEquipment);
+    AppliedFilter.dateFrom = _savedDateFrom;
+    AppliedFilter.dateTo = _savedDateTo;
+    AppliedFilter.exactDate = _savedExactDate;
+    AppliedFilter.timeFrom = _savedTimeFrom;
+    AppliedFilter.timeTo = _savedTimeTo;
+    AppliedFilter.wholeDay = _savedWholeDay;
+    AppliedFilter.radiusKm = _savedRadiusKm;
+    AppliedFilter.address = _savedAddress;
+    AppliedFilter.revision.value = AppliedFilter.revision.value + 1;
     _searchCtrl.dispose();
     super.dispose();
   }
@@ -147,13 +199,22 @@ class _OrdersMapFullScreenState extends State<OrdersMapFullScreen> {
                   showFilterBadge: active,
                 ),
                 if (active)
-                  AppliedFilterChips(onChanged: () => setState(() {})),
+                  AppliedFilterChips(
+                    onChanged: () => setState(() {}),
+                    // На карте поисковая строка сама даёт 8.h снизу —
+                    // убираем верхний отступ чипов, чтобы суммарный
+                    // визуальный зазор между ними тоже был 8.h.
+                    topPadding: 0,
+                  ),
               ],
             ),
           ),
           if (_query.trim().isNotEmpty && !_addressSelected)
             Positioned(
-              top: searchTop + 44.h + 3.h,
+              // `CatalogSearchBar` имеет 8.h сверху + 44.h строка +
+              // 8.h снизу. Под строкой оставляем минимальный зазор 2.h,
+              // чтобы плашка не сливалась со строкой, но и не «висела».
+              top: searchTop + 8.h + 44.h + 2.h,
               left: 16.w,
               right: 16.w,
               child: _AddressSuggestions(
@@ -165,6 +226,34 @@ class _OrdersMapFullScreenState extends State<OrdersMapFullScreen> {
                   });
                   FocusScope.of(context).unfocus();
                 },
+              ),
+            ),
+          if (orders.isEmpty && active)
+            Positioned(
+              left: 16.w,
+              right: 16.w,
+              bottom: 32.h + MediaQuery.of(context).padding.bottom,
+              child: Container(
+                padding: EdgeInsets.symmetric(
+                    horizontal: 16.w, vertical: 14.h),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(12.r),
+                  boxShadow: <BoxShadow>[
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.10),
+                      blurRadius: 16,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Text(
+                  'По текущим фильтрам заказов не найдено. '
+                  'Попробуйте изменить параметры фильтра.',
+                  textAlign: TextAlign.center,
+                  style: AppTextStyles.bodyMRegular
+                      .copyWith(color: AppColors.textSecondary),
+                ),
               ),
             ),
           if (orders.isNotEmpty)
@@ -201,7 +290,7 @@ class _OrdersMapFullScreenState extends State<OrdersMapFullScreen> {
                   layoutBuilder: (Widget? current, List<Widget> previous) =>
                       Stack(
                     alignment: Alignment.bottomCenter,
-                    children: [...previous, if (current != null) current],
+                    children: [...previous, ?current],
                   ),
                   transitionBuilder: (Widget child, Animation<double> anim) {
                     final bool isIn = child.key == ValueKey<int>(idx);

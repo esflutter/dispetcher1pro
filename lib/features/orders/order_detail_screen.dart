@@ -1,11 +1,18 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
+import 'package:dispatcher_1/core/utils/phone_dial.dart';
+import 'package:dispatcher_1/core/utils/photo_source.dart';
+import 'package:dispatcher_1/core/widgets/customer_header.dart';
+import 'package:dispatcher_1/core/widgets/labeled_section.dart';
+import 'package:dispatcher_1/core/widgets/photo_gallery_screen.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
-import 'package:dispatcher_1/features/auth/photo_crop_screen.dart';
+import 'package:dispatcher_1/features/catalog/customer_card_screen.dart';
 import 'package:dispatcher_1/features/catalog/widgets/catalog_search_bar.dart';
 import 'package:dispatcher_1/features/orders/review_screen.dart';
 import 'package:dispatcher_1/features/orders/widgets/order_alerts.dart';
@@ -13,6 +20,10 @@ import 'package:dispatcher_1/features/orders/widgets/order_status_pill.dart';
 
 /// Состояние экрана деталей «моего» заказа.
 enum MyOrderDetailState {
+  /// Исполнитель отправил отклик, но заказчик ещё не ответил.
+  /// Одна кнопка «Отозвать отклик». Телефон скрыт.
+  offerSent,
+
   /// Заказ только пришёл — нужно «Подтвердить / Отклонить».
   /// Без секции «Номер телефона».
   waitingConfirm,
@@ -47,19 +58,25 @@ class MyOrderDetailScreen extends StatefulWidget {
     ],
     this.rentDate = '15 июня · 09:00–18:00',
     this.address = 'Московская область, Москва, Улица1, д 144',
+    this.customerId,
     this.customerName = 'Александр Иванов',
     this.customerPhone = '+7 999 123-45-67',
     this.customerEmail,
+    this.customerRating = 4.5,
+    this.customerReviews = 15,
     this.publishedAgo = 'Вчера в 14:30',
     this.orderNumber = '№123456',
     this.workDescription = const <String>[
       'Разработка грунта — 40 м³',
       'Планировка участка — 2 × 12 × 15 м',
     ],
+    this.description = '',
+    this.photos = const <String>[],
     this.rejectedStatus = MyOrderStatus.rejectedOther,
     this.onDecline,
     this.onRefuse,
     this.onConfirm,
+    this.onWithdraw,
     this.isBlocked = false,
     this.price = '80 000 – 100 000 ₽',
   });
@@ -70,12 +87,23 @@ class MyOrderDetailScreen extends StatefulWidget {
   final List<String> workCategories;
   final String rentDate;
   final String address;
+  final String? customerId;
   final String customerName;
   final String customerPhone;
   final String? customerEmail;
+  final double customerRating;
+  final int customerReviews;
   final String publishedAgo;
   final String orderNumber;
   final List<String> workDescription;
+
+  /// Общее описание заказа — текстовый блок, который заказчик ввёл
+  /// при создании. Пустая строка → блок не показывается.
+  final String description;
+
+  /// Прикреплённые фото — пути ассетов или файлов на устройстве.
+  /// Если список пуст, блок «Фото» целиком скрыт (даже заголовок).
+  final List<String> photos;
 
   /// Какой именно красный статус показывать в state == rejected.
   final MyOrderStatus rejectedStatus;
@@ -93,6 +121,11 @@ class MyOrderDetailScreen extends StatefulWidget {
   /// `accepted` и закрывает экран.
   final VoidCallback? onConfirm;
 
+  /// Колбэк «Отозвать отклик» (заказчик ещё не ответил) — обычно
+  /// parent переносит заказ из «Новые» в «Не принятые» со статусом
+  /// `rejectedDeclined` и закрывает экран.
+  final VoidCallback? onWithdraw;
+
   final bool isBlocked;
   final String price;
 
@@ -107,6 +140,11 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
   late MyOrderStatus _rejectedStatus;
   bool _reviewLeft = false;
 
+  /// Контроллер прокрутки тела экрана — нужен, чтобы после подтверждения
+  /// заказа и закрытия попапа автоматически вернуть пользователя к
+  /// шапке заказчика, где появились телефон и иконка вызова.
+  final ScrollController _scrollCtrl = ScrollController();
+
   @override
   void initState() {
     super.initState();
@@ -115,11 +153,20 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
     _reviewLeft = _reviewedOrders.contains(widget.orderNumber);
   }
 
+  @override
+  void dispose() {
+    _scrollCtrl.dispose();
+    super.dispose();
+  }
+
   MyOrderStatus get _pillStatus {
     switch (_state) {
+      case MyOrderDetailState.offerSent:
+        // «Новые»: оранжевая пилюля «Ожидает ответа заказчика».
+        return MyOrderStatus.offerSent;
       case MyOrderDetailState.waitingConfirm:
         // «Новые»: зелёная пилюля «Ждёт подтверждения».
-        return MyOrderStatus.waiting;
+        return MyOrderStatus.pendingConfirmation;
       case MyOrderDetailState.confirmed:
         // «Принятые»: бирюзовая пилюля «Свяжитесь с заказчиком».
         return MyOrderStatus.accepted;
@@ -180,16 +227,32 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
         children: <Widget>[
           Expanded(
             child: SingleChildScrollView(
+              controller: _scrollCtrl,
               padding: EdgeInsets.fromLTRB(16.w, 16.h, 16.w,
-                  _hasBottomBar ? 24.h : 24.h + MediaQuery.of(context).padding.bottom),
+                  _hasBottomBar ? 16.h : 16.h + MediaQuery.of(context).padding.bottom),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
                   OrderStatusPill(status: _pillStatus),
                   SizedBox(height: 12.h),
-                  _CustomerHeader(
+                  CustomerHeader(
                     name: widget.customerName,
-                    onTap: () {},
+                    rating: widget.customerRating,
+                    reviews: widget.customerReviews,
+                    onTap: widget.customerId == null
+                        ? () {}
+                        : () => Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) => CustomerCardScreen(
+                                    customerId: widget.customerId!),
+                              ),
+                            ),
+                    // Кнопка вызова справа — только в статусе «Свяжитесь
+                    // с заказчиком» (accepted). В остальных статусах
+                    // у исполнителя нет прав связываться напрямую.
+                    onCall: _pillStatus == MyOrderStatus.accepted
+                        ? () => dialPhone(context, widget.customerPhone)
+                        : null,
                   ),
                   if (_showPhone) ...<Widget>[
                     SizedBox(height: 12.h),
@@ -248,7 +311,7 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
                         .copyWith(color: AppColors.textTertiary),
                   ),
                   SizedBox(height: 11.h),
-                  _Section(
+                  LabeledSection(
                     title: 'Дата и время аренды',
                     child: Text(
                       widget.rentDate,
@@ -256,7 +319,7 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
                           .copyWith(fontWeight: FontWeight.w400),
                     ),
                   ),
-                  _Section(
+                  LabeledSection(
                     title: 'Адрес',
                     child: Text(
                       widget.address,
@@ -266,7 +329,16 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
                       ),
                     ),
                   ),
-                  _Section(
+                  if (widget.description.trim().isNotEmpty)
+                    LabeledSection(
+                      title: 'Описание заказа',
+                      child: Text(
+                        widget.description,
+                        style: AppTextStyles.subBody
+                            .copyWith(fontWeight: FontWeight.w400),
+                      ),
+                    ),
+                  LabeledSection(
                     title: 'Требуемая спецтехника',
                     child: Wrap(
                       spacing: 8.w,
@@ -276,7 +348,7 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
                           .toList(),
                     ),
                   ),
-                  _Section(
+                  LabeledSection(
                     title: 'Категория работ',
                     child: Wrap(
                       spacing: 8.w,
@@ -286,7 +358,7 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
                           .toList(),
                     ),
                   ),
-                  _Section(
+                  LabeledSection(
                     title: 'Характер работ',
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -300,7 +372,7 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
                       ],
                     ),
                   ),
-                  _Section(
+                  LabeledSection(
                     title: 'Стоимость',
                     child: Text(widget.price,
                         style: TextStyle(
@@ -310,6 +382,11 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
                           color: AppColors.primary,
                         )),
                   ),
+                  if (widget.photos.isNotEmpty)
+                    LabeledSection(
+                      title: 'Фото',
+                      child: _PhotosGrid(photos: widget.photos),
+                    ),
                 ],
               ),
             ),
@@ -348,6 +425,17 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
 
   Widget _buildAction() {
     switch (_state) {
+      case MyOrderDetailState.offerSent:
+        return PrimaryButton(
+          label: 'Отозвать отклик',
+          onPressed: () => showConfirmWithdrawDialog(
+            context,
+            onWithdraw: () {
+              widget.onWithdraw?.call();
+              if (mounted) Navigator.of(context).maybePop();
+            },
+          ),
+        );
       case MyOrderDetailState.waitingConfirm:
         return Column(
           mainAxisSize: MainAxisSize.min,
@@ -357,9 +445,24 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
               enabled: !widget.isBlocked,
               onPressed: () => showConfirmAcceptDialog(
                 context,
-                onConfirm: () {
+                onConfirm: () async {
                   widget.onConfirm?.call();
                   setState(() => _state = MyOrderDetailState.confirmed);
+                  // Мэтч: заказ подтверждён — показываем попап с
+                  // подсказкой связаться с заказчиком. Контакты уже
+                  // открылись на текущей странице (accepted), куда
+                  // попадает пользователь после `setState` выше.
+                  if (mounted) await showOrderAcceptedDialog(context);
+                  // После закрытия попапа автоскроллим наверх — там
+                  // шапка заказчика с номером телефона и иконкой
+                  // вызова, которые только что появились.
+                  if (mounted && _scrollCtrl.hasClients) {
+                    _scrollCtrl.animateTo(
+                      0,
+                      duration: const Duration(milliseconds: 300),
+                      curve: Curves.easeOut,
+                    );
+                  }
                 },
               ),
             ),
@@ -392,12 +495,19 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
         return PrimaryButton(
           label: 'Оставить отзыв',
           onPressed: () async {
-            await Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => const ReviewScreen(),
+            // Отзыв фиксируем только если пользователь реально отправил
+            // его (`true` из ReviewScreen), а не просто вернулся назад —
+            // иначе кнопка сразу пропадала, даже без оценки.
+            final bool? submitted =
+                await Navigator.of(context).push<bool>(
+              MaterialPageRoute<bool>(
+                builder: (_) => ReviewScreen(
+                  orderId: widget.orderNumber,
+                  customerId: widget.customerId,
+                ),
               ),
             );
-            if (mounted) {
+            if (submitted == true && mounted) {
               _reviewedOrders.add(widget.orderNumber);
               setState(() => _reviewLeft = true);
             }
@@ -409,106 +519,46 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
   }
 }
 
-class _CustomerHeader extends StatelessWidget {
-  const _CustomerHeader({required this.name, required this.onTap});
 
-  final String name;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      child: Row(
-        children: <Widget>[
-          CircleAvatar(
-            radius: 28.r,
-            backgroundColor: AppColors.primaryTint,
-            backgroundImage: const AssetImage(
-              'assets/images/catalog/avatar_placeholder.webp',
-            ),
-          ),
-          SizedBox(width: 10.w),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  name.trim().isEmpty ? CropResult.namePlaceholder : name,
-                  style: TextStyle(
-                    fontFamily: 'Roboto',
-                    fontSize: 16.sp,
-                    fontWeight: FontWeight.w600,
-                    height: 1.3,
-                  ),
-                ),
-                SizedBox(height: 2.h),
-                Row(
-                  children: <Widget>[
-                    Image.asset(
-                      'assets/images/catalog/star.webp',
-                      width: 20.r,
-                      height: 20.r,
-                    ),
-                    SizedBox(width: 4.w),
-                    Text(
-                      '4,5',
-                      style: TextStyle(
-                        fontFamily: 'Roboto',
-                        fontSize: 16.sp,
-                        fontWeight: FontWeight.w400,
-                        height: 1.3,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                    SizedBox(width: 16.w),
-                    Text(
-                      '15 отзывов',
-                      style: TextStyle(
-                        fontFamily: 'Roboto',
-                        fontSize: 16.sp,
-                        fontWeight: FontWeight.w400,
-                        height: 1.3,
-                        color: AppColors.textPrimary,
-                        decoration: TextDecoration.underline,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _Section extends StatelessWidget {
-  const _Section({required this.title, required this.child});
-  final String title;
-  final Widget child;
+class _PhotosGrid extends StatelessWidget {
+  const _PhotosGrid({required this.photos});
+  final List<String> photos;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.only(bottom: 12.h),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Text(
-            title,
-            style: TextStyle(
-              fontFamily: 'Roboto',
-              fontSize: 16.sp,
-              fontWeight: FontWeight.w600,
-              height: 1.3,
+    return Wrap(
+      spacing: 8.w,
+      runSpacing: 8.h,
+      children: <Widget>[
+        for (int i = 0; i < photos.length; i++)
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => Navigator.of(context).push<void>(
+              MaterialPageRoute<void>(
+                builder: (_) => PhotoGalleryScreen(
+                  photos: photos,
+                  initialIndex: i,
+                ),
+              ),
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(10.r),
+              child: isAssetPath(photos[i])
+                  ? Image.asset(
+                      photos[i],
+                      width: 72.r,
+                      height: 72.r,
+                      fit: BoxFit.cover,
+                    )
+                  : Image.file(
+                      File(photos[i]),
+                      width: 72.r,
+                      height: 72.r,
+                      fit: BoxFit.cover,
+                    ),
             ),
           ),
-          SizedBox(height: 4.h),
-          child,
-        ],
-      ),
+      ],
     );
   }
 }

@@ -1,8 +1,11 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
+import 'package:dispatcher_1/core/utils/photo_source.dart';
 
 enum ChatMessageType { text, image }
 
@@ -55,19 +58,21 @@ class ChatBubble extends StatelessWidget {
                   onTap: () => _showFullscreenImage(context, asset),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(8.r),
-                    child: Image.asset(
-                      asset,
-                      width: 88.r,
-                      height: 88.r,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, _, _) => Container(
-                        width: 88.r,
-                        height: 88.r,
-                        color: AppColors.surfaceMuted,
-                        child: Icon(Icons.image_outlined,
-                            color: AppColors.textTertiary, size: 32.r),
-                      ),
-                    ),
+                    child: isAssetPath(asset)
+                        ? Image.asset(
+                            asset,
+                            width: 88.r,
+                            height: 88.r,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, _, _) => _ThumbError(),
+                          )
+                        : Image.file(
+                            File(asset),
+                            width: 88.r,
+                            height: 88.r,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, _, _) => _ThumbError(),
+                          ),
                   ),
                 ),
             ],
@@ -112,7 +117,9 @@ class ChatBubble extends StatelessWidget {
                 Center(
                   child: InteractiveViewer(
                     maxScale: 4.0,
-                    child: Image.asset(asset),
+                    child: isAssetPath(asset)
+                        ? Image.asset(asset)
+                        : Image.file(File(asset)),
                   ),
                 ),
                 Positioned(
@@ -128,6 +135,20 @@ class ChatBubble extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+/// Плитка-плейсхолдер для не подгруженных миниатюр в чате.
+class _ThumbError extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 88.r,
+      height: 88.r,
+      color: AppColors.surfaceMuted,
+      child: Icon(Icons.image_outlined,
+          color: AppColors.textTertiary, size: 32.r),
     );
   }
 }

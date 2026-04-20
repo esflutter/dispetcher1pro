@@ -34,6 +34,15 @@ enum VerificationStatus {
   static String? subscriptionPaidUntilText;
 
   bool get isVerified => this == VerificationStatus.verified;
+
+  /// Полный сброс состояния верификации — для logout. Возвращает к
+  /// `notVerified` и выключает подписку, чтобы следующий пользователь
+  /// на этом устройстве не унаследовал чужой статус.
+  static void clearAuthData() {
+    _notifier.value = VerificationStatus.notVerified;
+    hasSubscription = false;
+    subscriptionPaidUntilText = null;
+  }
 }
 
 class _BadgeConfig {
@@ -52,26 +61,26 @@ _BadgeConfig _configFor(VerificationStatus s) {
     case VerificationStatus.verified:
       return const _BadgeConfig(
         label: 'Верификация пройдена',
-        fg: Color(0xFF1F8A2D),
-        bg: Color(0xFFD7F6CB),
+        fg: AppColors.verificationSuccessFg,
+        bg: AppColors.verificationSuccessBg,
       );
     case VerificationStatus.inProgress:
       return _BadgeConfig(
         label: 'Верификация в процессе',
-        fg: const Color(0xFF1DAEDE),
-        bg: const Color(0xFF1DAEDE).withValues(alpha: 0.1),
+        fg: AppColors.verificationInfoFg,
+        bg: AppColors.verificationInfoFg.withValues(alpha: 0.1),
       );
     case VerificationStatus.rejected:
       return const _BadgeConfig(
         label: 'Верификация не пройдена',
         fg: AppColors.error,
-        bg: Color(0xFFFCE1E1),
+        bg: AppColors.verificationErrorBg,
       );
     case VerificationStatus.notVerified:
       return const _BadgeConfig(
         label: 'Верификация не пройдена',
         fg: AppColors.error,
-        bg: Color(0xFFFCE1E1),
+        bg: AppColors.verificationErrorBg,
       );
   }
 }

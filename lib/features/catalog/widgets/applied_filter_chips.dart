@@ -8,9 +8,18 @@ import 'package:dispatcher_1/features/catalog/catalog_filter_screen.dart';
 /// Горизонтальный ряд оранжевых чипов с применёнными фильтрами.
 /// По тапу на × чип удаляется и `AppliedFilter.revision` инкрементится.
 class AppliedFilterChips extends StatelessWidget {
-  const AppliedFilterChips({super.key, required this.onChanged});
+  const AppliedFilterChips({
+    super.key,
+    required this.onChanged,
+    this.topPadding,
+  });
 
   final VoidCallback onChanged;
+
+  /// Вертикальный отступ сверху. По умолчанию 12.h — симметрично снизу,
+  /// как в ленте каталога. На карте шапка компактнее, там передаётся 0,
+  /// чтобы чипы шли сразу под строкой поиска.
+  final double? topPadding;
 
   static const List<String> _months = <String>[
     'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
@@ -90,7 +99,7 @@ class AppliedFilterChips extends StatelessWidget {
       width: double.infinity,
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
-        padding: EdgeInsets.fromLTRB(16.w, 12.h, 16.w, 8.h),
+        padding: EdgeInsets.fromLTRB(16.w, topPadding ?? 12.h, 16.w, 12.h),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[

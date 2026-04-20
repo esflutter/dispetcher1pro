@@ -23,7 +23,7 @@ class PaymentScreen extends StatelessWidget {
           Image.asset(
             'assets/images/catalog/subscription_bg.webp',
             fit: BoxFit.cover,
-            errorBuilder: (_, _, _) => Container(color: const Color(0xFF929292)),
+            errorBuilder: (_, _, _) => Container(color: AppColors.textTertiary),
           ),
           Align(
             alignment: Alignment.bottomCenter,

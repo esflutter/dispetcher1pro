@@ -113,7 +113,11 @@ class MyOrderCard extends StatelessWidget {
                 name: customerName!,
                 phone: customerPhone ?? '',
                 avatar: customerAvatar,
-                onContact: onContact,
+                // Иконка вызова — только пока заказ активен. В статусе
+                // «Завершён» связываться с заказчиком по заказу уже не
+                // нужно, иконку скрываем.
+                onContact:
+                    status == MyOrderStatus.completed ? null : onContact,
               ),
             ],
           ],
@@ -220,23 +224,25 @@ class _CustomerRow extends StatelessWidget {
             ],
           ),
         ),
-        SizedBox(width: 8.w),
-        GestureDetector(
-          onTap: onContact,
-          child: Container(
-            width: 40.r,
-            height: 40.r,
-            decoration: BoxDecoration(
-              color: AppColors.primary,
-              borderRadius: BorderRadius.circular(10.r),
-            ),
-            child: Icon(
-              Icons.arrow_forward,
-              color: Colors.white,
-              size: 22.r,
+        if (onContact != null) ...<Widget>[
+          SizedBox(width: 8.w),
+          GestureDetector(
+            onTap: onContact,
+            child: Container(
+              width: 40.r,
+              height: 40.r,
+              decoration: BoxDecoration(
+                color: AppColors.primary,
+                borderRadius: BorderRadius.circular(10.r),
+              ),
+              child: Icon(
+                Icons.phone,
+                color: Colors.white,
+                size: 22.r,
+              ),
             ),
           ),
-        ),
+        ],
       ],
     );
   }

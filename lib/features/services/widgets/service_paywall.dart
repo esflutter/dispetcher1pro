@@ -152,7 +152,7 @@ class _ServicePaywallState extends State<ServicePaywall>
               fontFamily: 'Roboto',
               fontSize: 14.sp,
               fontWeight: FontWeight.w500,
-              color: const Color(0xFF636362),
+              color: AppColors.textMuted,
             ),
           ),
           SizedBox(height: 12.h),
@@ -221,7 +221,7 @@ class _ServicePaywallState extends State<ServicePaywall>
               ],
             ),
           ),
-          Divider(height: 1, thickness: 0.5, color: Colors.grey.shade300),
+          Divider(height: 1, thickness: 0.5, color: AppColors.border),
           Expanded(
             child: ListView(
               padding: EdgeInsets.fromLTRB(16.w, 16.h, 16.w, 0),

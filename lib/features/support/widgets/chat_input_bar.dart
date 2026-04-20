@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -6,6 +7,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
+import 'package:dispatcher_1/core/utils/photo_source.dart';
 
 /// Нижняя панель ввода чата ассистента.
 /// Поддерживает: текст, превью прикреплённых картинок, состояние записи голоса.
@@ -393,17 +395,29 @@ class _PendingImagesRow extends StatelessWidget {
                   onTap: () => _showFullscreenImage(context, images[i]),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(10.r),
-                    child: Image.asset(
-                      images[i],
-                      width: 80.r,
-                      height: 80.r,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, _, _) => Container(
-                        width: 80.r,
-                        height: 80.r,
-                        color: AppColors.surfaceMuted,
-                      ),
-                    ),
+                    child: isAssetPath(images[i])
+                        ? Image.asset(
+                            images[i],
+                            width: 80.r,
+                            height: 80.r,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, _, _) => Container(
+                              width: 80.r,
+                              height: 80.r,
+                              color: AppColors.surfaceMuted,
+                            ),
+                          )
+                        : Image.file(
+                            File(images[i]),
+                            width: 80.r,
+                            height: 80.r,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, _, _) => Container(
+                              width: 80.r,
+                              height: 80.r,
+                              color: AppColors.surfaceMuted,
+                            ),
+                          ),
                   ),
                 ),
                 Positioned(
@@ -440,7 +454,9 @@ class _PendingImagesRow extends StatelessWidget {
                 Center(
                   child: InteractiveViewer(
                     maxScale: 4.0,
-                    child: Image.asset(asset),
+                    child: isAssetPath(asset)
+                        ? Image.asset(asset)
+                        : Image.file(File(asset)),
                   ),
                 ),
                 Positioned(

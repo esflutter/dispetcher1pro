@@ -9,6 +9,7 @@ import 'package:dispatcher_1/core/widgets/dark_sub_app_bar.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
 import 'package:dispatcher_1/features/catalog/widgets/catalog_search_bar.dart';
 import 'package:dispatcher_1/core/widgets/cropped_avatar.dart';
+import 'package:dispatcher_1/features/auth/photo_crop_screen.dart';
 import 'package:dispatcher_1/features/profile/account_block.dart';
 import 'package:dispatcher_1/features/profile/widgets/verification_badge.dart';
 
@@ -17,17 +18,43 @@ import 'widgets/executor_card_paywall.dart';
 
 enum ExecutorCardStatus { empty, inReview, rejected, verified, blocked }
 
+/// Глобальное состояние карточки исполнителя. Реактивное — любые
+/// экраны, подписанные на `notifier`, перерисовываются при изменении
+/// флага. Сброс до `false` делается в `auth_reset.dart` при logout.
+///
+/// Раньше был `static bool ExecutorCardScreen.cardCreated`, но
+/// он не давал реактивности: если карточка создавалась из другого
+/// экрана, родитель не узнавал об этом без ручного `setState`.
+class ExecutorCardState {
+  ExecutorCardState._();
+
+  static final ValueNotifier<bool> notifier = ValueNotifier<bool>(false);
+
+  static bool get cardCreated => notifier.value;
+  static set cardCreated(bool v) => notifier.value = v;
+}
+
 class ExecutorCardScreen extends StatefulWidget {
   const ExecutorCardScreen({super.key});
 
-  static bool cardCreated = false;
+  /// Deprecated — оставлено как прокси для совместимости с существующими
+  /// вызовами (`ExecutorCardScreen.cardCreated = true`). Новый код —
+  /// через [ExecutorCardState.cardCreated].
+  static bool get cardCreated => ExecutorCardState.cardCreated;
+  static set cardCreated(bool v) => ExecutorCardState.cardCreated = v;
 
   @override
   State<ExecutorCardScreen> createState() => _ExecutorCardScreenState();
 }
 
 class _ExecutorCardScreenState extends State<ExecutorCardScreen> {
-  static bool _alertShown = false;
+  /// Последний статус, для которого мы уже показали информационный
+  /// алерт. Сравнивается со _status — если они разные, алерт надо
+  /// показать снова. Это исправляет случай, когда пользователь
+  /// получил алерт «на проверке», статус сменился на `rejected`, а
+  /// алерт про отказ не показался, потому что `_alertShown` уже был
+  /// выставлен в `true` прошлым заходом.
+  ExecutorCardStatus? _lastAlertedStatus;
 
   bool get _filled =>
       AccountBlock.isBlocked ||
@@ -54,24 +81,39 @@ class _ExecutorCardScreenState extends State<ExecutorCardScreen> {
   void initState() {
     super.initState();
     AccountBlock.notifier.addListener(_refresh);
-    if (_status == ExecutorCardStatus.inReview) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && !_alertShown) {
-          _alertShown = true;
-          showExecutorCardStatusDialog(context, _status);
-        }
-      });
-    }
+    VerificationStatus.notifier.addListener(_refresh);
+    ExecutorCardState.notifier.addListener(_refresh);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _maybeShowStatusAlert());
   }
 
   @override
   void dispose() {
     AccountBlock.notifier.removeListener(_refresh);
+    VerificationStatus.notifier.removeListener(_refresh);
+    ExecutorCardState.notifier.removeListener(_refresh);
     super.dispose();
   }
 
   void _refresh() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    setState(() {});
+    _maybeShowStatusAlert();
+  }
+
+  /// Показываем информационный алерт, соответствующий текущему статусу,
+  /// ровно один раз на статус. Если статус изменился с прошлого показа
+  /// (например, `inReview` → `rejected`) — показываем снова.
+  void _maybeShowStatusAlert() {
+    if (!mounted) return;
+    final ExecutorCardStatus s = _status;
+    if (s == _lastAlertedStatus) return;
+    if (s == ExecutorCardStatus.inReview) {
+      _lastAlertedStatus = s;
+      showExecutorCardStatusDialog(context, s);
+    } else if (VerificationStatus.current == VerificationStatus.rejected) {
+      _lastAlertedStatus = s;
+      showCreateExecutorCardAlert(context);
+    }
   }
 
   Future<void> _onCreateTap() async {
@@ -125,7 +167,7 @@ class _ExecutorCardScreenState extends State<ExecutorCardScreen> {
         child: Column(
           children: [
             Expanded(
-              child: filled ? const _FilledCard() : _EmptyContent(status: _status),
+              child: filled ? _FilledCard() : _EmptyContent(status: _status),
             ),
             Container(
               decoration: BoxDecoration(
@@ -208,6 +250,11 @@ class _EmptyContent extends StatelessWidget {
 
 /// Данные карточки исполнителя (до появления бэкенда).
 class ExecutorCardData {
+  /// Имя — прокси на [CropResult.userName], чтобы имя в карточке и в
+  /// профиле оставалось одним источником правды.
+  static String get name => CropResult.userName;
+  static set name(String value) => CropResult.userName = value;
+
   static String phone = '+7 999 123-45-67';
   static String? location;
   static String? radius;
@@ -216,17 +263,35 @@ class ExecutorCardData {
   static String? experience;
   static String? status;
   static String? about;
+
+  /// Сбросить все поля карточки к значениям «как при первом запуске» —
+  /// для logout / удаления аккаунта.
+  static void clear() {
+    phone = '+7 999 123-45-67';
+    location = null;
+    radius = null;
+    machinery = <String>[];
+    categories = <String>[];
+    experience = null;
+    status = null;
+    about = null;
+  }
 }
 
 class _FilledCard extends StatelessWidget {
-  const _FilledCard();
+  // Non-const умышленно: читает из статической `ExecutorCardData`, и чтобы
+  // родитель мог перерисовать карточку после возврата из экрана
+  // редактирования, каждый build должен создавать новый instance. Иначе
+  // Flutter видит идентичный const-виджет и пропускает rebuild.
+  // ignore: prefer_const_constructors_in_immutables
+  _FilledCard();
 
   String _val(String? v) => (v != null && v.isNotEmpty) ? v : '—';
 
-  /// Форматирует опыт работы: «5 лет», «1 год», «2 года» или «Не указано».
+  /// Форматирует опыт работы: «5 лет», «1 год», «2 года» или «—».
   String _experienceText(String? v) {
     final int? n = v != null ? int.tryParse(v) : null;
-    if (n == null) return 'Не указано';
+    if (n == null) return '—';
     final int mod100 = n % 100;
     final String word;
     if (mod100 >= 11 && mod100 <= 14) {
@@ -251,7 +316,7 @@ class _FilledCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
-      padding: EdgeInsets.fromLTRB(16.w, 16.h, 16.w, 0),
+      padding: EdgeInsets.fromLTRB(16.w, 16.h, 16.w, 16.h),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -313,8 +378,7 @@ class _HeaderRow extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Text('Александр Иванов',
-                  style: AppTextStyles.titleS),
+              Text(CropResult.displayName, style: AppTextStyles.titleS),
               SizedBox(height: 4.h),
               Row(
                 children: [

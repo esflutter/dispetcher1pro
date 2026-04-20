@@ -1,10 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
+import 'package:dispatcher_1/core/theme/app_colors.dart';
+
 /// Состояния заказа исполнителя — определяют цвет и текст пилюли статуса.
 enum MyOrderStatus {
-  /// Заказ принят исполнителем, ждём подтверждения от заказчика.
-  waiting,
+  /// Исполнитель откликнулся, заказчик ещё не ответил.
+  offerSent,
+
+  /// Заказчик выбрал этого исполнителя — ждём его подтверждения.
+  pendingConfirmation,
 
   /// Заказчик выбрал — можно связаться. Зелёная.
   accepted,
@@ -25,7 +30,9 @@ enum MyOrderStatus {
 extension MyOrderStatusX on MyOrderStatus {
   String get label {
     switch (this) {
-      case MyOrderStatus.waiting:
+      case MyOrderStatus.offerSent:
+        return 'Ожидает ответа заказчика';
+      case MyOrderStatus.pendingConfirmation:
         return 'Ждёт подтверждения';
       case MyOrderStatus.accepted:
         return 'Свяжитесь с заказчиком';
@@ -34,15 +41,17 @@ extension MyOrderStatusX on MyOrderStatus {
       case MyOrderStatus.rejectedOther:
         return 'Выбран другой исполнитель';
       case MyOrderStatus.rejectedDeclined:
-        return 'Заказ был отклонён';
+        return 'Отклонён';
       case MyOrderStatus.rejectedRemoved:
-        return 'Заказ был снят с публикации';
+        return 'Снят с публикации';
     }
   }
 
   Color get bg {
     switch (this) {
-      case MyOrderStatus.waiting:
+      case MyOrderStatus.offerSent:
+        return AppColors.primaryTint;
+      case MyOrderStatus.pendingConfirmation:
         return const Color(0xFFE6F8EF);
       case MyOrderStatus.accepted:
         // #1DAEDE @ 10%
@@ -52,13 +61,15 @@ extension MyOrderStatusX on MyOrderStatus {
         return const Color(0xFFF1F1F1);
       case MyOrderStatus.rejectedOther:
       case MyOrderStatus.rejectedDeclined:
-        return const Color(0xFFFDECEC);
+        return AppColors.errorTint;
     }
   }
 
   Color get fg {
     switch (this) {
-      case MyOrderStatus.waiting:
+      case MyOrderStatus.offerSent:
+        return AppColors.primary;
+      case MyOrderStatus.pendingConfirmation:
         return const Color(0xFF1FAE5C);
       case MyOrderStatus.accepted:
         return const Color(0xFF1DAEDE);
@@ -67,7 +78,7 @@ extension MyOrderStatusX on MyOrderStatus {
         return const Color(0xFF7A7A7A);
       case MyOrderStatus.rejectedOther:
       case MyOrderStatus.rejectedDeclined:
-        return const Color(0xFFE53935);
+        return AppColors.error;
     }
   }
 }

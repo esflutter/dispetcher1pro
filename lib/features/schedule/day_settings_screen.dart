@@ -18,10 +18,16 @@ class DaySettingsScreen extends StatefulWidget {
     super.key,
     required this.dayLabel,
     required this.initialState,
+    this.initial = const DaySettings(),
   });
 
   final String dayLabel;
   final DayState initialState;
+
+  /// Сохранённые ранее параметры дня. Родитель хранит их в
+  /// `Map<DateTime, DaySettings>` и подставляет сюда, чтобы при
+  /// повторном открытии форма была заполнена.
+  final DaySettings initial;
 
   @override
   State<DaySettingsScreen> createState() => _DaySettingsScreenState();
@@ -44,11 +50,7 @@ class _DaySettingsScreenState extends State<DaySettingsScreen> {
   final Set<String> _selMach = {};
   final Set<String> _selCat = {};
 
-  static const _radiusOptions = [
-    'В радиусе 10 км',
-    'В радиусе 20 км',
-    'В радиусе 50 км',
-  ];
+  static const List<String> _radiusOptions = DaySettings.radiusOptions;
   static const _machinery = [
     'Экскаватор-погрузчик',
     'Экскаватор',
@@ -81,18 +83,26 @@ class _DaySettingsScreenState extends State<DaySettingsScreen> {
   void initState() {
     super.initState();
     _state = widget.initialState;
-    _accepting = _state == DayState.hasOrders;
+    _accepting = widget.initial.accepting;
+    _timeFrom = widget.initial.timeFrom;
+    _timeTo = widget.initial.timeTo;
+    _allDay = widget.initial.allDay;
+    _radiusIndex = widget.initial.radiusIndex;
+    _location = widget.initial.location;
+    _selMach.addAll(widget.initial.machinery);
+    _selCat.addAll(widget.initial.categories);
   }
 
   Future<void> _toggleAccepting(bool value) async {
-    if (!value && _state == DayState.hasOrders) {
+    if (!value) {
       final bool? ok = await ScheduleAlerts.showCloseAcceptance(context);
       if (ok != true) return;
     }
-    setState(() {
-      _accepting = value;
-      _state = value ? DayState.hasOrders : DayState.noOrders;
-    });
+    // Тумблер «Приём заказов» отвечает ТОЛЬКО за приём новых заказов;
+    // признак «выходной» меняется отдельно — оранжевой кнопкой
+    // «Отметить нерабочим» в графике. Поэтому `_state` здесь не
+    // трогаем.
+    setState(() => _accepting = value);
   }
 
 
@@ -124,7 +134,20 @@ class _DaySettingsScreenState extends State<DaySettingsScreen> {
               padding: EdgeInsets.fromLTRB(16.w, 12.h, 16.w, 16.h),
               child: PrimaryButton(
                 label: 'Сохранить',
-                onPressed: () => Navigator.of(context).pop(_state),
+                // Возвращаем полный набор параметров, чтобы родитель
+                // сохранил их и подставил при следующем открытии.
+                onPressed: () => Navigator.of(context).pop(
+                  DaySettings(
+                    accepting: _accepting,
+                    timeFrom: _timeFrom,
+                    timeTo: _timeTo,
+                    allDay: _allDay,
+                    radiusIndex: _radiusIndex,
+                    location: _location,
+                    machinery: Set<String>.from(_selMach),
+                    categories: Set<String>.from(_selCat),
+                  ),
+                ),
               ),
             ),
           ],
@@ -415,50 +438,6 @@ class _DaySettingsScreenState extends State<DaySettingsScreen> {
             ),
             SizedBox(width: 12.w),
             Text(label, style: AppTextStyles.body),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _HourField extends StatelessWidget {
-  const _HourField({
-    required this.label,
-    required this.hour,
-    required this.onChanged,
-  });
-
-  final String label;
-  final int hour;
-  final ValueChanged<int> onChanged;
-
-  String _f(int v) => '${v.toString().padLeft(2, '0')}:00';
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () async {
-        final picked = await showTimePicker(
-          context: context,
-          initialTime: TimeOfDay(hour: hour, minute: 0),
-        );
-        if (picked != null) onChanged(picked.hour);
-      },
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        height: 52.h,
-        padding: EdgeInsets.symmetric(horizontal: AppSpacing.md),
-        decoration: BoxDecoration(
-          color: AppColors.fieldFill,
-          borderRadius: BorderRadius.circular(AppSpacing.radiusM),
-        ),
-        child: Row(
-          children: [
-            Text('$label   ', style: AppTextStyles.body),
-            Expanded(child: Text(_f(hour), style: AppTextStyles.body)),
-            Icon(Icons.access_time_rounded,
-                size: 20.r, color: AppColors.textTertiary),
           ],
         ),
       ),

@@ -4,6 +4,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_spacing.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
+import 'package:dispatcher_1/core/widgets/primary_button.dart';
 import 'package:dispatcher_1/features/catalog/widgets/respond_bottom_sheet.dart';
 
 Future<void> showCreateExecutorCardAlert(BuildContext context) {
@@ -11,6 +12,78 @@ Future<void> showCreateExecutorCardAlert(BuildContext context) {
     context: context,
     barrierColor: Colors.black.withValues(alpha: 0.35),
     builder: (_) => const RespondModalDialog(verified: false),
+  );
+}
+
+/// Попап «Сначала создайте карточку исполнителя» — показывается, когда
+/// пользователь пытается зайти в разделы, требующие созданной карточки
+/// («Мой график», «Мои услуги»), но карточка ещё не оформлена. По тапу
+/// «Создать» возвращает `true`, родитель сам решает куда навигировать.
+Future<bool?> showExecutorCardRequiredAlert(BuildContext context) {
+  return showDialog<bool>(
+    context: context,
+    barrierDismissible: true,
+    barrierColor: Colors.black.withValues(alpha: 0.35),
+    builder: (ctx) => Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: EdgeInsets.symmetric(horizontal: 16.w),
+      child: Container(
+        // Отступы и структура (крестик → 20 → заголовок → … → 8.h)
+        // идентичны другим попапам с парой «основное действие +
+        // Вернуться» — `_ConfirmDialog` из `order_alerts.dart` и
+        // `ScheduleAlerts`.
+        padding: EdgeInsets.fromLTRB(16.r, 14.r, 16.r, 22.r),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(20.r),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Align(
+              alignment: Alignment.centerRight,
+              child: GestureDetector(
+                onTap: () => Navigator.of(ctx).pop(false),
+                child: Icon(Icons.close_rounded,
+                    size: 22.r, color: AppColors.textTertiary),
+              ),
+            ),
+            SizedBox(height: 20.h),
+            Text(
+              'Сначала создайте карточку\nисполнителя',
+              textAlign: TextAlign.center,
+              style: AppTextStyles.titleL.copyWith(fontWeight: FontWeight.w700),
+            ),
+            SizedBox(height: AppSpacing.xs),
+            Text(
+              'Раздел станет доступен, как только\nвы оформите карточку.',
+              textAlign: TextAlign.center,
+              style: AppTextStyles.body
+                  .copyWith(color: AppColors.textSecondary),
+            ),
+            SizedBox(height: AppSpacing.lg),
+            PrimaryButton(
+              label: 'Создать',
+              onPressed: () => Navigator.of(ctx).pop(true),
+            ),
+            SizedBox(height: AppSpacing.lg),
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => Navigator.of(ctx).pop(false),
+              child: Center(
+                child: Text(
+                  'Вернуться',
+                  style: AppTextStyles.bodyMedium
+                      .copyWith(color: AppColors.textPrimary),
+                ),
+              ),
+            ),
+            SizedBox(height: 8.h),
+          ],
+        ),
+      ),
+    ),
   );
 }
 

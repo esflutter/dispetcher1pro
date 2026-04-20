@@ -6,8 +6,14 @@ import 'package:dispatcher_1/core/widgets/primary_button.dart';
 import 'package:dispatcher_1/features/orders/widgets/order_alerts.dart';
 
 /// Экран «Как всё прошло?» — оценка пользователя + комментарий + кнопка.
+/// Принимает `orderId` и `customerId`, чтобы при появлении бэкенда было
+/// к чему привязать отзыв. Сейчас используется только вызывающим
+/// экраном: он получает назад `true` и помечает заказ как прокомментированный.
 class ReviewScreen extends StatefulWidget {
-  const ReviewScreen({super.key});
+  const ReviewScreen({super.key, this.orderId, this.customerId});
+
+  final String? orderId;
+  final String? customerId;
 
   @override
   State<ReviewScreen> createState() => _ReviewScreenState();
@@ -24,9 +30,13 @@ class _ReviewScreenState extends State<ReviewScreen> {
   }
 
   Future<void> _submit() async {
+    // TODO(backend): отправить отзыв на сервер с orderId/customerId
+    // вместе с _rating и _comment.text.trim(). Пока только закрываем
+    // экран и возвращаем true — вызывающий помечает заказ как
+    // прокомментированный в `_reviewedOrders`.
     await showReviewSentDialog(context);
     if (!mounted) return;
-    Navigator.of(context).maybePop();
+    Navigator.of(context).pop(true);
   }
 
   @override

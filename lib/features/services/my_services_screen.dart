@@ -17,6 +17,12 @@ class ServiceData {
 
   static final List<ServiceMock> services = [];
 
+  /// Полный сброс списка услуг — для logout. У следующего пользователя
+  /// на этом устройстве не должно быть услуг предыдущего.
+  static void clear() {
+    services.clear();
+  }
+
   static const List<ServiceMock> presets = [
     ServiceMock(
       id: '1',
@@ -162,22 +168,32 @@ class _ServicesList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListView.separated(
-      padding: EdgeInsets.symmetric(vertical: 4.h),
+      padding: EdgeInsets.fromLTRB(16.w, 12.h, 16.w, 12.h),
       itemCount: items.length,
-      separatorBuilder: (_, _) =>
-          Divider(height: 1, thickness: 1, color: AppColors.primary.withValues(alpha: 0.3)),
+      separatorBuilder: (_, _) => SizedBox(height: 8.h),
       itemBuilder: (context, index) {
         final item = items[index];
-        return ServiceCard(
-          title: item.title,
-          machinery: item.machinery,
-          description: item.description,
-          pricePerHour: item.pricePerHour,
-          pricePerDay: item.pricePerDay,
-          onTap: () async {
-            await context.push('/services/${item.id}');
-            onRefresh();
-          },
+        // Каждая карточка — контейнер с мягкой оранжевой заливкой
+        // (`AppColors.fieldFill`). Визуально делит список на «плитки»
+        // — так же, как в приложении заказчика (`_ServiceTile` в
+        // `catalog/order_detail_screen.dart`).
+        return Container(
+          decoration: BoxDecoration(
+            color: AppColors.fieldFill,
+            borderRadius: BorderRadius.circular(14.r),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: ServiceCard(
+            title: item.title,
+            machinery: item.machinery,
+            description: item.description,
+            pricePerHour: item.pricePerHour,
+            pricePerDay: item.pricePerDay,
+            onTap: () async {
+              await context.push('/services/${item.id}');
+              onRefresh();
+            },
+          ),
         );
       },
     );

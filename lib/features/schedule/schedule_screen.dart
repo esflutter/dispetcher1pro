@@ -7,12 +7,76 @@ import 'package:dispatcher_1/core/theme/app_text_styles.dart';
 import 'package:dispatcher_1/core/widgets/dark_sub_app_bar.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
 import 'package:dispatcher_1/features/catalog/widgets/catalog_search_bar.dart';
+import 'package:dispatcher_1/features/executor_card/executor_card_screen.dart';
 import 'package:dispatcher_1/features/orders/widgets/order_status_pill.dart';
 import 'package:dispatcher_1/features/orders/order_detail_screen.dart';
 import 'package:dispatcher_1/features/schedule/day_settings_screen.dart';
+import 'package:dispatcher_1/features/schedule/widgets/schedule_alerts.dart';
 
 /// Состояние конкретного дня графика.
 enum DayState { noOrders, hasOrders, dayOff }
+
+/// Пользовательские параметры для конкретного дня из экрана
+/// «Параметры дня» (карандаш вверху справа «Мой график»). Хранятся
+/// в state родительского экрана, чтобы при повторном открытии дня
+/// настройки не сбрасывались. Все поля необязательные — если
+/// пользователь ничего не выставил, сохраняется дефолт.
+class DaySettings {
+  const DaySettings({
+    this.accepting = true,
+    this.timeFrom,
+    this.timeTo,
+    this.allDay = false,
+    this.radiusIndex = -1,
+    this.location,
+    this.machinery = const <String>{},
+    this.categories = const <String>{},
+  });
+
+  /// Варианты радиуса — общие для «Параметров дня» и карточки
+  /// исполнителя. Индекс внутри [radiusIndex] ссылается на этот список.
+  static const List<String> radiusOptions = <String>[
+    'В радиусе 10 км',
+    'В радиусе 20 км',
+    'В радиусе 50 км',
+  ];
+
+  /// Дефолтные параметры дня, построенные из текущей карточки
+  /// исполнителя. Используется, когда пользователь не выставил
+  /// индивидуальные настройки для конкретного дня.
+  factory DaySettings.fromExecutorCard({bool accepting = true}) {
+    final String? cardRadius = ExecutorCardData.radius;
+    final int idx = cardRadius == null ? -1 : radiusOptions.indexOf(cardRadius);
+    return DaySettings(
+      accepting: accepting,
+      location: ExecutorCardData.location,
+      radiusIndex: idx,
+      machinery: Set<String>.from(ExecutorCardData.machinery),
+      categories: Set<String>.from(ExecutorCardData.categories),
+    );
+  }
+
+  /// Принимает ли исполнитель новые заказы в этот день.
+  final bool accepting;
+  final TimeOfDay? timeFrom;
+  final TimeOfDay? timeTo;
+  final bool allDay;
+  final int radiusIndex;
+  final String? location;
+  final Set<String> machinery;
+  final Set<String> categories;
+
+  DaySettings copyWith({bool? accepting}) => DaySettings(
+        accepting: accepting ?? this.accepting,
+        timeFrom: timeFrom,
+        timeTo: timeTo,
+        allDay: allDay,
+        radiusIndex: radiusIndex,
+        location: location,
+        machinery: machinery,
+        categories: categories,
+      );
+}
 
 class _ScheduledOrder {
   const _ScheduledOrder({
@@ -22,6 +86,10 @@ class _ScheduledOrder {
     required this.rentDate,
     required this.address,
     required this.price,
+    this.customerId = '1',
+    this.customerName = 'Александр Иванов',
+    this.customerPhone = '+7 999 123-45-67',
+    this.customerEmail,
   });
   final MyOrderStatus status;
   final List<String> machinery;
@@ -29,6 +97,26 @@ class _ScheduledOrder {
   final String rentDate;
   final String address;
   final String price;
+  final String customerId;
+  final String customerName;
+  final String customerPhone;
+
+  /// Почта заказчика. Показывается на странице деталей только если
+  /// задана — иначе блок «Электронная почта» не отображается.
+  final String? customerEmail;
+
+  _ScheduledOrder copyWith({MyOrderStatus? status}) => _ScheduledOrder(
+        status: status ?? this.status,
+        machinery: machinery,
+        title: title,
+        rentDate: rentDate,
+        address: address,
+        price: price,
+        customerId: customerId,
+        customerName: customerName,
+        customerPhone: customerPhone,
+        customerEmail: customerEmail,
+      );
 }
 
 class ScheduleScreen extends StatefulWidget {
@@ -46,20 +134,35 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   /// Начальная неделя (для расчёта индекса страницы).
   late DateTime _originWeek;
 
+  /// Явно отмеченные пользователем выходные дни (через оранжевую
+  /// кнопку «Отметить нерабочим» внизу). Этот статус означает «я вообще
+  /// не работаю в этот день» — отличается от «закрыл приём заказов».
   final Map<DateTime, DayState> _dayStates = {};
+
+  /// Сохранённые параметры дня: включён ли приём заказов, выбранное
+  /// время, местоположение/радиус, спецтехника и категории. Заполняется
+  /// из «Параметры дня» (карандаш вверху) и из зелёного тумблера
+  /// «Приём заказов». При повторном открытии настроек эти значения
+  /// подставляются в форму.
+  final Map<DateTime, DaySettings> _daySettings = <DateTime, DaySettings>{};
 
   bool _acceptingOrders = true;
 
   /// Заказы по дню недели (1=пн..7=вс). Повторяется каждую неделю.
-  static const Map<int, List<_ScheduledOrder>> _ordersByWeekday = {
-    1: [ // понедельник — 3 заказа
+  /// Инстансное поле (не `static const`), чтобы при подтверждении/отказе
+  /// в деталях заказа мы могли мутировать статус/удалять элементы и
+  /// `setState` отрисовывал актуальный список.
+  final Map<int, List<_ScheduledOrder>> _ordersByWeekday = <int, List<_ScheduledOrder>>{
+    1: <_ScheduledOrder>[ // понедельник — 3 заказа
       _ScheduledOrder(
-        status: MyOrderStatus.waiting,
+        status: MyOrderStatus.pendingConfirmation,
         machinery: ['Автокран', 'Экскаватор'],
         title: 'Земляные работы',
         rentDate: '09:00–12:00',
         address: 'Московская область, Москва, Улица1, д.144',
         price: '40 000 – 60 000 ₽',
+        customerId: '1',
+        customerName: 'Александр Иванов',
       ),
       _ScheduledOrder(
         status: MyOrderStatus.accepted,
@@ -68,17 +171,23 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
         rentDate: '13:00–16:00',
         address: 'Московская область, Москва, Проспект Мира, д.12',
         price: '25 000 ₽',
+        customerId: '2',
+        customerName: 'Пётр Иванов',
+        customerPhone: '+7 999 234-56-78',
+        customerEmail: 'petrov.ivanov@example.ru',
       ),
       _ScheduledOrder(
-        status: MyOrderStatus.waiting,
+        status: MyOrderStatus.pendingConfirmation,
         machinery: ['Манипулятор'],
         title: 'Доставка бетонных плит',
         rentDate: '17:00–19:00',
         address: 'Московская область, Химки, ул. Ленина, д.5',
         price: '35 000 ₽',
+        customerId: '3',
+        customerName: 'Сергей Петров',
       ),
     ],
-    2: [ // вторник — 1 заказ
+    2: <_ScheduledOrder>[ // вторник — 1 заказ
       _ScheduledOrder(
         status: MyOrderStatus.accepted,
         machinery: ['Экскаватор', 'Самосвал'],
@@ -86,17 +195,23 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
         rentDate: '08:00–17:00',
         address: 'Московская область, Подольск, ул. Кирова, д.88',
         price: '80 000 ₽',
+        customerId: '4',
+        customerName: 'Михаил Смирнов',
+        customerPhone: '+7 999 345-67-89',
+        customerEmail: 'smirnov@example.ru',
       ),
     ],
-    3: [], // среда — 0 заказов
-    4: [ // четверг — 2 заказа
+    3: <_ScheduledOrder>[], // среда — 0 заказов
+    4: <_ScheduledOrder>[ // четверг — 2 заказа
       _ScheduledOrder(
-        status: MyOrderStatus.waiting,
+        status: MyOrderStatus.pendingConfirmation,
         machinery: ['Автокран', 'Экскаватор'],
         title: 'Земляные работы',
         rentDate: '09:00–14:00',
         address: 'Московская область, Москва, Улица1, д.144',
         price: '40 000 – 60 000 ₽',
+        customerId: '5',
+        customerName: 'Виктор Новиков',
       ),
       _ScheduledOrder(
         status: MyOrderStatus.accepted,
@@ -105,16 +220,21 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
         rentDate: '15:00–18:00',
         address: 'Московская область, Москва, Улица1, д.144',
         price: '120 000 ₽',
+        customerId: '6',
+        customerName: 'Дмитрий Соколов',
+        customerPhone: '+7 999 456-78-90',
       ),
     ],
-    5: [ // пятница — 1 заказ
+    5: <_ScheduledOrder>[ // пятница — 1 заказ
       _ScheduledOrder(
-        status: MyOrderStatus.waiting,
+        status: MyOrderStatus.pendingConfirmation,
         machinery: ['Автовышка'],
         title: 'Монтаж рекламного баннера',
         rentDate: '10:00–13:00',
         address: 'Москва, ул. Тверская, д.22',
         price: '18 000 ₽',
+        customerId: '7',
+        customerName: 'Андрей Волков',
       ),
     ],
     // 6 суббота, 7 воскресенье — 0 заказов
@@ -125,7 +245,12 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь',
   ];
 
-  static const int _initialPage = 5000;
+  /// Стартовая страница — сегодняшняя неделя. Листать назад нельзя,
+  /// вперёд — ровно на год (52 недели).
+  static const int _initialPage = 0;
+
+  /// Максимальная страница (включительно): текущая неделя + 52.
+  static const int _maxPage = 52;
 
   @override
   void initState() {
@@ -154,8 +279,27 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     setState(() {
       _weekStart = newWeek;
       _selectedDate = newWeek;
-      _acceptingOrders = _stateFor(_selectedDate) != DayState.dayOff;
+      _acceptingOrders = _acceptingFor(_selectedDate);
     });
+  }
+
+  /// Принимает ли исполнитель новые заказы в указанный день.
+  /// `false`, если день помечен выходным **или** пользователь временно
+  /// закрыл приём заказов зелёным тумблером.
+  bool _acceptingFor(DateTime d) {
+    if (_stateFor(d) == DayState.dayOff) return false;
+    return _daySettings[_dateKey(d)]?.accepting ?? true;
+  }
+
+  /// Настройки дня: если пользователь уже редактировал этот день — его
+  /// сохранённые значения; иначе — дефолт из карточки исполнителя.
+  DaySettings _settingsFor(DateTime d) =>
+      _daySettings[_dateKey(d)] ?? DaySettings.fromExecutorCard();
+
+  void _updateAccepting(DateTime key, bool value) {
+    final DaySettings current =
+        _daySettings[key] ?? DaySettings.fromExecutorCard();
+    _daySettings[key] = current.copyWith(accepting: value);
   }
 
   DateTime _mondayOf(DateTime d) =>
@@ -183,32 +327,74 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     return orders.isNotEmpty ? DayState.hasOrders : DayState.noOrders;
   }
 
+  int get _currentPage {
+    final double p = _pageCtrl.hasClients ? (_pageCtrl.page ?? _initialPage.toDouble()) : _initialPage.toDouble();
+    return p.round();
+  }
+
   void _prevWeek() {
+    if (_currentPage <= _initialPage) return;
     _pageCtrl.previousPage(
         duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
   }
 
   void _nextWeek() {
+    if (_currentPage >= _maxPage) return;
     _pageCtrl.nextPage(
         duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
   }
 
   Future<void> _openDaySettings() async {
     final key = _dateKey(_selectedDate);
-    final DayState? updated = await Navigator.of(context).push<DayState>(
-      MaterialPageRoute<DayState>(
+    final DaySettings initial = _settingsFor(_selectedDate);
+    final DaySettings? updated = await Navigator.of(context).push<DaySettings>(
+      MaterialPageRoute<DaySettings>(
         builder: (_) => DaySettingsScreen(
           dayLabel: '${_selectedDate.day} ${_monthNames[_selectedDate.month]}, ${_selectedDate.year}',
           initialState: _stateFor(_selectedDate),
+          initial: initial,
         ),
       ),
     );
-    if (updated != null) {
+    if (updated == null) return;
+    setState(() {
+      // «Параметры дня» управляют настройками дня, но НЕ признаком
+      // «выходной» — он ставится исключительно оранжевой кнопкой
+      // внизу графика.
+      _daySettings[key] = updated;
+      _acceptingOrders = updated.accepting;
+    });
+  }
+
+  /// Переключает «выходной» для текущего дня. Если день помечается
+  /// нерабочим и на нём уже есть активные заказы — сначала показываем
+  /// алерт-предупреждение; по подтверждению все заказы отменяются
+  /// (удаляются из графика) и день уходит в `dayOff`.
+  Future<void> _toggleDayOff(DayState state) async {
+    final DateTime key = _dateKey(_selectedDate);
+
+    if (state == DayState.dayOff) {
       setState(() {
-        _dayStates[key] = updated;
-        _acceptingOrders = updated != DayState.dayOff && updated != DayState.noOrders;
+        _dayStates.remove(key);
+        _acceptingOrders = _acceptingFor(_selectedDate);
       });
+      return;
     }
+
+    final List<_ScheduledOrder> orders =
+        _ordersByWeekday[_selectedDate.weekday] ?? <_ScheduledOrder>[];
+    if (orders.isNotEmpty) {
+      final bool? ok = await ScheduleAlerts.showMarkDayOffWithActiveOrders(
+        context,
+        ordersCount: orders.length,
+      );
+      if (ok != true || !mounted) return;
+    }
+    setState(() {
+      orders.clear();
+      _dayStates[key] = DayState.dayOff;
+      _acceptingOrders = false;
+    });
   }
 
   Future<void> _toggleAcceptance(bool value) async {
@@ -216,7 +402,14 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       final bool? ok = await _showCloseDialog();
       if (ok != true) return;
     }
-    setState(() => _acceptingOrders = value);
+    final key = _dateKey(_selectedDate);
+    setState(() {
+      _acceptingOrders = value;
+      // Зелёный тумблер только открывает/закрывает приём новых
+      // заказов. День остаётся рабочим — существующие заказы видны.
+      // Пометка «выходной» ставится оранжевой кнопкой ниже.
+      _updateAccepting(key, value);
+    });
   }
 
   Future<bool?> _showCloseDialog() {
@@ -318,21 +511,27 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                       ),
                     ),
                   ),
-                  GestureDetector(
-                    onTap: _prevWeek,
-                    child: Padding(
-                      padding: EdgeInsets.all(4.r),
-                      child: Image.asset('assets/icons/profile/arrow_left_calendar.webp',
-                          width: 24.r, height: 24.r),
+                  Opacity(
+                    opacity: _currentPage <= _initialPage ? 0.35 : 1.0,
+                    child: GestureDetector(
+                      onTap: _prevWeek,
+                      child: Padding(
+                        padding: EdgeInsets.all(4.r),
+                        child: Image.asset('assets/icons/profile/arrow_left_calendar.webp',
+                            width: 24.r, height: 24.r),
+                      ),
                     ),
                   ),
                   SizedBox(width: 4.w),
-                  GestureDetector(
-                    onTap: _nextWeek,
-                    child: Padding(
-                      padding: EdgeInsets.all(4.r),
-                      child: Image.asset('assets/icons/profile/arrow_right_calendar.webp',
-                          width: 24.r, height: 24.r),
+                  Opacity(
+                    opacity: _currentPage >= _maxPage ? 0.35 : 1.0,
+                    child: GestureDetector(
+                      onTap: _nextWeek,
+                      child: Padding(
+                        padding: EdgeInsets.all(4.r),
+                        child: Image.asset('assets/icons/profile/arrow_right_calendar.webp',
+                            width: 24.r, height: 24.r),
+                      ),
                     ),
                   ),
                 ],
@@ -361,6 +560,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
               child: PageView.builder(
                 controller: _pageCtrl,
                 onPageChanged: _onPageChanged,
+                itemCount: _maxPage + 1,
                 itemBuilder: (_, page) {
                   final monday = _weekFromPage(page);
                   final days = _weekDaysFor(monday);
@@ -370,8 +570,15 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                       children: days.map((day) {
                         final bool selected = _dateKey(day) == _dateKey(_selectedDate);
                         final DayState s = _stateFor(day);
+                        // Дни раньше сегодняшнего неактивны — эту часть
+                        // недели показываем для календарного контекста,
+                        // но переключаться на них нельзя (графика в
+                        // прошлое не ведём).
+                        final bool isPast =
+                            _dateKey(day).isBefore(_dateKey(DateTime.now()));
                         Color? bg;
-                        Color textColor = AppColors.textPrimary;
+                        Color textColor =
+                            isPast ? AppColors.textTertiary : AppColors.textPrimary;
                         if (selected) {
                           bg = AppColors.primary;
                           textColor = Colors.white;
@@ -381,10 +588,12 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                         }
                         return Expanded(
                           child: GestureDetector(
-                            onTap: () => setState(() {
-                              _selectedDate = day;
-                              _acceptingOrders = _stateFor(day) != DayState.dayOff;
-                            }),
+                            onTap: isPast
+                                ? null
+                                : () => setState(() {
+                                      _selectedDate = day;
+                                      _acceptingOrders = _acceptingFor(day);
+                                    }),
                             behavior: HitTestBehavior.opaque,
                             child: Center(
                               child: Container(
@@ -447,17 +656,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                 label: state == DayState.dayOff
                     ? 'Отметить рабочим'
                     : 'Отметить нерабочим',
-                onPressed: () {
-                  final key = _dateKey(_selectedDate);
-                  setState(() {
-                    if (state == DayState.dayOff) {
-                      _dayStates.remove(key);
-                      _acceptingOrders = true;
-                    } else {
-                      _dayStates[key] = DayState.dayOff;
-                    }
-                  });
-                },
+                onPressed: () => _toggleDayOff(state),
               ),
             ),
           ],
@@ -510,8 +709,33 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
         padding: EdgeInsets.symmetric(vertical: 12.h),
         child: Divider(height: 1, thickness: 1, color: AppColors.primary.withValues(alpha: 0.3)),
       ),
-      itemBuilder: (_, i) => _OrderCard(order: orders[i]),
+      itemBuilder: (_, i) => _OrderCard(
+        order: orders[i],
+        onConfirm: () => _confirmOrder(orders[i]),
+        onRemove: () => _removeOrder(orders[i]),
+      ),
     );
+  }
+
+  /// Подтверждение заказа — статус меняется с `pendingConfirmation`
+  /// на `accepted`. Исполнитель ответил «Подтвердить» в деталях заказа.
+  void _confirmOrder(_ScheduledOrder order) {
+    final List<_ScheduledOrder>? list = _ordersByWeekday[_selectedDate.weekday];
+    if (list == null) return;
+    final int idx = list.indexOf(order);
+    if (idx < 0) return;
+    setState(() {
+      list[idx] = order.copyWith(status: MyOrderStatus.accepted);
+    });
+  }
+
+  /// Удаление заказа из дня — вызывается при «Отклонить» /
+  /// «Отказаться» / «Отозвать отклик» в деталях заказа. Заказ больше
+  /// не на исполнителе, поэтому из графика его убираем.
+  void _removeOrder(_ScheduledOrder order) {
+    final List<_ScheduledOrder>? list = _ordersByWeekday[_selectedDate.weekday];
+    if (list == null) return;
+    setState(() => list.remove(order));
   }
 }
 
@@ -562,8 +786,20 @@ class ScheduleToggle extends StatelessWidget {
 }
 
 class _OrderCard extends StatelessWidget {
-  const _OrderCard({required this.order});
+  const _OrderCard({
+    required this.order,
+    required this.onConfirm,
+    required this.onRemove,
+  });
   final _ScheduledOrder order;
+
+  /// Подтверждение заказа («Подтвердить» в деталях) — статус в графике
+  /// должен смениться на `accepted` («Свяжитесь с заказчиком»).
+  final VoidCallback onConfirm;
+
+  /// Удаление заказа из графика — когда исполнитель «Отклонил» /
+  /// «Отказался» / «Отозвал отклик».
+  final VoidCallback onRemove;
 
   @override
   Widget build(BuildContext context) {
@@ -574,7 +810,7 @@ class _OrderCard extends StatelessWidget {
       color: AppColors.textTertiary,
       height: 1.78,
     );
-    final detailState = order.status == MyOrderStatus.waiting
+    final detailState = order.status == MyOrderStatus.pendingConfirmation
         ? MyOrderDetailState.waitingConfirm
         : MyOrderDetailState.confirmed;
     return InkWell(
@@ -587,6 +823,14 @@ class _OrderCard extends StatelessWidget {
             address: order.address,
             price: order.price,
             state: detailState,
+            customerId: order.customerId,
+            customerName: order.customerName,
+            customerPhone: order.customerPhone,
+            customerEmail: order.customerEmail,
+            onConfirm: onConfirm,
+            onDecline: onRemove,
+            onRefuse: onRemove,
+            onWithdraw: onRemove,
           ),
         ),
       ),

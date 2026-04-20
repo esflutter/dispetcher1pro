@@ -101,7 +101,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               ),
             ),
           ),
-          
+
           // 2. Static White Card at bottom
           Align(
             alignment: Alignment.bottomCenter,
@@ -179,7 +179,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     Container(
                       padding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 8.h),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFFBE4C6).withValues(alpha: 0.78),
+                        color: AppColors.primaryTintStrong.withValues(alpha: 0.78),
                         borderRadius: BorderRadius.circular(100.r),
                       ),
                       child: SmoothPageIndicator(
@@ -189,8 +189,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                           dotHeight: 8.r,
                           dotWidth: 8.r,
                           spacing: 8.w,
-                          activeDotColor: const Color(0xFFFFAC26),
-                          dotColor: const Color(0xFFFFAC26).withValues(alpha: 0.3),
+                          activeDotColor: AppColors.primary,
+                          dotColor: AppColors.primary.withValues(alpha: 0.3),
                         ),
                       ),
                     ),

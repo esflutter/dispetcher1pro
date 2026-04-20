@@ -1,43 +1,57 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:go_router/go_router.dart';
 
 import 'package:dispatcher_1/core/theme/app_colors.dart';
-import 'package:dispatcher_1/core/theme/app_spacing.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
+import 'package:dispatcher_1/features/catalog/order_detail_screen.dart';
+import 'package:dispatcher_1/features/catalog/order_feed_screen.dart';
+import 'package:dispatcher_1/features/catalog/widgets/catalog_search_bar.dart';
+import 'package:dispatcher_1/features/catalog/widgets/order_card.dart';
 
-const String _kAbout =
-    'Частный заказчик. Периодически нужны услуги спецтехники для строительных '
-    'работ и благоустройства участка.';
-
-const List<_CustomerOrder> _kOrders = <_CustomerOrder>[
-  _CustomerOrder(
-    equipment: 'Экскаватор',
-    posted: '2 часа назад',
-    title: 'Нужен экскаватор для копки траншеи',
-    price: null,
-  ),
-  _CustomerOrder(
-    equipment: 'Автокран',
-    posted: 'Сегодня в 11:30',
-    title: 'Разработка котлована под фундамент',
-    price: '60 000 ₽',
-  ),
-];
-
-class _CustomerOrder {
-  const _CustomerOrder({
-    required this.equipment,
-    required this.posted,
-    required this.title,
-    required this.price,
+/// Мок-профиль заказчика. Пока нет бэкенда, получаем из локального
+/// каталога по `customerId`. [hasMatch] = был ли уже принятый обоюдно
+/// заказ — до этого телефон и email не показываем.
+class _CustomerInfo {
+  const _CustomerInfo({
+    required this.id,
+    required this.name,
+    required this.status,
+    required this.reviewsCount,
+    required this.rating,
+    this.phone,
+    this.email,
+    this.about,
+    this.hasMatch = false,
   });
-  final String equipment;
-  final String posted;
-  final String title;
-  final String? price;
+
+  final String id;
+  final String name;
+  final String status;
+  final int reviewsCount;
+  final double rating;
+  final String? phone;
+  final String? email;
+  final String? about;
+  final bool hasMatch;
 }
 
-/// Карточка заказчика — публичный профиль.
+_CustomerInfo _customerFor(String id) => _CustomerInfo(
+      id: id,
+      name: 'Александр Иванов',
+      status: 'Физ. лицо',
+      reviewsCount: 15,
+      rating: 4.5,
+      phone: '+7 999 123-45-67',
+      email: null,
+      about: 'Частный заказчик. Периодически нужны услуги спецтехники для '
+          'строительных работ и благоустройства участка.',
+      // До появления бэкенда: считаем, что совпадений по заказам ещё не
+      // было — контакты скрыты. На реальных данных флаг придёт с сервера.
+      hasMatch: false,
+    );
+
+/// Карточка заказчика — публичный профиль, который видит исполнитель.
 class CustomerCardScreen extends StatelessWidget {
   const CustomerCardScreen({super.key, required this.customerId});
 
@@ -45,92 +59,184 @@ class CustomerCardScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final _CustomerInfo c = _customerFor(customerId);
+    final List<CatalogOrderMock> orders = CatalogOrderMock.all
+        .where((CatalogOrderMock o) => o.customerId == customerId)
+        .toList();
+
+    final bool showPhone =
+        c.hasMatch && c.phone != null && c.phone!.trim().isNotEmpty;
+    final bool showEmail =
+        c.hasMatch && c.email != null && c.email!.trim().isNotEmpty;
+    final bool hasAbout = c.about != null && c.about!.trim().isNotEmpty;
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        backgroundColor: AppColors.surface,
-        foregroundColor: AppColors.textPrimary,
+        backgroundColor: AppColors.navBarDark,
+        foregroundColor: Colors.white,
         elevation: 0,
-        title: Text('Заказчик', style: AppTextStyles.titleS),
+        centerTitle: true,
+        title: Text(
+          'Заказчик',
+          style: AppTextStyles.titleS.copyWith(color: Colors.white),
+        ),
+        leading: IconButton(
+          icon: Icon(Icons.arrow_back_ios_new_rounded,
+              color: Colors.white, size: 20.r),
+          onPressed: () => Navigator.of(context).maybePop(),
+        ),
       ),
+      floatingActionButton: Padding(
+        padding: EdgeInsets.only(bottom: 24.h),
+        child: AiAssistantFab(
+          onTap: () => context.push('/assistant/chat'),
+        ),
+      ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       body: SafeArea(
+        top: false,
         child: SingleChildScrollView(
-          padding: EdgeInsets.all(AppSpacing.screenH),
+          padding: EdgeInsets.fromLTRB(16.w, 16.h, 16.w, 24.h),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Center(
-                child: Column(
-                  children: <Widget>[
-                    CircleAvatar(
-                      radius: 48.r,
-                      backgroundColor: AppColors.primaryTint,
-                      child: Icon(Icons.person,
-                          size: 48.r, color: AppColors.primary),
-                    ),
-                    SizedBox(height: AppSpacing.md),
-                    Text('Александр Иванов', style: AppTextStyles.h3),
-                    SizedBox(height: AppSpacing.xxs),
-                    Text('15 отзывов',
-                        style: AppTextStyles.caption
-                            .copyWith(color: AppColors.textTertiary)),
-                  ],
-                ),
-              ),
-              SizedBox(height: AppSpacing.lg),
-              Text('Номер телефона',
-                  style: AppTextStyles.caption
-                      .copyWith(color: AppColors.textTertiary)),
-              SizedBox(height: AppSpacing.xxs),
-              Text('+7 999 123-45-67', style: AppTextStyles.bodyMedium),
-              SizedBox(height: AppSpacing.md),
-              Text('Статус',
-                  style: AppTextStyles.caption
-                      .copyWith(color: AppColors.textTertiary)),
-              SizedBox(height: AppSpacing.xxs),
-              Text('Физ. лицо', style: AppTextStyles.bodyMedium),
-              SizedBox(height: AppSpacing.md),
-              Text('О себе',
-                  style: AppTextStyles.caption
-                      .copyWith(color: AppColors.textTertiary)),
-              SizedBox(height: AppSpacing.xxs),
-              Text(_kAbout, style: AppTextStyles.bodyMRegular),
-              SizedBox(height: AppSpacing.lg),
-              for (final _CustomerOrder o in _kOrders) ...<Widget>[
-                Container(
-                  padding: EdgeInsets.all(AppSpacing.md),
-                  decoration: BoxDecoration(
-                    color: AppColors.surfaceMuted,
-                    borderRadius: BorderRadius.circular(AppSpacing.radiusM),
-                    border: Border.all(color: AppColors.divider),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: <Widget>[
-                          Text(o.equipment,
-                              style: AppTextStyles.bodyMMedium),
-                          Text(o.posted,
-                              style: AppTextStyles.caption
-                                  .copyWith(color: AppColors.textTertiary)),
-                        ],
-                      ),
-                      SizedBox(height: AppSpacing.xs),
-                      Text(o.title, style: AppTextStyles.bodyMRegular),
-                      if (o.price != null) ...<Widget>[
-                        SizedBox(height: AppSpacing.xs),
-                        Text(o.price!,
-                            style: AppTextStyles.bodyMMedium
-                                .copyWith(color: AppColors.primary)),
-                      ],
-                    ],
-                  ),
-                ),
-                SizedBox(height: AppSpacing.sm),
+              _HeaderBlock(info: c),
+              SizedBox(height: 20.h),
+              if (showPhone) ...<Widget>[
+                _Field(label: 'Номер телефона', value: c.phone!),
+                SizedBox(height: 16.h),
+              ],
+              if (showEmail) ...<Widget>[
+                _Field(label: 'Email', value: c.email!),
+                SizedBox(height: 16.h),
+              ],
+              if (hasAbout) ...<Widget>[
+                _Field(label: 'О себе', value: c.about!),
+                SizedBox(height: 16.h),
+              ],
+              _Field(label: 'Статус', value: c.status),
+              if (orders.isNotEmpty) ...<Widget>[
+                SizedBox(height: 20.h),
+                for (int i = 0; i < orders.length; i++) ...<Widget>[
+                  _OrderTile(order: orders[i]),
+                  if (i != orders.length - 1) SizedBox(height: 10.h),
+                ],
               ],
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _HeaderBlock extends StatelessWidget {
+  const _HeaderBlock({required this.info});
+  final _CustomerInfo info;
+
+  String _fmtRating(double v) =>
+      v.toStringAsFixed(1).replaceAll('.', ',');
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: <Widget>[
+        CircleAvatar(
+          radius: 36.r,
+          backgroundColor: AppColors.primaryTint,
+          backgroundImage: const AssetImage(
+              'assets/images/catalog/avatar_placeholder.webp'),
+        ),
+        SizedBox(width: 12.w),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Text(info.name, style: AppTextStyles.titleS),
+              SizedBox(height: 4.h),
+              Row(
+                children: <Widget>[
+                  Image.asset(
+                    'assets/images/catalog/star.webp',
+                    width: 20.r,
+                    height: 20.r,
+                    errorBuilder: (_, _, _) => Icon(Icons.star_rounded,
+                        size: 20.r, color: AppColors.ratingStar),
+                  ),
+                  SizedBox(width: 4.w),
+                  Text(_fmtRating(info.rating), style: AppTextStyles.body),
+                  SizedBox(width: 16.w),
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => context.push('/profile/reviews'),
+                    child: Text(
+                      '${info.reviewsCount} отзывов',
+                      style: AppTextStyles.body.copyWith(
+                        color: AppColors.textPrimary,
+                        decoration: TextDecoration.underline,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _Field extends StatelessWidget {
+  const _Field({required this.label, required this.value});
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(
+          label,
+          style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.w700),
+        ),
+        SizedBox(height: 4.h),
+        Text(value, style: AppTextStyles.body),
+      ],
+    );
+  }
+}
+
+class _OrderTile extends StatelessWidget {
+  const _OrderTile({required this.order});
+  final CatalogOrderMock order;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.primaryTint,
+      borderRadius: BorderRadius.circular(12.r),
+      clipBehavior: Clip.antiAlias,
+      child: OrderCard(
+        title: order.title,
+        address: order.address,
+        rentDate: order.rentDate,
+        publishedAgo: order.publishedAgo,
+        equipment: order.equipment,
+        highlightEquipment: const <String>{},
+        price: order.price,
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => OrderDetailScreen(
+              orderId: order.id,
+              price: order.price,
+              multipleEquipment: order.equipment.length > 1,
+              fromCustomerCard: true,
+            ),
           ),
         ),
       ),

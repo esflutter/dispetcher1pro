@@ -16,7 +16,7 @@ class BlockedPill extends StatelessWidget {
       alignment: Alignment.center,
       padding: EdgeInsets.symmetric(horizontal: 12.w),
       decoration: BoxDecoration(
-        color: const Color(0xFFFCE1E1),
+        color: AppColors.errorTint,
         borderRadius: BorderRadius.circular(100.r),
       ),
       child: Text(

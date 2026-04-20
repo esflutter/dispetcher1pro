@@ -1,5 +1,8 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
+import 'package:dispatcher_1/core/utils/photo_source.dart';
 import 'package:dispatcher_1/features/auth/photo_crop_screen.dart';
 
 /// Аватарка с применением кропа из [CropResult].
@@ -14,6 +17,15 @@ class CroppedAvatar extends StatelessWidget {
 
   final double size;
   final CropResult? cropResult;
+
+  Widget _buildSourceImage(String? imagePath) {
+    if (imagePath == null) {
+      return Image.asset('assets/icons/ui/avatar.webp', fit: BoxFit.cover);
+    }
+    return isAssetPath(imagePath)
+        ? Image.asset(imagePath, fit: BoxFit.cover)
+        : Image.file(File(imagePath), fit: BoxFit.cover);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -46,10 +58,7 @@ class CroppedAvatar extends StatelessWidget {
                       child: SizedBox(
                         width: crop.screenSize.width,
                         height: crop.screenSize.height,
-                        child: Image.asset(
-                          'assets/images/user1.png',
-                          fit: BoxFit.cover,
-                        ),
+                        child: _buildSourceImage(crop.imagePath),
                       ),
                     ),
                   );

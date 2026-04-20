@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:dispatcher_1/core/auth/auth_reset.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_spacing.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
+import 'package:dispatcher_1/core/utils/photo_source.dart';
 import 'package:dispatcher_1/core/widgets/cropped_avatar.dart';
 import 'package:dispatcher_1/core/widgets/dark_sub_app_bar.dart';
 import 'package:dispatcher_1/features/auth/photo_crop_screen.dart';
@@ -170,6 +172,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 onTap: () async {
                   final confirmed = await showLogoutAlert(context);
                   if (confirmed == true && context.mounted) {
+                    resetForLogout();
                     context.go('/auth/phone');
                   }
                 },
@@ -183,6 +186,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 onTap: () async {
                   final confirmed = await showDeleteAccountAlert(context);
                   if (confirmed == true && context.mounted) {
+                    resetForLogout();
                     context.go('/auth/phone');
                   }
                 },
@@ -203,8 +207,12 @@ class _PhotoPicker extends StatefulWidget {
 
 class _PhotoPickerState extends State<_PhotoPicker> {
   Future<void> _openCrop() async {
+    final String? imagePath = await pickImageFromGallery(context: context);
+    if (imagePath == null || !mounted) return;
     final result = await Navigator.of(context).push<CropResult>(
-      MaterialPageRoute(builder: (_) => const PhotoCropScreen()),
+      MaterialPageRoute(
+        builder: (_) => PhotoCropScreen(imagePath: imagePath),
+      ),
     );
     if (result != null && mounted) {
       setState(() => CropResult.saved = result);

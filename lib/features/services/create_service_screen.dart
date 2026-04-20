@@ -1,8 +1,11 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
+import 'package:dispatcher_1/core/utils/photo_source.dart';
 import 'package:dispatcher_1/core/utils/thousand_separator_formatter.dart';
 import 'package:dispatcher_1/core/widgets/dark_sub_app_bar.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
@@ -46,15 +49,6 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
   int _radiusIndex = -1;
   String? _address;
   final List<String> _photos = [];
-
-  static const _demoPhotos = [
-    'assets/images/profile/photo_1.webp',
-    'assets/images/profile/photo_2.webp',
-    'assets/images/profile/photo_3.webp',
-    'assets/images/profile/photo_4.webp',
-    'assets/images/profile/photo_5.webp',
-    'assets/images/profile/photo_6.webp',
-  ];
 
   final Set<String> _selCat = {};
   final Set<String> _selMach = {};
@@ -127,12 +121,24 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
 
   void _onFieldChanged() => setState(() {});
 
-  void _addPhoto() {
-    if (_photos.length >= 8) return;
-    setState(() {
-      final next = _demoPhotos[_photos.length % _demoPhotos.length];
-      _photos.add(next);
-    });
+  Future<void> _addPhoto() async {
+    final int remaining = 8 - _photos.length;
+    if (remaining <= 0) return;
+    final List<String> picked =
+        await pickMultipleImagesFromGallery(limit: remaining, context: context);
+    if (picked.isEmpty || !mounted) return;
+    final List<String> kept =
+        picked.length > remaining ? picked.sublist(0, remaining) : picked;
+    setState(() => _photos.addAll(kept));
+    if (picked.length > remaining) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Можно добавить не более 8 фото. Добавлены первые ${kept.length}.',
+          ),
+        ),
+      );
+    }
   }
 
   @override
@@ -366,14 +372,12 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
                   ),
                 ),
                 SizedBox(height: 12.h),
-                for (int i = 0; i < _radiusOptions.length; i++) ...[
+                for (int i = 0; i < _radiusOptions.length; i++)
                   _RadiusOption(
                     label: _radiusOptions[i],
                     selected: _radiusIndex == i,
                     onTap: () => setState(() => _radiusIndex = i),
                   ),
-                  if (i != _radiusOptions.length - 1) SizedBox(height: 8.h),
-                ],
               ],
             ),
           ),
@@ -829,12 +833,19 @@ class _PhotosGrid extends StatelessWidget {
             children: [
               ClipRRect(
                 borderRadius: BorderRadius.circular(10.r),
-                child: Image.asset(
-                  photos[i],
-                  width: 72.r,
-                  height: 72.r,
-                  fit: BoxFit.cover,
-                ),
+                child: isAssetPath(photos[i])
+                    ? Image.asset(
+                        photos[i],
+                        width: 72.r,
+                        height: 72.r,
+                        fit: BoxFit.cover,
+                      )
+                    : Image.file(
+                        File(photos[i]),
+                        width: 72.r,
+                        height: 72.r,
+                        fit: BoxFit.cover,
+                      ),
               ),
               Positioned(
                 top: 4.w,

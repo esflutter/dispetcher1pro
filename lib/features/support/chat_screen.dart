@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
+import 'package:dispatcher_1/core/utils/photo_source.dart';
 import 'package:dispatcher_1/features/profile/widgets/verification_badge.dart';
 import 'package:dispatcher_1/features/support/widgets/chat_bubble.dart';
 import 'package:dispatcher_1/features/support/widgets/chat_input_bar.dart';
@@ -35,13 +36,6 @@ class _ChatScreenState extends State<ChatScreen> {
 
   bool get _showQuickActions =>
       _messages.length == 1 && !_messages.first.fromUser && _pendingImages.isEmpty;
-
-  // Демо-картинки для заглушек вложений
-  static const List<String> _demoImages = <String>[
-    'assets/images/onboarding/onb_1.webp',
-    'assets/images/onboarding/onb_2.webp',
-    'assets/images/onboarding/onb_3.webp',
-  ];
 
   bool _awaitingDocuments = false;
 
@@ -175,13 +169,24 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
-  void _handleAttach() {
-    if (_pendingImages.length >= 8) return;
-    setState(() {
-      // Добавляем заглушки изображений по очереди
-      final next = _demoImages[_pendingImages.length % _demoImages.length];
-      _pendingImages.add(next);
-    });
+  Future<void> _handleAttach() async {
+    final int remaining = 8 - _pendingImages.length;
+    if (remaining <= 0) return;
+    final List<String> picked =
+        await pickMultipleImagesFromGallery(limit: remaining, context: context);
+    if (picked.isEmpty || !mounted) return;
+    final List<String> kept =
+        picked.length > remaining ? picked.sublist(0, remaining) : picked;
+    setState(() => _pendingImages.addAll(kept));
+    if (picked.length > remaining) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Можно добавить не более 8 фото. Добавлены первые ${kept.length}.',
+          ),
+        ),
+      );
+    }
   }
 
   void _removePendingImage(int index) {

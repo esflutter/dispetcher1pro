@@ -357,7 +357,14 @@ class _CatalogFilterScreenState extends State<CatalogFilterScreen> {
                             builder: (_) => const AddressBottomSheet(),
                           );
                           if (result != null) {
-                            setState(() => _address = result);
+                            setState(() {
+                              _address = result;
+                              // Радиус поиска по умолчанию — 10 км.
+                              // Искать строго в точке адреса почти
+                              // бессмысленно (мало совпадений), но ручной
+                              // выбор другого радиуса не перезаписываем.
+                              _radiusKm ??= 10;
+                            });
                           }
                         },
                         child: Container(

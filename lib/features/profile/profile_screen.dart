@@ -7,6 +7,8 @@ import 'package:dispatcher_1/core/theme/app_spacing.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
 import 'package:dispatcher_1/core/widgets/cropped_avatar.dart';
 import 'package:dispatcher_1/features/auth/photo_crop_screen.dart';
+import 'package:dispatcher_1/features/executor_card/executor_card_screen.dart';
+import 'package:dispatcher_1/features/executor_card/widgets/executor_card_alerts.dart';
 import 'account_block.dart';
 import 'widgets/blocked_pill.dart';
 import 'widgets/verification_badge.dart';
@@ -69,6 +71,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _openEdit() async {
     await context.push('/profile/edit');
+    if (mounted) setState(() {});
+  }
+
+  /// Переход в раздел, требующий оформленной карточки исполнителя
+  /// («Мой график», «Мои услуги»). Если карточка ещё не создана —
+  /// показываем попап, и по подтверждению открываем экран создания.
+  Future<void> _openCardGated(String path) async {
+    if (ExecutorCardState.cardCreated) {
+      await context.push(path);
+      if (mounted) setState(() {});
+      return;
+    }
+    final bool? create = await showExecutorCardRequiredAlert(context);
+    if (create != true || !mounted) return;
+    await context.push('/executor-card');
     if (mounted) setState(() {});
   }
 
@@ -171,12 +188,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
             SizedBox(height: 16.h),
             _ProfileMenuItem(
               label: 'Мои услуги',
-              onTap: () => context.push('/services'),
+              onTap: () => _openCardGated('/services'),
             ),
             SizedBox(height: 16.h),
             _ProfileMenuItem(
               label: 'Мой график',
-              onTap: () => context.push('/schedule'),
+              onTap: () => _openCardGated('/schedule'),
             ),
             SizedBox(height: 16.h),
             _ProfileMenuItem(

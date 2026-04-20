@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_spacing.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
+import 'package:dispatcher_1/core/utils/photo_source.dart';
 import 'package:dispatcher_1/core/widgets/dark_sub_app_bar.dart';
 import 'package:dispatcher_1/core/widgets/cropped_avatar.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
@@ -28,9 +29,31 @@ class EditExecutorCardScreen extends StatefulWidget {
 }
 
 class _EditExecutorCardScreenState extends State<EditExecutorCardScreen> {
+  static const int _nameMaxLen = 60;
+  static const int _emailMaxLen = 50;
+
+  /// Базовая проверка формата email: что-то@что-то.tld, без пробелов.
+  static final RegExp _emailRegex = RegExp(
+    r'^[^\s@]+@[^\s@]+\.[^\s@]+$',
+  );
+
   late final TextEditingController _location;
   late final TextEditingController _experience;
   late final TextEditingController _about;
+  late final TextEditingController _nameCtrl;
+  late final TextEditingController _emailCtrl;
+
+  final FocusNode _nameFocus = FocusNode();
+  final FocusNode _emailFocus = FocusNode();
+
+  /// Показывать ли красную подсказку под полем телефона (нельзя менять
+  /// номер в карточке — только через регистрацию/техподдержку).
+  bool _showPhoneHint = false;
+
+  /// Текст ошибки под полем email. Выставляется при потере фокуса,
+  /// если введённое значение не проходит валидацию регуляркой.
+  String? _emailError;
+
   String? _selectedStatus;
   int _radiusIndex = -1;
 
@@ -86,19 +109,68 @@ class _EditExecutorCardScreenState extends State<EditExecutorCardScreen> {
     _location = TextEditingController(text: ExecutorCardData.location ?? '');
     _experience = TextEditingController(text: ExecutorCardData.experience ?? '');
     _about = TextEditingController(text: ExecutorCardData.about ?? '');
+    // Имя/email — один источник с профилем через ExecutorCardData.name
+    // (геттер на CropResult.userName) и CropResult.userEmail.
+    _nameCtrl = TextEditingController(text: ExecutorCardData.name);
+    _emailCtrl = TextEditingController(text: CropResult.userEmail);
     _selectedStatus = ExecutorCardData.status;
     _selMach = Set<String>.from(ExecutorCardData.machinery);
     _selCat = Set<String>.from(ExecutorCardData.categories);
     final savedRadius = ExecutorCardData.radius;
     _radiusIndex = savedRadius != null ? _radiusOptions.indexOf(savedRadius) : -1;
     if (_radiusIndex < 0) _radiusIndex = -1;
+
+    _nameCtrl.addListener(() {
+      // Имя в шапке карточки должно обновляться «в живую» при наборе.
+      if (mounted) setState(() {});
+    });
+    _nameFocus.addListener(() {
+      if (!_nameFocus.hasFocus) {
+        final String value = _nameCtrl.text.trim();
+        if (value.isEmpty) {
+          // Пустое имя не сохраняем — откатываем к последнему валидному.
+          _nameCtrl.text = ExecutorCardData.name;
+        } else {
+          ExecutorCardData.name = value;
+        }
+      }
+    });
+    _emailFocus.addListener(() {
+      if (_emailFocus.hasFocus) {
+        // Пользователь вернулся редактировать — убираем ошибку, пока
+        // не оценим снова на следующем blur.
+        if (_emailError != null) {
+          setState(() => _emailError = null);
+        }
+      } else {
+        final String value = _emailCtrl.text.trim();
+        final bool valid = value.isEmpty || _emailRegex.hasMatch(value);
+        if (valid) {
+          CropResult.userEmail = value;
+          if (_emailError != null) setState(() => _emailError = null);
+        } else {
+          setState(() => _emailError = 'Некорректная электронная почта');
+        }
+      }
+    });
   }
 
   @override
   void dispose() {
+    // На случай, если пользователь ушёл со экрана, не сняв фокус.
+    final String name = _nameCtrl.text.trim();
+    if (name.isNotEmpty) ExecutorCardData.name = name;
+    final String email = _emailCtrl.text.trim();
+    if (email.isEmpty || _emailRegex.hasMatch(email)) {
+      CropResult.userEmail = email;
+    }
     _location.dispose();
     _experience.dispose();
     _about.dispose();
+    _nameCtrl.dispose();
+    _emailCtrl.dispose();
+    _nameFocus.dispose();
+    _emailFocus.dispose();
     super.dispose();
   }
 
@@ -123,29 +195,54 @@ class _EditExecutorCardScreenState extends State<EditExecutorCardScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-              _HeaderRow(),
+              _HeaderRow(displayName: _nameCtrl.text),
               SizedBox(height: 16.h),
-              Container(
-                height: 56.h,
-                padding: EdgeInsets.symmetric(horizontal: 16.w),
-                decoration: BoxDecoration(
-                  color: AppColors.fieldFill,
-                  borderRadius: BorderRadius.circular(14.r),
-                ),
-                alignment: Alignment.centerLeft,
-                child: Text('Александр Иванов', style: AppTextStyles.body),
+              _PlainEditableField(
+                controller: _nameCtrl,
+                focusNode: _nameFocus,
+                hint: 'Имя и фамилия',
+                keyboardType: TextInputType.name,
+                maxLength: _nameMaxLen,
               ),
               SizedBox(height: 8.h),
-              Container(
-                height: 56.h,
-                padding: EdgeInsets.symmetric(horizontal: 16.w),
-                decoration: BoxDecoration(
-                  color: AppColors.fieldFill,
-                  borderRadius: BorderRadius.circular(14.r),
-                ),
-                alignment: Alignment.centerLeft,
-                child: Text('+7 999 123-45-67', style: AppTextStyles.body),
+              _PlainEditableField(
+                controller: _emailCtrl,
+                focusNode: _emailFocus,
+                hint: 'Электронная почта',
+                keyboardType: TextInputType.emailAddress,
+                maxLength: _emailMaxLen,
               ),
+              if (_emailError != null) ...[
+                SizedBox(height: 6.h),
+                Text(
+                  _emailError!,
+                  style: AppTextStyles.caption.copyWith(color: AppColors.error),
+                ),
+              ],
+              SizedBox(height: 8.h),
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => setState(() => _showPhoneHint = !_showPhoneHint),
+                child: Container(
+                  height: 56.h,
+                  padding: EdgeInsets.symmetric(horizontal: 16.w),
+                  decoration: BoxDecoration(
+                    color: AppColors.fieldFill,
+                    borderRadius: BorderRadius.circular(14.r),
+                  ),
+                  alignment: Alignment.centerLeft,
+                  child:
+                      Text(ExecutorCardData.phone, style: AppTextStyles.body),
+                ),
+              ),
+              if (_showPhoneHint) ...[
+                SizedBox(height: 6.h),
+                Text(
+                  'Можно использовать только номер телефона, '
+                  'указанный при регистрации.',
+                  style: AppTextStyles.caption.copyWith(color: AppColors.error),
+                ),
+              ],
               SizedBox(height: AppSpacing.lg),
               _SectionTitle('Местоположение'),
               SizedBox(height: 12.h),
@@ -263,7 +360,7 @@ class _EditExecutorCardScreenState extends State<EditExecutorCardScreen> {
                   ),
                   child: Column(
                     children: [
-                      Divider(height: 1, thickness: 0.5, color: Colors.grey.shade300),
+                      Divider(height: 1, thickness: 0.5, color: AppColors.border),
                       for (final s in _statusOptions)
                         GestureDetector(
                           behavior: HitTestBehavior.opaque,
@@ -304,7 +401,7 @@ class _EditExecutorCardScreenState extends State<EditExecutorCardScreen> {
                 'Информация о вас помогает другим лучше понять, '
                 'с кем они будут работать.',
                 style: AppTextStyles.caption
-                    .copyWith(color: const Color(0xFF707070)),
+                    .copyWith(color: AppColors.textMuted),
               ),
                   SizedBox(height: AppSpacing.md),
                   ],
@@ -346,14 +443,24 @@ class _EditExecutorCardScreenState extends State<EditExecutorCardScreen> {
 }
 
 class _HeaderRow extends StatefulWidget {
+  const _HeaderRow({required this.displayName});
+
+  /// Имя, которое показывать справа от аватара. Пробрасывается из
+  /// родительского state, чтобы обновляться «в живую» при наборе.
+  final String displayName;
+
   @override
   State<_HeaderRow> createState() => _HeaderRowState();
 }
 
 class _HeaderRowState extends State<_HeaderRow> {
   Future<void> _openCrop() async {
+    final String? imagePath = await pickImageFromGallery(context: context);
+    if (imagePath == null || !mounted) return;
     final result = await Navigator.of(context).push<CropResult>(
-      MaterialPageRoute(builder: (_) => const PhotoCropScreen()),
+      MaterialPageRoute(
+        builder: (_) => PhotoCropScreen(imagePath: imagePath),
+      ),
     );
     if (result != null && mounted) {
       setState(() => CropResult.saved = result);
@@ -391,8 +498,12 @@ class _HeaderRowState extends State<_HeaderRow> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Александр Иванов',
-                  style: AppTextStyles.titleS),
+              Text(
+                widget.displayName.trim().isEmpty
+                    ? CropResult.namePlaceholder
+                    : widget.displayName,
+                style: AppTextStyles.titleS,
+              ),
               SizedBox(height: 4.h),
               Row(
                 children: [
@@ -475,6 +586,53 @@ class _RadioRow extends StatelessWidget {
             SizedBox(width: 12.w),
             Text(label, style: AppTextStyles.body),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Пустое поле ввода «как контейнер» — серый заливкой контейнер без
+/// рамок TextField, внутри курсор. Используется для имени/email —
+/// вписываются в общий стиль блок-контейнеров на экране.
+class _PlainEditableField extends StatelessWidget {
+  const _PlainEditableField({
+    required this.controller,
+    required this.hint,
+    this.focusNode,
+    this.keyboardType,
+    this.maxLength,
+  });
+
+  final TextEditingController controller;
+  final String hint;
+  final FocusNode? focusNode;
+  final TextInputType? keyboardType;
+  final int? maxLength;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 56.h,
+      padding: EdgeInsets.symmetric(horizontal: 16.w),
+      decoration: BoxDecoration(
+        color: AppColors.fieldFill,
+        borderRadius: BorderRadius.circular(14.r),
+      ),
+      alignment: Alignment.centerLeft,
+      child: TextField(
+        controller: controller,
+        focusNode: focusNode,
+        keyboardType: keyboardType,
+        maxLength: maxLength,
+        style: AppTextStyles.body,
+        decoration: InputDecoration(
+          isCollapsed: true,
+          border: InputBorder.none,
+          counterText: '',
+          hintText: hint,
+          hintStyle:
+              AppTextStyles.body.copyWith(color: AppColors.textTertiary),
         ),
       ),
     );

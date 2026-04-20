@@ -136,6 +136,8 @@ final GoRouter appRouter = GoRouter(
           dayLabel: (extra?['dayLabel'] as String?) ?? 'Сегодня',
           initialState:
               (extra?['initialState'] as DayState?) ?? DayState.noOrders,
+          initial:
+              (extra?['initial'] as DaySettings?) ?? const DaySettings(),
         );
       },
     ),
@@ -150,9 +152,7 @@ final GoRouter appRouter = GoRouter(
       builder: (_, _) => const PaymentResultScreen(),
     ),
 
-    // Поддержка
-    GoRoute(path: '/support', builder: (_, _) => const SupportHomeScreen()),
-    GoRoute(path: '/support/chat', builder: (_, _) => const ChatScreen()),
+    // ИИ-ассистент (бывшая «поддержка» — унифицировано под /assistant*)
     GoRoute(path: '/assistant', builder: (_, _) => const SupportHomeScreen()),
     GoRoute(
       path: '/assistant/chat',

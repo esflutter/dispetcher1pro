@@ -40,6 +40,12 @@ class AppColors {
   static const Color whatsappGreen = Color(0xFF38CB10);
   static const Color warning = Color(0xFFFFAC26);
 
+  // Пилюли статуса верификации (зелёная/синяя/красная заливка + текст)
+  static const Color verificationSuccessFg = Color(0xFF1F8A2D);
+  static const Color verificationSuccessBg = Color(0xFFD7F6CB);
+  static const Color verificationInfoFg = Color(0xFF1DAEDE);
+  static const Color verificationErrorBg = Color(0xFFFCE1E1);
+
   // Рейтинг
   static const Color ratingStar = Color(0xFFFFC300);
 

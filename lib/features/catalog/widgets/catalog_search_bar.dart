@@ -30,7 +30,7 @@ class CatalogSearchBar extends StatelessWidget {
       // Небольшой top: оставляем место, чтобы красная точка-бейдж
       // могла выступать за правый верхний угол кнопки фильтра
       // и не обрезалась по краю тёмной шапки.
-      padding: EdgeInsets.fromLTRB(16.w, 8.h, 16.w, 12.h),
+      padding: EdgeInsets.fromLTRB(16.w, 8.h, 16.w, 8.h),
       child: Row(
         children: <Widget>[
           Expanded(

@@ -4,12 +4,15 @@ import 'package:go_router/go_router.dart';
 
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
+import 'package:dispatcher_1/core/widgets/customer_header.dart';
+import 'package:dispatcher_1/core/widgets/labeled_section.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
 import 'package:dispatcher_1/features/catalog/customer_card_screen.dart';
 import 'package:dispatcher_1/features/catalog/order_feed_screen.dart';
 import 'package:dispatcher_1/features/catalog/widgets/catalog_search_bar.dart';
 import 'package:dispatcher_1/features/catalog/widgets/respond_bottom_sheet.dart';
 import 'package:dispatcher_1/features/catalog/widgets/subscription_paywall.dart';
+import 'package:dispatcher_1/features/orders/my_orders_screen.dart';
 import 'package:dispatcher_1/features/profile/account_block.dart';
 import 'package:dispatcher_1/features/profile/widgets/verification_badge.dart';
 
@@ -21,11 +24,18 @@ class OrderDetailScreen extends StatefulWidget {
     required this.orderId,
     this.multipleEquipment = false,
     this.price = '80 000 – 100 000 ₽',
+    this.fromCustomerCard = false,
   });
 
   final String orderId;
   final bool multipleEquipment;
   final String price;
+
+  /// Экран открыт тапом по заказу из карточки заказчика. В таком случае
+  /// блок заказчика в шапке ведёт не на новый push `CustomerCardScreen`,
+  /// а на pop обратно — чтобы избежать бесконечной цепочки «заказ →
+  /// заказчик → заказ → заказчик → ...» в стеке навигации.
+  final bool fromCustomerCard;
 
   @override
   State<OrderDetailScreen> createState() => _OrderDetailScreenState();
@@ -39,6 +49,11 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     'Погрузчик',
     'Автовышка',
   ];
+
+  /// Трекер id заказов, на которые этот исполнитель уже откликнулся.
+  /// Живёт в памяти до появления бэкенда — чтобы нельзя было отправить
+  /// повторный отклик на тот же заказ.
+  static final Set<String> _respondedOrderIds = <String>{};
 
   @override
   void initState() {
@@ -58,11 +73,22 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
 
   bool get _verified => VerificationStatus.current.isVerified;
   bool get _hasSubscription => VerificationStatus.hasSubscription;
+  bool get _alreadyResponded =>
+      _respondedOrderIds.contains(widget.orderId);
 
-  // Моковый список техники из заказа.
-  List<String> get _orderEquipment => widget.multipleEquipment
-      ? _multiEquipment
-      : const <String>['Экскаватор', 'Автокран', 'Манипулятор', 'Погрузчик', 'Автовышка'];
+  /// Реальный список техники заказа. Если заказ найден в моке —
+  /// отдаём его `equipment`; иначе падаем на фолбэк по флагу
+  /// `multipleEquipment` (используется в точках вызова, где нет
+  /// конкретного заказа — например, в тестовых плейсхолдерах).
+  List<String> get _orderEquipment {
+    final CatalogOrderMock? order = CatalogOrderMock.byId(widget.orderId);
+    if (order != null && order.equipment.isNotEmpty) {
+      return order.equipment;
+    }
+    return widget.multipleEquipment
+        ? _multiEquipment
+        : const <String>['Экскаватор'];
+  }
 
   Future<void> _onRespondTap() async {
     if (AccountBlock.isBlocked) {
@@ -111,6 +137,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
 
     // 4. Выбор техники (если несколько).
     final List<String> eq = _orderEquipment;
+    List<String> respondedEquipment = eq;
     if (eq.length > 1) {
       final List<String>? picked = await showModalBottomSheet<List<String>>(
         context: context,
@@ -118,13 +145,34 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
         backgroundColor: Colors.transparent,
         builder: (_) => _PickEquipmentSheet(options: eq),
       );
-      if (picked == null || !mounted) {
+      if (picked == null || picked.isEmpty || !mounted) {
         return;
       }
+      respondedEquipment = picked;
     }
 
-    // 5. Отклик отправлен.
+    // 5. Отклик отправлен — фиксируем, чтобы повторно нельзя было,
+    // и добавляем заказ в «Мои заказы» → «Новые» со статусом
+    // `offerSent` («Ожидает ответа заказчика»).
+    _respondedOrderIds.add(widget.orderId);
+    final CatalogOrderMock? catalogOrder =
+        CatalogOrderMock.byId(widget.orderId);
+    if (catalogOrder != null) {
+      MyOrdersStore.addResponded(
+        id: catalogOrder.id,
+        title: catalogOrder.title,
+        equipment: respondedEquipment,
+        rentDate: catalogOrder.rentDate,
+        address: catalogOrder.address,
+        publishedAgo: catalogOrder.publishedAgo,
+        customerId: catalogOrder.customerId,
+        customerName: catalogOrder.customerName,
+        customerRating: catalogOrder.customerRating,
+        customerReviews: catalogOrder.customerReviews,
+      );
+    }
     if (!mounted) return;
+    setState(() {});
     await showDialog<void>(
       context: context,
       barrierColor: Colors.black.withValues(alpha: 0.35),
@@ -144,6 +192,13 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     final List<String> orderCategories = (order?.categories.isNotEmpty ?? false)
         ? order!.categories
         : const <String>['Земляные работы', 'Подготовка строительной площадки'];
+    // Заказчик тянется из мока — чтобы шапка в деталях совпадала с тем,
+    // что исполнитель видел в ленте. Фолбэк оставлен на случай, если
+    // заказ не найден по id.
+    final String customerId = order?.customerId ?? '1';
+    final String customerName = order?.customerName ?? 'Александр Иванов';
+    final double customerRating = order?.customerRating ?? 4.5;
+    final int customerReviews = order?.customerReviews ?? 15;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -195,13 +250,18 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
-                      _CustomerHeader(
-                        onTap: () => Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) =>
-                                const CustomerCardScreen(customerId: '1'),
-                          ),
-                        ),
+                      CustomerHeader(
+                        name: customerName,
+                        rating: customerRating,
+                        reviews: customerReviews,
+                        onTap: widget.fromCustomerCard
+                            ? () => Navigator.of(context).maybePop()
+                            : () => Navigator.of(context).push(
+                                  MaterialPageRoute<void>(
+                                    builder: (_) => CustomerCardScreen(
+                                        customerId: customerId),
+                                  ),
+                                ),
                       ),
                       SizedBox(height: 10.h),
                       Text('№${widget.orderId.padLeft(6, '0')}',
@@ -215,12 +275,12 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                           style: AppTextStyles.caption
                               .copyWith(color: AppColors.textTertiary)),
                       SizedBox(height: 11.h),
-                      _Section(
+                      LabeledSection(
                         title: 'Дата и время аренды',
                         child: Text(orderRentDate,
                             style: AppTextStyles.subBody.copyWith(fontWeight: FontWeight.w400)),
                       ),
-                      _Section(
+                      LabeledSection(
                         title: 'Адрес',
                         child: Text(
                             orderAddress,
@@ -229,7 +289,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                               decoration: TextDecoration.underline,
                             )),
                       ),
-                      _Section(
+                      LabeledSection(
                         title: 'Требуемая спецтехника',
                         child: Wrap(
                           spacing: 8.w,
@@ -239,7 +299,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                               .toList(),
                         ),
                       ),
-                      _Section(
+                      LabeledSection(
                         title: 'Категория работ',
                         child: Wrap(
                           spacing: 8.w,
@@ -249,7 +309,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                               .toList(),
                         ),
                       ),
-                      _Section(
+                      LabeledSection(
                         title: 'Характер работ',
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -261,7 +321,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                           ],
                         ),
                       ),
-                      _Section(
+                      LabeledSection(
                         title: 'Стоимость',
                         child: Text(widget.price,
                             style: TextStyle(
@@ -292,9 +352,11 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                 16.w,
                 16.h + MediaQuery.of(context).padding.bottom),
             child: PrimaryButton(
-              label: 'Откликнуться',
-              enabled: !AccountBlock.isBlocked,
-              onPressed: AccountBlock.isBlocked ? null : _onRespondTap,
+              label: _alreadyResponded ? 'Вы уже откликнулись' : 'Откликнуться',
+              enabled: !AccountBlock.isBlocked && !_alreadyResponded,
+              onPressed: (AccountBlock.isBlocked || _alreadyResponded)
+                  ? null
+                  : _onRespondTap,
             ),
           ),
         ],
@@ -303,94 +365,6 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
   }
 }
 
-class _CustomerHeader extends StatelessWidget {
-  const _CustomerHeader({required this.onTap});
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      child: Row(
-        children: <Widget>[
-          CircleAvatar(
-            radius: 28.r,
-            backgroundColor: AppColors.primaryTint,
-            backgroundImage:
-                const AssetImage('assets/images/catalog/avatar_placeholder.webp'),
-          ),
-          SizedBox(width: 10.w),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text('Александр Иванов',
-                    style: TextStyle(
-                      fontFamily: 'Roboto',
-                      fontSize: 16.sp,
-                      fontWeight: FontWeight.w600,
-                      height: 1.3,
-                    )),
-                SizedBox(height: 2.h),
-                Row(
-                  children: <Widget>[
-                    Image.asset('assets/images/catalog/star.webp',
-                        width: 20.r, height: 20.r),
-                    SizedBox(width: 4.w),
-                    Text('4,5',
-                        style: TextStyle(
-                          fontFamily: 'Roboto',
-                          fontSize: 16.sp,
-                          fontWeight: FontWeight.w400,
-                          height: 1.3,
-                          color: AppColors.textPrimary,
-                        )),
-                    SizedBox(width: 16.w),
-                    Text('15 отзывов',
-                        style: TextStyle(
-                          fontFamily: 'Roboto',
-                          fontSize: 16.sp,
-                          fontWeight: FontWeight.w400,
-                          height: 1.3,
-                          color: AppColors.textPrimary,
-                        )),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _Section extends StatelessWidget {
-  const _Section({required this.title, required this.child});
-  final String title;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.only(bottom: 12.h),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Text(title,
-              style: TextStyle(
-                fontFamily: 'Roboto',
-                fontSize: 16.sp,
-                fontWeight: FontWeight.w600,
-                height: 1.3,
-              )),
-          SizedBox(height: 4.h),
-          child,
-        ],
-      ),
-    );
-  }
-}
 
 class _OutlinedChip extends StatelessWidget {
   const _OutlinedChip({required this.label});

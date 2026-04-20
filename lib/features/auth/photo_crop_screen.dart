@@ -1,6 +1,9 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
+import 'package:dispatcher_1/core/utils/photo_source.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
 
 class CropResult {
@@ -8,7 +11,12 @@ class CropResult {
   final double radius;
   final Size screenSize;
 
-  CropResult(this.center, this.radius, this.screenSize);
+  /// Путь к исходной картинке. Если `null` — аватар не задан
+  /// (показываем плейсхолдер). Хранится в памяти, на диск не
+  /// сохраняется — пересоздаётся при повторном выборе.
+  final String? imagePath;
+
+  CropResult(this.center, this.radius, this.screenSize, {this.imagePath});
 
   /// Глобальное хранилище последнего результата кропа (до появления бэкенда).
   static CropResult? saved;
@@ -31,10 +39,25 @@ class CropResult {
   /// показываем [namePlaceholder].
   static String get displayName =>
       userName.trim().isEmpty ? namePlaceholder : userName;
+
+  /// Полный сброс данных профиля — для logout / удаления аккаунта.
+  /// Возвращает статические поля к значениям «как при первом запуске»,
+  /// чтобы на устройстве, где потом зарегистрируется другой человек,
+  /// не осталось предыдущих имени/email/аватара.
+  static void clearAuthData() {
+    saved = null;
+    userName = 'Александр Иванов';
+    userPhone = '+7 999 123-45-67';
+    userEmail = '';
+  }
 }
 
 class PhotoCropScreen extends StatefulWidget {
-  const PhotoCropScreen({super.key});
+  const PhotoCropScreen({super.key, required this.imagePath});
+
+  /// Путь к картинке для кропа. Может быть ассетом (`assets/...`)
+  /// или локальным файлом с устройства.
+  final String imagePath;
 
   @override
   State<PhotoCropScreen> createState() => _PhotoCropScreenState();
@@ -57,7 +80,12 @@ class _PhotoCropScreenState extends State<PhotoCropScreen> {
   }
 
   void _onDone() {
-    Navigator.of(context).pop(CropResult(_center, _radius, _imageAreaSize));
+    Navigator.of(context).pop(CropResult(
+      _center,
+      _radius,
+      _imageAreaSize,
+      imagePath: widget.imagePath,
+    ));
   }
 
   @override
@@ -81,10 +109,9 @@ class _PhotoCropScreenState extends State<PhotoCropScreen> {
             left: 0,
             right: 0,
             bottom: imageBottomInset,
-            child: Image.asset(
-              'assets/images/user1.png',
-              fit: BoxFit.cover,
-            ),
+            child: isAssetPath(widget.imagePath)
+                ? Image.asset(widget.imagePath, fit: BoxFit.cover)
+                : Image.file(File(widget.imagePath), fit: BoxFit.cover),
           ),
 
           // 2. Двигающаяся маска + жесты в области фото
