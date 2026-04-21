@@ -319,10 +319,7 @@ class _SupportFooter extends StatelessWidget {
         SizedBox(height: 8.h),
         Row(
           children: [
-            Image.asset('assets/icons/profile/telegram.webp',
-                width: 40.r, height: 40.r),
-            SizedBox(width: 12.w),
-            Image.asset('assets/icons/profile/whatsapp.webp',
+            Image.asset('assets/icons/profile/max.webp',
                 width: 40.r, height: 40.r),
           ],
         ),

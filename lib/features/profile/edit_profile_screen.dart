@@ -172,7 +172,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 onTap: () async {
                   final confirmed = await showLogoutAlert(context);
                   if (confirmed == true && context.mounted) {
-                    resetForLogout();
+                    signOut();
                     context.go('/auth/phone');
                   }
                 },
@@ -186,7 +186,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 onTap: () async {
                   final confirmed = await showDeleteAccountAlert(context);
                   if (confirmed == true && context.mounted) {
-                    resetForLogout();
+                    deleteAccount();
                     context.go('/auth/phone');
                   }
                 },

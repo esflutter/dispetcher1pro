@@ -5,6 +5,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 import 'package:pinput/pinput.dart';
 
+import 'package:dispatcher_1/core/auth/session_cache.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
@@ -93,7 +94,16 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
         }
       });
     } else {
-      context.go('/auth/registration');
+      // Если для этого номера уже есть сохранённая сессия —
+      // восстанавливаем данные и пропускаем регистрацию, ведём сразу
+      // в каталог. Иначе открываем экран регистрации.
+      final String phone = CropResult.userPhone;
+      if (SessionCache.has(phone)) {
+        SessionCache.restore(phone);
+        context.go('/shell');
+      } else {
+        context.go('/auth/registration');
+      }
     }
   }
 

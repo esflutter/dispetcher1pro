@@ -87,10 +87,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               itemBuilder: (_, i) => Image.asset(
                 _steps[i].image,
                 fit: BoxFit.cover,
-                // Центрируем по вертикали: сверху обрезается столько же,
-                // сколько снизу (по линии, где заканчивается скругление
-                // шторки). Даёт визуальный баланс вместо прижатия к верху.
-                alignment: Alignment.center,
+                // Прижимаем к верхнему краю: у картинок онбординга вся
+                // значимая часть (человек, техника) нарисована сверху,
+                // и при центрировании её срезал статус-бар. Обрезаем
+                // только снизу — там уходит под скругление шторки.
+                alignment: Alignment.topCenter,
                 errorBuilder: (BuildContext _, Object _, StackTrace? _) =>
                     Container(
                   color: AppColors.surfaceVariant,
