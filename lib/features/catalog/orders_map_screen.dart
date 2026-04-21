@@ -121,7 +121,6 @@ class _OrdersMapFullScreenState extends State<OrdersMapFullScreen> {
             title: o.title,
             rentDate: o.rentDate,
             address: o.address,
-            price: o.price,
             publishedAgo: o.publishedAgo,
           ))
       .toList();
@@ -277,7 +276,6 @@ class _OrdersMapFullScreenState extends State<OrdersMapFullScreen> {
                     MaterialPageRoute<void>(
                       builder: (_) => OrderDetailScreen(
                         orderId: o.id,
-                        price: o.price,
                       ),
                     ),
                   );
@@ -381,14 +379,6 @@ class _OrdersMapFullScreenState extends State<OrdersMapFullScreen> {
           _mapLine('Дата аренды:', o.rentDate),
           SizedBox(height: 4.h),
           _mapLine('Адрес:', o.address),
-          SizedBox(height: 10.h),
-          Text(o.price,
-              style: TextStyle(
-                fontFamily: 'Roboto',
-                fontSize: 15.sp,
-                fontWeight: FontWeight.w700,
-                color: AppColors.primary,
-              )),
         ],
       ),
     );
@@ -419,7 +409,6 @@ class _MapOrder {
     required this.title,
     required this.rentDate,
     required this.address,
-    required this.price,
     required this.publishedAgo,
   });
   final String id;
@@ -427,7 +416,6 @@ class _MapOrder {
   final String title;
   final String rentDate;
   final String address;
-  final String price;
   final String publishedAgo;
 }
 

@@ -78,7 +78,6 @@ class MyOrderDetailScreen extends StatefulWidget {
     this.onConfirm,
     this.onWithdraw,
     this.isBlocked = false,
-    this.price = '80 000 – 100 000 ₽',
   });
 
   final MyOrderDetailState state;
@@ -127,7 +126,6 @@ class MyOrderDetailScreen extends StatefulWidget {
   final VoidCallback? onWithdraw;
 
   final bool isBlocked;
-  final String price;
 
   @override
   State<MyOrderDetailScreen> createState() => _MyOrderDetailScreenState();
@@ -371,16 +369,6 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
                           ),
                       ],
                     ),
-                  ),
-                  LabeledSection(
-                    title: 'Стоимость',
-                    child: Text(widget.price,
-                        style: TextStyle(
-                          fontFamily: 'Roboto',
-                          fontSize: 16.sp,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.primary,
-                        )),
                   ),
                   if (widget.photos.isNotEmpty)
                     LabeledSection(

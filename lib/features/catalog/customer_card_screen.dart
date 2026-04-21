@@ -228,12 +228,10 @@ class _OrderTile extends StatelessWidget {
         publishedAgo: order.publishedAgo,
         equipment: order.equipment,
         highlightEquipment: const <String>{},
-        price: order.price,
         onTap: () => Navigator.of(context).push(
           MaterialPageRoute<void>(
             builder: (_) => OrderDetailScreen(
               orderId: order.id,
-              price: order.price,
               multipleEquipment: order.equipment.length > 1,
               fromCustomerCard: true,
             ),

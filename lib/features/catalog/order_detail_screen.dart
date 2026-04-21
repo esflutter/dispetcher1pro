@@ -23,13 +23,11 @@ class OrderDetailScreen extends StatefulWidget {
     super.key,
     required this.orderId,
     this.multipleEquipment = false,
-    this.price = '80 000 – 100 000 ₽',
     this.fromCustomerCard = false,
   });
 
   final String orderId;
   final bool multipleEquipment;
-  final String price;
 
   /// Экран открыт тапом по заказу из карточки заказчика. В таком случае
   /// блок заказчика в шапке ведёт не на новый push `CustomerCardScreen`,
@@ -320,16 +318,6 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                                 style: AppTextStyles.subBody.copyWith(fontWeight: FontWeight.w400)),
                           ],
                         ),
-                      ),
-                      LabeledSection(
-                        title: 'Стоимость',
-                        child: Text(widget.price,
-                            style: TextStyle(
-                              fontFamily: 'Roboto',
-                              fontSize: 16.sp,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.primary,
-                            )),
                       ),
                     ],
                   ),

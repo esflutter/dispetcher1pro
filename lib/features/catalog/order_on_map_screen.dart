@@ -76,12 +76,6 @@ class OrderOnMapScreen extends StatelessWidget {
                     SizedBox(height: 2.h),
                     _Line(label: 'Адрес:',
                         value: 'Московская область, Москва, Улица1, д 144'),
-                    SizedBox(height: 8.h),
-                    Text('80 000 – 100 000 ₽',
-                        style: AppTextStyles.bodyMMedium.copyWith(
-                          color: AppColors.primary,
-                          fontWeight: FontWeight.w700,
-                        )),
                   ],
                 ),
               ),

@@ -85,7 +85,6 @@ class _ScheduledOrder {
     required this.title,
     required this.rentDate,
     required this.address,
-    required this.price,
     this.customerId = '1',
     this.customerName = 'Александр Иванов',
     this.customerPhone = '+7 999 123-45-67',
@@ -96,7 +95,6 @@ class _ScheduledOrder {
   final String title;
   final String rentDate;
   final String address;
-  final String price;
   final String customerId;
   final String customerName;
   final String customerPhone;
@@ -111,7 +109,6 @@ class _ScheduledOrder {
         title: title,
         rentDate: rentDate,
         address: address,
-        price: price,
         customerId: customerId,
         customerName: customerName,
         customerPhone: customerPhone,
@@ -160,7 +157,6 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
         title: 'Земляные работы',
         rentDate: '09:00–12:00',
         address: 'Московская область, Москва, Улица1, д.144',
-        price: '40 000 – 60 000 ₽',
         customerId: '1',
         customerName: 'Александр Иванов',
       ),
@@ -170,7 +166,6 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
         title: 'Погрузка строительного мусора',
         rentDate: '13:00–16:00',
         address: 'Московская область, Москва, Проспект Мира, д.12',
-        price: '25 000 ₽',
         customerId: '2',
         customerName: 'Пётр Иванов',
         customerPhone: '+7 999 234-56-78',
@@ -182,7 +177,6 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
         title: 'Доставка бетонных плит',
         rentDate: '17:00–19:00',
         address: 'Московская область, Химки, ул. Ленина, д.5',
-        price: '35 000 ₽',
         customerId: '3',
         customerName: 'Сергей Петров',
       ),
@@ -194,7 +188,6 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
         title: 'Копка траншеи под фундамент',
         rentDate: '08:00–17:00',
         address: 'Московская область, Подольск, ул. Кирова, д.88',
-        price: '80 000 ₽',
         customerId: '4',
         customerName: 'Михаил Смирнов',
         customerPhone: '+7 999 345-67-89',
@@ -209,7 +202,6 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
         title: 'Земляные работы',
         rentDate: '09:00–14:00',
         address: 'Московская область, Москва, Улица1, д.144',
-        price: '40 000 – 60 000 ₽',
         customerId: '5',
         customerName: 'Виктор Новиков',
       ),
@@ -219,7 +211,6 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
         title: 'Разработка котлована под фундамент',
         rentDate: '15:00–18:00',
         address: 'Московская область, Москва, Улица1, д.144',
-        price: '120 000 ₽',
         customerId: '6',
         customerName: 'Дмитрий Соколов',
         customerPhone: '+7 999 456-78-90',
@@ -232,7 +223,6 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
         title: 'Монтаж рекламного баннера',
         rentDate: '10:00–13:00',
         address: 'Москва, ул. Тверская, д.22',
-        price: '18 000 ₽',
         customerId: '7',
         customerName: 'Андрей Волков',
       ),
@@ -821,7 +811,6 @@ class _OrderCard extends StatelessWidget {
             equipment: order.machinery,
             rentDate: order.rentDate,
             address: order.address,
-            price: order.price,
             state: detailState,
             customerId: order.customerId,
             customerName: order.customerName,
@@ -860,14 +849,6 @@ class _OrderCard extends StatelessWidget {
         _LabelLine(label: 'Дата аренды:', value: order.rentDate),
         SizedBox(height: 5.h),
         _LabelLine(label: 'Адрес:', value: order.address, underlined: true),
-        SizedBox(height: 8.h),
-        Text(order.price,
-            style: TextStyle(
-              fontFamily: 'Roboto',
-              fontSize: 16.sp,
-              fontWeight: FontWeight.w700,
-              color: AppColors.primary,
-            )),
         ],
       ),
     );

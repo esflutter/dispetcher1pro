@@ -210,14 +210,12 @@ class _OrderFeedScreenState extends State<OrderFeedScreen> {
                                     equipment: o.equipment,
                                     highlightEquipment:
                                         AppliedFilter.equipment,
-                                    price: o.price,
                                     onTap: () => Navigator.of(context).push(
                                       MaterialPageRoute<void>(
                                         builder: (_) => OrderDetailScreen(
                                           orderId: o.id,
                                           multipleEquipment:
                                               o.equipment.length > 1,
-                                          price: o.price,
                                         ),
                                       ),
                                     ),
@@ -315,7 +313,6 @@ class CatalogOrderMock {
     required this.publishedAgo,
     required this.equipment,
     this.categories = const <String>[],
-    this.price = '80 000 – 100 000 ₽',
     required this.customerId,
     required this.customerName,
     required this.customerRating,
@@ -328,7 +325,6 @@ class CatalogOrderMock {
   final String publishedAgo;
   final List<String> equipment;
   final List<String> categories;
-  final String price;
 
   /// Заказчик, опубликовавший заказ. Держим поля прямо в моке, а не
   /// отдельным `CustomerMock`, чтобы при тапе карточки в список деталей
@@ -361,7 +357,6 @@ class CatalogOrderMock {
       publishedAgo: 'Сегодня в 11:30',
       equipment: <String>['Автокран', 'Экскаватор'],
       categories: <String>['Земляные работы', 'Строительные работы'],
-      price: '120 000 – 150 000 ₽',
       customerId: '2',
       customerName: 'Сергей Петров',
       customerRating: 4.8,
@@ -488,7 +483,6 @@ class _OrdersMapWithCardState extends State<_OrdersMapWithCard> {
                 builder: (_) => OrderDetailScreen(
                   orderId: o.id,
                   multipleEquipment: o.equipment.length > 1,
-                  price: o.price,
                 ),
               ),
             ),
@@ -595,16 +589,6 @@ class _OrdersMapWithCardState extends State<_OrdersMapWithCard> {
                     _MapCardLine(label: 'Дата аренды:', value: o.rentDate),
                     SizedBox(height: 4.h),
                     _MapCardLine(label: 'Адрес:', value: o.address),
-                    SizedBox(height: 10.h),
-                    Text(
-                      o.price,
-                      style: TextStyle(
-                        fontFamily: 'Roboto',
-                        fontSize: 15.sp,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.primary,
-                      ),
-                    ),
                   ],
                 ),
               ),
