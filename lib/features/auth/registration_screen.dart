@@ -24,14 +24,6 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
   CropResult? _cropResult;
 
   @override
-  void initState() {
-    super.initState();
-    _firstNameController.addListener(_onChanged);
-  }
-
-  void _onChanged() => setState(() {});
-
-  @override
   void dispose() {
     _firstNameController.dispose();
     super.dispose();
@@ -107,16 +99,20 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                   ),
                 ],
               ),
-              child: PrimaryButton(
-                label: 'Готово',
-                enabled: _isValid,
-                onPressed: _isValid
-                    ? () {
-                        CropResult.saved = _cropResult;
-                        CropResult.userName = _firstNameController.text.trim();
-                        context.go('/assistant');
-                      }
-                    : () {},
+              child: ListenableBuilder(
+                listenable: _firstNameController,
+                builder: (_, _) => PrimaryButton(
+                  label: 'Готово',
+                  enabled: _isValid,
+                  onPressed: _isValid
+                      ? () {
+                          CropResult.saved = _cropResult;
+                          CropResult.userName =
+                              _firstNameController.text.trim();
+                          context.go('/assistant');
+                        }
+                      : () {},
+                ),
               ),
             ),
           ],

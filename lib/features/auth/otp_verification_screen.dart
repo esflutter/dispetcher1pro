@@ -194,8 +194,6 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
                       onChanged: (_) {
                         if (_hasError) {
                           setState(() => _hasError = false);
-                        } else {
-                          setState(() {});
                         }
                       },
                       onCompleted: _onCompleted,
@@ -288,10 +286,14 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
                   ),
                 ],
               ),
-              child: PrimaryButton(
-                label: 'Далее',
-                enabled: _pinController.text.length == _otpLength && !_hasError,
-                onPressed: _submit,
+              child: ListenableBuilder(
+                listenable: _pinController,
+                builder: (_, _) => PrimaryButton(
+                  label: 'Далее',
+                  enabled:
+                      _pinController.text.length == _otpLength && !_hasError,
+                  onPressed: _submit,
+                ),
               ),
             ),
           ],

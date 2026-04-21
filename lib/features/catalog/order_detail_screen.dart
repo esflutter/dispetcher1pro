@@ -35,6 +35,19 @@ class OrderDetailScreen extends StatefulWidget {
   /// заказчик → заказ → заказчик → ...» в стеке навигации.
   final bool fromCustomerCard;
 
+  /// Трекер id заказов, на которые этот исполнитель уже откликнулся.
+  /// Живёт в памяти до появления бэкенда — чтобы нельзя было отправить
+  /// повторный отклик на тот же заказ. Чистится при logout/deleteAccount
+  /// через [clearResponded].
+  static final Set<String> respondedOrderIds = <String>{};
+
+  /// Сбрасывает трекер откликов — вызывается при выходе/удалении аккаунта,
+  /// чтобы на свежем аккаунте кнопка «Откликнуться» не была заблокирована
+  /// прошлой сессией.
+  static void clearResponded() {
+    respondedOrderIds.clear();
+  }
+
   @override
   State<OrderDetailScreen> createState() => _OrderDetailScreenState();
 }
@@ -47,11 +60,6 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     'Погрузчик',
     'Автовышка',
   ];
-
-  /// Трекер id заказов, на которые этот исполнитель уже откликнулся.
-  /// Живёт в памяти до появления бэкенда — чтобы нельзя было отправить
-  /// повторный отклик на тот же заказ.
-  static final Set<String> _respondedOrderIds = <String>{};
 
   @override
   void initState() {
@@ -72,7 +80,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
   bool get _verified => VerificationStatus.current.isVerified;
   bool get _hasSubscription => VerificationStatus.hasSubscription;
   bool get _alreadyResponded =>
-      _respondedOrderIds.contains(widget.orderId);
+      OrderDetailScreen.respondedOrderIds.contains(widget.orderId);
 
   /// Реальный список техники заказа. Если заказ найден в моке —
   /// отдаём его `equipment`; иначе падаем на фолбэк по флагу
@@ -152,7 +160,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     // 5. Отклик отправлен — фиксируем, чтобы повторно нельзя было,
     // и добавляем заказ в «Мои заказы» → «Новые» со статусом
     // `offerSent` («Ожидает ответа заказчика»).
-    _respondedOrderIds.add(widget.orderId);
+    OrderDetailScreen.respondedOrderIds.add(widget.orderId);
     final CatalogOrderMock? catalogOrder =
         CatalogOrderMock.byId(widget.orderId);
     if (catalogOrder != null) {

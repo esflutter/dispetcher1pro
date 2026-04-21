@@ -148,7 +148,7 @@ class _ExecutorCardPaywallState extends State<ExecutorCardPaywall>
               fontFamily: 'Roboto',
               fontSize: 14.sp,
               fontWeight: FontWeight.w500,
-              color: const Color(0xFF636362),
+              color: AppColors.textGreyMuted,
             ),
           ),
           SizedBox(height: 12.h),

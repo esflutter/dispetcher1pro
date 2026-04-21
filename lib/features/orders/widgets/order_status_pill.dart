@@ -52,13 +52,13 @@ extension MyOrderStatusX on MyOrderStatus {
       case MyOrderStatus.offerSent:
         return AppColors.primaryTint;
       case MyOrderStatus.pendingConfirmation:
-        return const Color(0xFFE6F8EF);
+        return AppColors.statusPillSuccessBg;
       case MyOrderStatus.accepted:
-        // #1DAEDE @ 10%
+        // statusPillInfoFg @ 10%
         return const Color(0x1A1DAEDE);
       case MyOrderStatus.completed:
       case MyOrderStatus.rejectedRemoved:
-        return const Color(0xFFF1F1F1);
+        return AppColors.categoryCard;
       case MyOrderStatus.rejectedOther:
       case MyOrderStatus.rejectedDeclined:
         return AppColors.errorTint;
@@ -70,12 +70,12 @@ extension MyOrderStatusX on MyOrderStatus {
       case MyOrderStatus.offerSent:
         return AppColors.primary;
       case MyOrderStatus.pendingConfirmation:
-        return const Color(0xFF1FAE5C);
+        return AppColors.statusPillSuccessFg;
       case MyOrderStatus.accepted:
-        return const Color(0xFF1DAEDE);
+        return AppColors.statusPillInfoFg;
       case MyOrderStatus.completed:
       case MyOrderStatus.rejectedRemoved:
-        return const Color(0xFF7A7A7A);
+        return AppColors.textMuted;
       case MyOrderStatus.rejectedOther:
       case MyOrderStatus.rejectedDeclined:
         return AppColors.error;

@@ -40,6 +40,24 @@ class AppColors {
   static const Color whatsappGreen = Color(0xFF38CB10);
   static const Color warning = Color(0xFFFFAC26);
 
+  // Кнопка primary — disabled-состояние.
+  static const Color primaryButtonDisabledBg = Color(0xFFFEF9F1);
+
+  // Бордеры полей ввода.
+  static const Color borderInputLight = Color(0xFFD1D1D6);
+
+  // Переключатели (ios-style toggle).
+  static const Color toggleOn = Color(0xFF34C759);
+  static const Color toggleOff = Color(0xFFE0E0E0);
+
+  // Пилюли статуса заказа (Подтверждён — зелёная, Идёт поиск — синяя).
+  static const Color statusPillSuccessBg = Color(0xFFE6F8EF);
+  static const Color statusPillSuccessFg = Color(0xFF1FAE5C);
+  static const Color statusPillInfoFg = Color(0xFF1DAEDE);
+
+  // Приглушённый серый для вторичного текста на paywall-экранах.
+  static const Color textGreyMuted = Color(0xFF636362);
+
   // Пилюли статуса верификации (зелёная/синяя/красная заливка + текст)
   static const Color verificationSuccessFg = Color(0xFF1F8A2D);
   static const Color verificationSuccessBg = Color(0xFFD7F6CB);

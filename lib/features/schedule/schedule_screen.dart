@@ -748,7 +748,7 @@ class ScheduleToggle extends StatelessWidget {
         height: h,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(h / 2),
-          color: value ? const Color(0xFF34C759) : const Color(0xFFE0E0E0),
+          color: value ? AppColors.toggleOn : AppColors.toggleOff,
         ),
         child: AnimatedAlign(
           duration: const Duration(milliseconds: 200),

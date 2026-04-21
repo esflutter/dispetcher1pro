@@ -413,7 +413,7 @@ Future<bool?> _showProfileAlert(
                       child: Center(
                         child: Text('Отмена',
                             style: AppTextStyles.titleS.copyWith(
-                              color: const Color(0xFF007AFF),
+                              color: AppColors.iosBlue,
                             )),
                       ),
                     ),
@@ -425,7 +425,7 @@ Future<bool?> _showProfileAlert(
                       child: Center(
                         child: Text(actionLabel,
                             style: AppTextStyles.bodyMRegular.copyWith(
-                              color: isDestructive ? AppColors.error : const Color(0xFF007AFF),
+                              color: isDestructive ? AppColors.error : AppColors.iosBlue,
                             )),
                       ),
                     ),

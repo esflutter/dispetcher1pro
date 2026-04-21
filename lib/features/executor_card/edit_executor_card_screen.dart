@@ -120,10 +120,6 @@ class _EditExecutorCardScreenState extends State<EditExecutorCardScreen> {
     _radiusIndex = savedRadius != null ? _radiusOptions.indexOf(savedRadius) : -1;
     if (_radiusIndex < 0) _radiusIndex = -1;
 
-    _nameCtrl.addListener(() {
-      // Имя в шапке карточки должно обновляться «в живую» при наборе.
-      if (mounted) setState(() {});
-    });
     _nameFocus.addListener(() {
       if (!_nameFocus.hasFocus) {
         final String value = _nameCtrl.text.trim();
@@ -195,7 +191,10 @@ class _EditExecutorCardScreenState extends State<EditExecutorCardScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-              _HeaderRow(displayName: _nameCtrl.text),
+              ListenableBuilder(
+                listenable: _nameCtrl,
+                builder: (_, _) => _HeaderRow(displayName: _nameCtrl.text),
+              ),
               SizedBox(height: 16.h),
               _PlainEditableField(
                 controller: _nameCtrl,
