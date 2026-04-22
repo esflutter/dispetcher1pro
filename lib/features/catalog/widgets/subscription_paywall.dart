@@ -115,7 +115,8 @@ class _SubscriptionPaywallState extends State<SubscriptionPaywall>
         color: AppColors.surface,
         borderRadius: BorderRadius.vertical(top: Radius.circular(24.r)),
       ),
-      padding: EdgeInsets.fromLTRB(16.w, 24.h, 16.w, 12.h),
+      padding: EdgeInsets.fromLTRB(
+          16.w, 24.h, 16.w, 12.h + MediaQuery.of(context).padding.bottom),
       child: Column(
         children: <Widget>[
           Text(
@@ -130,9 +131,7 @@ class _SubscriptionPaywallState extends State<SubscriptionPaywall>
           ),
           SizedBox(height: 13.h),
           _BulletItem(text: 'Откликайтесь на заказы'),
-          SizedBox(height: 2.h),
           _BulletItem(text: 'Попадайте в список исполнителей'),
-          SizedBox(height: 2.h),
           _BulletItem(text: 'Получайте новые заявки'),
           SizedBox(height: 20.h),
           Text(

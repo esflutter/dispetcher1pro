@@ -7,12 +7,14 @@ import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_spacing.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
 import 'package:dispatcher_1/core/utils/photo_source.dart';
+import 'package:dispatcher_1/core/utils/plural.dart';
 import 'package:dispatcher_1/core/widgets/dark_sub_app_bar.dart';
 import 'package:dispatcher_1/core/widgets/cropped_avatar.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
 import 'package:dispatcher_1/features/auth/photo_crop_screen.dart';
 import 'package:dispatcher_1/features/catalog/catalog_filter_screen.dart';
 import 'package:dispatcher_1/features/catalog/widgets/catalog_search_bar.dart';
+import 'package:dispatcher_1/features/profile/account_block.dart';
 
 import 'executor_card_screen.dart';
 
@@ -72,36 +74,6 @@ class _EditExecutorCardScreenState extends State<EditExecutorCardScreen> {
     'Юр. лицо',
   ];
 
-  static const _machinery = [
-    'Экскаватор-погрузчик',
-    'Экскаватор',
-    'Погрузчик',
-    'Миниэкскаватор',
-    'Буроям',
-    'Самогруз',
-    'Автокран',
-    'Бетононасос',
-    'Эвакуатор',
-    'Автовышка',
-    'Манипулятор',
-    'Минипогрузчик',
-    'Самосвал',
-    'Минитрактор',
-  ];
-  static const _categories = [
-    'Земляные работы',
-    'Погрузочно-разгрузочные работы',
-    'Перевозка материалов',
-    'Строительные работы',
-    'Дорожные работы',
-    'Буровые работы',
-    'Высотные работы',
-    'Демонтажные работы',
-    'Благоустройство территории',
-  ];
-
-  late final Set<String> _selMach;
-  late final Set<String> _selCat;
 
   @override
   void initState() {
@@ -114,8 +86,6 @@ class _EditExecutorCardScreenState extends State<EditExecutorCardScreen> {
     _nameCtrl = TextEditingController(text: ExecutorCardData.name);
     _emailCtrl = TextEditingController(text: CropResult.userEmail);
     _selectedStatus = ExecutorCardData.status;
-    _selMach = Set<String>.from(ExecutorCardData.machinery);
-    _selCat = Set<String>.from(ExecutorCardData.categories);
     final savedRadius = ExecutorCardData.radius;
     _radiusIndex = savedRadius != null ? _radiusOptions.indexOf(savedRadius) : -1;
     if (_radiusIndex < 0) _radiusIndex = -1;
@@ -289,26 +259,10 @@ class _EditExecutorCardScreenState extends State<EditExecutorCardScreen> {
                   selected: _radiusIndex == i,
                   onTap: () => setState(() => _radiusIndex = i),
                 ),
-              SizedBox(height: 24.h),
-              _SectionTitle('Спецтехника'),
-              SizedBox(height: 12.h),
-              _ChipGrid(
-                values: _machinery,
-                selected: _selMach,
-                onToggle: (v) => setState(() {
-                  _selMach.contains(v) ? _selMach.remove(v) : _selMach.add(v);
-                }),
-              ),
-              SizedBox(height: 24.h),
-              _SectionTitle('Категории услуг'),
-              SizedBox(height: 12.h),
-              _ChipGrid(
-                values: _categories,
-                selected: _selCat,
-                onToggle: (v) => setState(() {
-                  _selCat.contains(v) ? _selCat.remove(v) : _selCat.add(v);
-                }),
-              ),
+              // Спецтехника и категории услуг в форме редактирования
+              // НЕ показываются — они полностью computed из услуг.
+              // Смотрим/управляем ими через «Мои услуги», а в карточке
+              // они появляются автоматически.
               SizedBox(height: AppSpacing.lg),
               _SectionTitle('Опыт работы'),
               SizedBox(height: AppSpacing.xs),
@@ -424,8 +378,8 @@ class _EditExecutorCardScreenState extends State<EditExecutorCardScreen> {
                 onPressed: () {
                   ExecutorCardData.location = _location.text;
                   ExecutorCardData.radius = _radiusIndex >= 0 ? _radiusOptions[_radiusIndex] : null;
-                  ExecutorCardData.machinery = _selMach.toList();
-                  ExecutorCardData.categories = _selCat.toList();
+                  // Спецтехника и категории услуг не сохраняются отдельно —
+                  // они computed из `ServiceData.services`; здесь не трогаем.
                   ExecutorCardData.experience = _experience.text;
                   ExecutorCardData.status = _selectedStatus;
                   ExecutorCardData.about = _about.text;
@@ -513,7 +467,8 @@ class _HeaderRowState extends State<_HeaderRow> {
                   SizedBox(width: 16.w),
                   GestureDetector(
                     onTap: () => context.push('/profile/reviews'),
-                    child: Text('10 отзывов',
+                    child: Text(
+                        '${ReviewsData.count} ${reviewsWord(ReviewsData.count)}',
                         style: AppTextStyles.body.copyWith(
                           color: AppColors.textPrimary,
                           decoration: TextDecoration.underline,
@@ -685,56 +640,6 @@ class _TintField extends StatelessWidget {
   }
 }
 
-class _ChipGrid extends StatelessWidget {
-  const _ChipGrid({
-    required this.values,
-    required this.selected,
-    required this.onToggle,
-  });
-  final List<String> values;
-  final Set<String> selected;
-  final ValueChanged<String> onToggle;
-
-  @override
-  Widget build(BuildContext context) {
-    return Wrap(
-      spacing: 8.w,
-      runSpacing: 8.h,
-      children: values.map((String v) {
-        final bool sel = selected.contains(v);
-        return GestureDetector(
-          onTap: () => onToggle(v),
-          child: Container(
-            padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 6.h),
-            decoration: BoxDecoration(
-              color: sel ? AppColors.primary : AppColors.surface,
-              border: Border.all(color: AppColors.primary, width: 1),
-              borderRadius: BorderRadius.circular(100.r),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Text(
-                  v,
-                  style: AppTextStyles.chip.copyWith(
-                    color: sel ? Colors.white : AppColors.textPrimary,
-                    fontSize: 13.sp,
-                    fontWeight: FontWeight.w400,
-                  ),
-                ),
-                if (sel) ...<Widget>[
-                  SizedBox(width: 6.w),
-                  Icon(Icons.close_rounded,
-                      size: 14.r, color: Colors.white),
-                ],
-              ],
-            ),
-          ),
-        );
-      }).toList(),
-    );
-  }
-}
 
 /// Склонение слова «год» для числа лет опыта.
 String experienceYearsWord(int n) {

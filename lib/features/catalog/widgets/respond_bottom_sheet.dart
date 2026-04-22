@@ -52,8 +52,8 @@ class RespondModalDialog extends StatelessWidget {
         ),
         SizedBox(height: 10.h),
         Text(
-          'Заказчик рассмотрит вашу заявку на заказ. Если он выберет вас, '
-          'заказ появится в разделе «Мои заказы».',
+          'Заказчик рассмотрит вашу заявку. Если он выберет вас, '
+          'заказ появится в разделе «Принятые заказы».',
           textAlign: TextAlign.center,
           style: AppTextStyles.bodyMRegular
               .copyWith(color: AppColors.textSecondary),

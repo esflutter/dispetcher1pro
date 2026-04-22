@@ -4,10 +4,12 @@ import 'package:go_router/go_router.dart';
 
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
+import 'package:dispatcher_1/core/utils/plural.dart';
 import 'package:dispatcher_1/features/catalog/order_detail_screen.dart';
 import 'package:dispatcher_1/features/catalog/order_feed_screen.dart';
 import 'package:dispatcher_1/features/catalog/widgets/catalog_search_bar.dart';
 import 'package:dispatcher_1/features/catalog/widgets/order_card.dart';
+import 'package:dispatcher_1/features/profile/reviews_screen.dart';
 
 /// Мок-профиль заказчика. Пока нет бэкенда, получаем из локального
 /// каталога по `customerId`. [hasMatch] = был ли уже принятый обоюдно
@@ -64,6 +66,31 @@ const Map<String, ({String status, String? phone, String? email, String about})>
     phone: '+7 999 456-78-90',
     email: 'kozlov@example.ru',
     about: 'Компания, занимается строительством и благоустройством.',
+  ),
+  // id '5'..'7' приходят из `MyOrdersStore` и `ScheduleScreen`
+  // (Виктор Новиков, Дмитрий Соколов, Андрей Волков). Держим для них
+  // extras, чтобы при открытии карточки не падал дефолт «Физ. лицо, без
+  // контактов».
+  '5': (
+    status: 'Физ. лицо',
+    phone: '+7 999 567-89-01',
+    email: null,
+    about: 'Частный заказчик, строим дом и гараж, нужна разнообразная '
+        'спецтехника по выходным.',
+  ),
+  '6': (
+    status: 'ИП',
+    phone: '+7 999 678-90-12',
+    email: 'sokolov@example.ru',
+    about: 'ИП, работаем по подмосковным объектам — регулярно нанимаем '
+        'экскаваторы и самосвалы.',
+  ),
+  '7': (
+    status: 'ООО',
+    phone: '+7 999 789-01-23',
+    email: 'volkov@example.ru',
+    about: 'Девелопер, коммерческое строительство. Заказываем технику '
+        'в рамках длительных проектов.',
   ),
 };
 
@@ -250,9 +277,15 @@ class _HeaderBlock extends StatelessWidget {
                   SizedBox(width: 16.w),
                   GestureDetector(
                     behavior: HitTestBehavior.opaque,
-                    onTap: () => context.push('/profile/reviews'),
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const ReviewsScreen(
+                          subject: ReviewSubject.customer,
+                        ),
+                      ),
+                    ),
                     child: Text(
-                      '${info.reviewsCount} отзывов',
+                      '${info.reviewsCount} ${reviewsWord(info.reviewsCount)}',
                       style: AppTextStyles.body.copyWith(
                         color: AppColors.textPrimary,
                         decoration: TextDecoration.underline,

@@ -451,8 +451,8 @@ class _OrderMock {
     this.customerName,
     this.customerPhone,
     this.customerEmail,
-    this.customerRating = 4.5,
-    this.customerReviews = 15,
+    this.customerRating = 4.6,
+    this.customerReviews = 10,
   });
 
   final String id;

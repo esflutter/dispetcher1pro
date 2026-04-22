@@ -23,6 +23,10 @@ String _hoursWord(String text) {
   return 'часов';
 }
 
+/// Цена непустая и не «0» — тогда показываем блок «₽ / час» или
+/// «₽ / день». Иначе скрываем, чтобы не рисовать «0 ₽».
+bool _hasPrice(String value) => value.isNotEmpty && value != '0';
+
 /// Экран «Детали услуги».
 class ServiceDetailScreen extends StatefulWidget {
   const ServiceDetailScreen({super.key, required this.serviceId});
@@ -77,32 +81,38 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
                       height: 1.2,
                     ),
                   ),
-                  SizedBox(height: 16.h),
-                  Row(
-                    children: [
-                      Text('₽ / час',
-                          style: AppTextStyles.body.copyWith(
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.textPrimary,
-                          )),
-                      SizedBox(width: 6.w),
-                      Text('${s.pricePerHour} ₽',
-                          style: AppTextStyles.bodyMedium.copyWith(
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.primary)),
-                      SizedBox(width: 24.w),
-                      Text('₽ / день',
-                          style: AppTextStyles.body.copyWith(
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.textPrimary,
-                          )),
-                      SizedBox(width: 6.w),
-                      Text('${s.pricePerDay} ₽',
-                          style: AppTextStyles.bodyMedium.copyWith(
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.primary)),
-                    ],
-                  ),
+                  if (_hasPrice(s.pricePerHour) || _hasPrice(s.pricePerDay))
+                    SizedBox(height: 16.h),
+                  if (_hasPrice(s.pricePerHour) || _hasPrice(s.pricePerDay))
+                    Row(
+                      children: [
+                        if (_hasPrice(s.pricePerHour)) ...[
+                          Text('₽ / час',
+                              style: AppTextStyles.body.copyWith(
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.textPrimary,
+                              )),
+                          SizedBox(width: 6.w),
+                          Text('${s.pricePerHour} ₽',
+                              style: AppTextStyles.bodyMedium.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.primary)),
+                          if (_hasPrice(s.pricePerDay)) SizedBox(width: 24.w),
+                        ],
+                        if (_hasPrice(s.pricePerDay)) ...[
+                          Text('₽ / день',
+                              style: AppTextStyles.body.copyWith(
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.textPrimary,
+                              )),
+                          SizedBox(width: 6.w),
+                          Text('${s.pricePerDay} ₽',
+                              style: AppTextStyles.bodyMedium.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.primary)),
+                        ],
+                      ],
+                    ),
                   SizedBox(height: 16.h),
                   Row(
                     children: [

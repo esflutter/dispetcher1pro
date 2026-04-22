@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_spacing.dart';
+import 'package:dispatcher_1/core/utils/plural.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
 import 'package:dispatcher_1/core/widgets/cropped_avatar.dart';
 import 'package:dispatcher_1/features/auth/photo_crop_screen.dart';
@@ -253,7 +254,7 @@ class _Header extends StatelessWidget {
                     Text(ratingText, style: AppTextStyles.body),
                     SizedBox(width: 16.w),
                     Text(
-                      '$reviewsCount отзывов',
+                      '$reviewsCount ${reviewsWord(reviewsCount)}',
                       style: AppTextStyles.body.copyWith(
                         color: AppColors.textPrimary,
                         decoration: TextDecoration.underline,

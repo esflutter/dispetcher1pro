@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import 'package:dispatcher_1/core/theme/app_colors.dart';
+import 'package:dispatcher_1/core/utils/plural.dart';
 
 /// Шапка заказчика в деталях заказа: аватар + имя + звезда с рейтингом
 /// и подчёркнутая кликабельная «N отзывов». Используется в каталоге
@@ -92,7 +93,7 @@ class CustomerHeader extends StatelessWidget {
                             behavior: HitTestBehavior.opaque,
                             onTap: onReviewsTap,
                             child: Text(
-                              '$reviews отзывов',
+                              '$reviews ${reviewsWord(reviews)}',
                               style: TextStyle(
                                 fontFamily: 'Roboto',
                                 fontSize: 16.sp,

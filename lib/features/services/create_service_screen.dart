@@ -14,7 +14,6 @@ import 'package:dispatcher_1/features/support/chat_screen.dart';
 import 'package:dispatcher_1/features/services/my_services_screen.dart';
 
 import 'widgets/service_alerts.dart';
-import 'widgets/service_paywall.dart';
 
 /// Склонение «час» после предлога «от» (род. падеж).
 /// 1 → «часа», 2/3/4/… → «часов», 11–14 → «часов».
@@ -117,11 +116,16 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
         final s = _editingService!;
         _titleCtrl.text = s.title;
         _descCtrl.text = s.description;
-        _priceHourCtrl.text = s.pricePerHour;
-        _priceDayCtrl.text = s.pricePerDay;
+        // Ноль трактуем как «не заполнено» — в поле оставляем hint,
+        // а не «0», чтобы пользователь не удалял ноль вручную.
+        _priceHourCtrl.text = s.pricePerHour == '0' ? '' : s.pricePerHour;
+        _priceDayCtrl.text = s.pricePerDay == '0' ? '' : s.pricePerDay;
         _minHoursCtrl.text = s.minOrder;
         _selCat.addAll(s.categories);
-        _selMach.addAll(s.machinery);
+        // Инвариант формы — максимум один вид спецтехники на услугу.
+        // Старые услуги / presets могли быть сохранены с несколькими —
+        // берём только первую, чтобы форма оставалась валидной.
+        if (s.machinery.isNotEmpty) _selMach.add(s.machinery.first);
         _photos.addAll(s.photos);
         _address = s.address;
         _radiusIndex = s.radiusIndex;
@@ -170,8 +174,10 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
       title: _titleCtrl.text.isEmpty ? 'Новая услуга' : _titleCtrl.text,
       categories: _selCat.toList(),
       machinery: _selMach.toList(),
-      pricePerHour: _priceHourCtrl.text.isEmpty ? '0' : _priceHourCtrl.text,
-      pricePerDay: _priceDayCtrl.text.isEmpty ? '0' : _priceDayCtrl.text,
+      // Пустая цена — так и сохраняем пустой: в деталях и карточке
+      // блок «₽ / час» / «₽ / день» тогда просто не отображается.
+      pricePerHour: _priceHourCtrl.text,
+      pricePerDay: _priceDayCtrl.text,
       minOrder: _minHoursCtrl.text.isEmpty ? '1' : _minHoursCtrl.text,
       description: _descCtrl.text,
       photos: List<String>.from(_photos),
@@ -188,27 +194,13 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
   }
 
   Future<void> _onCreateTap() async {
-    if (ServiceData.services.length >= ServiceData.maxServices) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Достигнут лимит ${ServiceData.maxServices} услуг. '
-            'Удалите ненужные, чтобы добавить новые.',
-          ),
-        ),
-      );
-      return;
-    }
-    // Открываем paywall оплаты размещения
-    final bool? paid = await Navigator.of(context).push<bool>(
-      MaterialPageRoute<bool>(
-        fullscreenDialog: true,
-        builder: (_) => const ServicePaywall(),
-      ),
-    );
-    if (paid != true || !mounted) return;
-
+    // Paywall оплачен ещё до открытия этой формы (в `my_services_screen`
+    // → кнопка «Создать услугу» → `ServicePaywall`). Здесь остаётся
+    // только сохранить услугу и показать диалог публикации.
     _save();
+    // Оплаченный слот израсходован. Следующее создание услуги потребует
+    // новой оплаты.
+    ServiceData.hasUnusedPaidSlot = false;
     if (!mounted) return;
     await showServicePublishedDialog(context);
     if (!mounted) return;
@@ -498,33 +490,21 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
           },
         ),
         SizedBox(height: 8.h),
-        SizedBox(
-          width: double.infinity,
-          height: 48.h,
-          child: OutlinedButton(
-            onPressed: () async {
-              final ok = await showDeleteServiceDialog(context);
-              if (!mounted) return;
-              if (ok == true) {
-                ServiceData.services
-                    .removeWhere((s) => s.id == widget.serviceId);
-                if (mounted) {
-                  final nav = Navigator.of(context);
-                  nav.pop(); // закрыть редактирование
-                  if (nav.canPop()) nav.pop(); // закрыть просмотр
-                }
+        SecondaryButton(
+          label: 'Удалить услугу',
+          onPressed: () async {
+            final ok = await showDeleteServiceDialog(context);
+            if (!mounted) return;
+            if (ok == true) {
+              ServiceData.services
+                  .removeWhere((s) => s.id == widget.serviceId);
+              if (mounted) {
+                final nav = Navigator.of(context);
+                nav.pop(); // закрыть редактирование
+                if (nav.canPop()) nav.pop(); // закрыть просмотр
               }
-            },
-            style: OutlinedButton.styleFrom(
-              foregroundColor: AppColors.error,
-              side: const BorderSide(color: AppColors.error, width: 1.5),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16.r),
-              ),
-            ),
-            child: Text('Удалить услугу',
-                style: AppTextStyles.button.copyWith(color: AppColors.error)),
-          ),
+            }
+          },
         ),
       ],
     );

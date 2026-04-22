@@ -3,6 +3,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_spacing.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
+import 'package:dispatcher_1/core/utils/plural.dart';
 import 'package:dispatcher_1/core/widgets/dark_sub_app_bar.dart';
 
 import 'account_block.dart';
@@ -22,15 +23,34 @@ class Review {
   final int avatarIndex;
 }
 
-class ReviewsScreen extends StatefulWidget {
-  const ReviewsScreen({super.key});
+/// Про кого открыт список отзывов. [executor] — отзывы заказчиков об
+/// исполнителе (мой профиль в приложении исполнителя). [customer] —
+/// отзывы исполнителей о заказчике (открывается при тапе на «N отзывов»
+/// в шапке заказа или в карточке заказчика).
+enum ReviewSubject { executor, customer }
 
+class ReviewsScreen extends StatefulWidget {
+  const ReviewsScreen({
+    super.key,
+    this.subject = ReviewSubject.executor,
+  });
+
+  final ReviewSubject subject;
+
+  // Отзывы об исполнителе (пишет заказчик).
   static const String _t1 = 'Исполнитель очень ответственный и чётко выполняет задачи. Приехал вовремя, привёз всё необходимое оборудование. Работу сделал качественно и аккуратно, убрал за собой территорию. Общение было комфортным, всегда на связи. Обязательно обращусь ещё раз. Однозначно рекомендую к сотрудничеству.';
   static const String _t2 = 'Отличный исполнитель! Всё сделал быстро и качественно. Приехал вовремя, никаких проблем. Рекомендую!';
   static const String _t3 = 'Хороший специалист, но немного затянул со сроками. Пришлось несколько раз уточнять детали по ходу работы. Тем не менее, результат получился хорошим, все замечания учёл и исправил. Техника была в отличном состоянии, работал аккуратно. В целом доволен, но хотелось бы более чёткого соблюдения графика.';
   static const String _t4 = 'Очень приятный в общении человек. Всё объяснил, показал как будет работать. Результатом полностью довольны.';
   static const String _t5 = 'Исполнитель знает своё дело. Быстро разобрался с задачей, не затягивал. Работа выполнена на совесть.';
   static const String _t1Bad = 'Сорвал сроки, работу пришлось доделывать с другим исполнителем. Связь держал плохо. Не рекомендую.';
+
+  // Отзывы о заказчике (пишет исполнитель).
+  static const String _c1 = 'Отличный заказчик. Задачу объяснил чётко, оплату перевёл сразу после приёмки работ. Без лишних правок, без задержек. Готов работать снова.';
+  static const String _c2 = 'Хорошее сотрудничество. Всё по договорённости, связь на связи в любое время, оперативно согласовывал все детали на объекте.';
+  static const String _c3 = 'Заказчик ответственный. Договорились по цене и срокам заранее — в ходе работы ничего не менял, рассчитался в день завершения. Рекомендую.';
+  static const String _c4 = 'Адекватный заказчик, с которым приятно иметь дело. Доступ к объекту организовал сразу, вопросы решали быстро.';
+  static const String _c5 = 'Дважды по ходу работы менял техзадание, пришлось пересогласовывать. Но в итоге всё решили, оплату получил вовремя.';
 
   static const List<Review> _initialMock = <Review>[
     Review(author: 'Илья Иванов', date: '29/03/2024', rating: 5, text: _t1, avatarIndex: 1),
@@ -45,11 +65,35 @@ class ReviewsScreen extends StatefulWidget {
     Review(author: 'Ирина Лебедева', date: '05/12/2023', rating: 3, text: _t3, avatarIndex: 4),
   ];
 
+  /// Отзывы, которые оставили исполнители о заказчике. Показываются,
+  /// когда `subject == ReviewSubject.customer`. Количество и средний
+  /// рейтинг должны совпадать с тем, что показывается в шапке заказа
+  /// (см. `CatalogOrderMock.customerReviews`/`customerRating`) — иначе
+  /// пользователь увидит «43 отзыва», а в списке будет 5.
+  static const List<Review> _customerInitialMock = <Review>[
+    Review(author: 'Иван Орлов', date: '12/03/2024', rating: 5, text: _c1, avatarIndex: 1),
+    Review(author: 'Михаил Гусев', date: '28/02/2024', rating: 5, text: _c3, avatarIndex: 2),
+    Review(author: 'Алексей Зайцев', date: '14/02/2024', rating: 5, text: _c2, avatarIndex: 3),
+    Review(author: 'Николай Жуков', date: '30/01/2024', rating: 4, text: _c4, avatarIndex: 4),
+    Review(author: 'Виктор Громов', date: '18/01/2024', rating: 4, text: _c5, avatarIndex: 5),
+    Review(author: 'Борис Ларин', date: '05/01/2024', rating: 5, text: _c1, avatarIndex: 6),
+    Review(author: 'Дмитрий Кузин', date: '22/12/2023', rating: 5, text: _c2, avatarIndex: 1),
+    Review(author: 'Павел Ермаков', date: '10/12/2023', rating: 5, text: _c3, avatarIndex: 2),
+    Review(author: 'Роман Савин', date: '28/11/2023', rating: 4, text: _c4, avatarIndex: 3),
+    Review(author: 'Георгий Титов', date: '15/11/2023', rating: 5, text: _c1, avatarIndex: 4),
+  ];
+
   /// Список отзывов, синхронизированный с `ReviewsData`. Сортировка:
   /// сверху самые свежие (добавленные через `receive` идут первыми,
   /// самый последний — в самом верху), ниже — дефолтные (они уже
-  /// упорядочены от новых к старым).
-  static List<Review> _buildReviews() {
+  /// упорядочены от новых к старым). Для `subject == customer`
+  /// возвращаем фиксированный набор отзывов исполнителей о заказчике
+  /// (ReviewsData для заказчика не релевантен — он накапливает отзывы
+  /// текущему пользователю-исполнителю).
+  static List<Review> _buildReviews(ReviewSubject subject) {
+    if (subject == ReviewSubject.customer) {
+      return _customerInitialMock;
+    }
     final List<Review> shown = <Review>[];
     final List<ReviewRecord> all = ReviewsData.all;
 
@@ -77,15 +121,24 @@ class ReviewsScreen extends StatefulWidget {
 }
 
 class _ReviewsScreenState extends State<ReviewsScreen> {
+  bool get _isCustomer => widget.subject == ReviewSubject.customer;
+
   @override
   void initState() {
     super.initState();
-    ReviewsData.revision.addListener(_refresh);
+    // ReviewsData — это стор текущего пользователя-исполнителя, он не
+    // относится к отзывам о заказчике. Подписываемся только если
+    // показываем отзывы исполнителя.
+    if (!_isCustomer) {
+      ReviewsData.revision.addListener(_refresh);
+    }
   }
 
   @override
   void dispose() {
-    ReviewsData.revision.removeListener(_refresh);
+    if (!_isCustomer) {
+      ReviewsData.revision.removeListener(_refresh);
+    }
     super.dispose();
   }
 
@@ -95,12 +148,26 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final List<Review> reviews = ReviewsScreen._buildReviews();
-    final int count = ReviewsData.count;
-    final double avg = ReviewsData.aggregate;
-    final String ratingText = count == 0
-        ? '0,0'
-        : avg.toStringAsFixed(1).replaceAll('.', ',');
+    final List<Review> reviews =
+        ReviewsScreen._buildReviews(widget.subject);
+    final int count;
+    final String ratingText;
+    if (_isCustomer) {
+      count = reviews.length;
+      if (count == 0) {
+        ratingText = '0,0';
+      } else {
+        final double avg =
+            reviews.fold<int>(0, (int s, Review r) => s + r.rating) / count;
+        ratingText = avg.toStringAsFixed(1).replaceAll('.', ',');
+      }
+    } else {
+      count = ReviewsData.count;
+      final double avg = ReviewsData.aggregate;
+      ratingText = count == 0
+          ? '0,0'
+          : avg.toStringAsFixed(1).replaceAll('.', ',');
+    }
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: const DarkSubAppBar(title: 'Отзывы'),
@@ -178,7 +245,7 @@ class _RatingHeader extends StatelessWidget {
           ],
         ),
         SizedBox(height: 8.h),
-        Text('$count отзывов',
+        Text('$count ${reviewsWord(count)}',
             style: AppTextStyles.bodyMedium
                 .copyWith(color: AppColors.textTertiary)),
       ],

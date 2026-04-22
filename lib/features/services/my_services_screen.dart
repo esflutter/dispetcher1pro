@@ -8,6 +8,7 @@ import 'package:dispatcher_1/core/widgets/primary_button.dart';
 import 'package:dispatcher_1/features/catalog/widgets/catalog_search_bar.dart';
 
 import 'widgets/service_card.dart';
+import 'widgets/service_paywall.dart';
 
 /// Статические данные моковых услуг (для доступа из других экранов).
 class ServiceData {
@@ -17,10 +18,18 @@ class ServiceData {
 
   static final List<ServiceMock> services = [];
 
+  /// Оплаченный, но ещё не израсходованный слот для создания услуги.
+  /// Появляется после успешной оплаты в `ServicePaywall`, расходуется
+  /// при сохранении новой услуги. Если пользователь вышел из формы
+  /// создания не сохранив — слот остаётся, и следующий вход сразу
+  /// открывает форму без повторной оплаты.
+  static bool hasUnusedPaidSlot = false;
+
   /// Полный сброс списка услуг — для logout. У следующего пользователя
   /// на этом устройстве не должно быть услуг предыдущего.
   static void clear() {
     services.clear();
+    hasUnusedPaidSlot = false;
   }
 
   static const List<ServiceMock> presets = [
@@ -52,7 +61,7 @@ class ServiceData {
       id: '3',
       title: 'Работы на высоте',
       categories: ['Высотные работы', 'Строительные работы'],
-      machinery: ['Автовышка', 'Автокран'],
+      machinery: ['Автовышка'],
       pricePerHour: '5 000',
       pricePerDay: '15 000',
       minOrder: '3',
@@ -148,6 +157,19 @@ class _MyServicesScreenState extends State<MyServicesScreen> {
                     );
                     return;
                   }
+                  // Если есть ранее оплаченный, но неизрасходованный слот
+                  // (пользователь оплатил и вышел, не сохранив услугу) —
+                  // сразу открываем форму, без повторного paywall.
+                  if (!ServiceData.hasUnusedPaidSlot) {
+                    final bool? paid = await Navigator.of(context).push<bool>(
+                      MaterialPageRoute<bool>(
+                        fullscreenDialog: true,
+                        builder: (_) => const ServicePaywall(),
+                      ),
+                    );
+                    if (paid != true || !context.mounted) return;
+                    ServiceData.hasUnusedPaidSlot = true;
+                  }
                   await context.push('/services/create');
                   if (mounted) setState(() {});
                 },
@@ -230,7 +252,7 @@ class _EmptyState extends StatelessWidget {
                 fontSize: 16.sp,
                 fontWeight: FontWeight.w400,
                 height: 1.3,
-                color: AppColors.textSecondary,
+                color: AppColors.textTertiary,
               ),
               textAlign: TextAlign.center,
             ),

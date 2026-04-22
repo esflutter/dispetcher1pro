@@ -10,8 +10,10 @@ import 'package:dispatcher_1/core/widgets/primary_button.dart';
 import 'package:dispatcher_1/features/catalog/widgets/catalog_search_bar.dart';
 import 'package:dispatcher_1/core/widgets/cropped_avatar.dart';
 import 'package:dispatcher_1/features/auth/photo_crop_screen.dart';
+import 'package:dispatcher_1/core/utils/plural.dart';
 import 'package:dispatcher_1/features/profile/account_block.dart';
 import 'package:dispatcher_1/features/profile/widgets/verification_badge.dart';
+import 'package:dispatcher_1/features/services/my_services_screen.dart';
 
 import 'widgets/executor_card_alerts.dart';
 import 'widgets/executor_card_paywall.dart';
@@ -233,7 +235,7 @@ class _EmptyContent extends StatelessWidget {
                     child: Text(
                       'Заказчики смогут посмотреть информацию о вас, услугах и связаться с вами.',
                       style: AppTextStyles.body.copyWith(
-                        color: AppColors.textSecondary,
+                        color: AppColors.textTertiary,
                       ),
                       textAlign: TextAlign.center,
                     ),
@@ -255,23 +257,46 @@ class ExecutorCardData {
   static String get name => CropResult.userName;
   static set name(String value) => CropResult.userName = value;
 
-  static String phone = '+7 999 123-45-67';
+  /// Телефон — всегда совпадает с номером профиля из регистрации
+  /// ([CropResult.userPhone]). Отдельно не хранится и не меняется:
+  /// изменение номера возможно только через повторную регистрацию.
+  static String get phone => CropResult.userPhone;
+
   static String? location;
   static String? radius;
-  static List<String> machinery = [];
-  static List<String> categories = [];
+
+  /// Спецтехника и категории услуг — НЕ хранятся отдельно.
+  /// Подтягиваются из услуг исполнителя (объединение по всем услугам,
+  /// distinct, порядок первого появления). Единственный источник
+  /// истины — `ServiceData.services`, поэтому сеттеров нет: меняется
+  /// только через создание/удаление услуг в «Мои услуги».
+  static List<String> get machinery => _unionFromServices((s) => s.machinery);
+  static List<String> get categories => _unionFromServices((s) => s.categories);
+
+  static List<String> _unionFromServices(
+      List<String> Function(ServiceMock) pick) {
+    final Set<String> seen = <String>{};
+    final List<String> out = <String>[];
+    for (final ServiceMock s in ServiceData.services) {
+      for (final String v in pick(s)) {
+        if (seen.add(v)) out.add(v);
+      }
+    }
+    return out;
+  }
+
   static String? experience;
   static String? status;
   static String? about;
 
   /// Сбросить все поля карточки к значениям «как при первом запуске» —
-  /// для logout / удаления аккаунта.
+  /// для logout / удаления аккаунта. Техника и категории обнуляются
+  /// через `ServiceData.clear()`, телефон — через сброс
+  /// `CropResult.userPhone` (делается в `auth_reset`), отдельно не
+  /// трогаем.
   static void clear() {
-    phone = '+7 999 123-45-67';
     location = null;
     radius = null;
-    machinery = <String>[];
-    categories = <String>[];
     experience = null;
     status = null;
     about = null;
@@ -342,15 +367,42 @@ class _FilledCard extends StatelessWidget {
           SizedBox(height: 16.h),
           _SectionTitle('Спецтехника'),
           SizedBox(height: 8.h),
-          ExecutorCardData.machinery.isNotEmpty
-              ? _ChipWrap(items: ExecutorCardData.machinery)
-              : Text('—', style: AppTextStyles.body),
+          // Techника подтягивается из услуг (computed getter). Оборачиваем
+          // в StatefulBuilder, чтобы после возврата с /services (по кнопке
+          // CTA) можно было перерисовать только этот блок без лишних
+          // setState на всём экране.
+          StatefulBuilder(
+            builder: (BuildContext ctx, StateSetter setInner) {
+              final List<String> items = ExecutorCardData.machinery;
+              if (items.isNotEmpty) return _ChipWrap(items: items);
+              return _EmptyMachineryCta(
+                hint: 'Создайте первую услугу — и здесь появятся '
+                    'виды вашей спецтехники.',
+                onTap: () async {
+                  await ctx.push('/services');
+                  if (ctx.mounted) setInner(() {});
+                },
+              );
+            },
+          ),
           SizedBox(height: 16.h),
           _SectionTitle('Категории услуг'),
           SizedBox(height: 8.h),
-          ExecutorCardData.categories.isNotEmpty
-              ? _ChipWrap(items: ExecutorCardData.categories)
-              : Text('—', style: AppTextStyles.body),
+          // Категории — тот же computed-getter паттерн, что и спецтехника.
+          StatefulBuilder(
+            builder: (BuildContext ctx, StateSetter setInner) {
+              final List<String> items = ExecutorCardData.categories;
+              if (items.isNotEmpty) return _ChipWrap(items: items);
+              return _EmptyMachineryCta(
+                hint: 'Создайте первую услугу — и здесь появятся '
+                    'категории ваших работ.',
+                onTap: () async {
+                  await ctx.push('/services');
+                  if (ctx.mounted) setInner(() {});
+                },
+              );
+            },
+          ),
           SizedBox(height: 16.h),
           _SectionTitle('Опыт работы'),
           SizedBox(height: 4.h),
@@ -394,7 +446,7 @@ class _HeaderRow extends StatelessWidget {
                   GestureDetector(
                     onTap: () => context.push('/profile/reviews'),
                     child: Text(
-                      '10 отзывов',
+                      '${ReviewsData.count} ${reviewsWord(ReviewsData.count)}',
                       style: AppTextStyles.body.copyWith(
                         color: AppColors.textPrimary,
                         decoration: TextDecoration.underline,
@@ -453,6 +505,42 @@ class _ChipWrap extends StatelessWidget {
                 ),
               ))
           .toList(),
+    );
+  }
+}
+
+/// Пустое состояние блока «Спецтехника»/«Категории услуг» в просмотре
+/// карточки: когда у исполнителя ещё нет ни одной услуги — показываем
+/// подсказку и оранжевую outlined-кнопку перехода в «Мои услуги». Как
+/// только появится первая услуга, блок заменится на чипы (в родителе).
+class _EmptyMachineryCta extends StatelessWidget {
+  const _EmptyMachineryCta({required this.onTap, required this.hint});
+
+  final VoidCallback onTap;
+  final String hint;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Text(
+          hint,
+          style: TextStyle(
+            fontFamily: 'Roboto',
+            fontSize: 14.sp,
+            fontWeight: FontWeight.w400,
+            height: 1.3,
+            color: AppColors.textTertiary,
+          ),
+        ),
+        SizedBox(height: 12.h),
+        SecondaryButton(
+          label: 'Перейти к моим услугам',
+          onPressed: onTap,
+          height: 42.h,
+        ),
+      ],
     );
   }
 }

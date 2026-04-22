@@ -117,7 +117,8 @@ class _ExecutorCardPaywallState extends State<ExecutorCardPaywall>
         color: AppColors.surface,
         borderRadius: BorderRadius.vertical(top: Radius.circular(24.r)),
       ),
-      padding: EdgeInsets.fromLTRB(16.w, 24.h, 16.w, 12.h),
+      padding: EdgeInsets.fromLTRB(
+          16.w, 24.h, 16.w, 12.h + MediaQuery.of(context).padding.bottom),
       child: Column(
         children: <Widget>[
           Text(

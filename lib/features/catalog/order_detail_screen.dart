@@ -12,8 +12,10 @@ import 'package:dispatcher_1/features/catalog/order_feed_screen.dart';
 import 'package:dispatcher_1/features/catalog/widgets/catalog_search_bar.dart';
 import 'package:dispatcher_1/features/catalog/widgets/respond_bottom_sheet.dart';
 import 'package:dispatcher_1/features/catalog/widgets/subscription_paywall.dart';
+import 'package:dispatcher_1/features/executor_card/executor_card_screen.dart';
 import 'package:dispatcher_1/features/orders/my_orders_screen.dart';
 import 'package:dispatcher_1/features/profile/account_block.dart';
+import 'package:dispatcher_1/features/profile/reviews_screen.dart';
 import 'package:dispatcher_1/features/profile/widgets/verification_badge.dart';
 
 /// Карточка заказа (детали). По Figma — заголовок заказчика сверху,
@@ -141,15 +143,33 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
       VerificationStatus.hasSubscription = true;
     }
 
-    // 4. Выбор техники (если несколько).
+    // 4. Фильтруем технику заказа по тому, что есть у исполнителя в
+    // услугах (`ExecutorCardData.machinery` — computed из services).
+    // Если пересечения нет — откликнуться нельзя, показываем диалог с
+    // подсказкой добавить нужный вид техники.
     final List<String> eq = _orderEquipment;
-    List<String> respondedEquipment = eq;
+    final Set<String> ownedMach = ExecutorCardData.machinery.toSet();
+    final List<String> availableEq =
+        eq.where((String e) => ownedMach.contains(e)).toList();
+    if (availableEq.isEmpty) {
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        barrierColor: Colors.black.withValues(alpha: 0.35),
+        builder: (_) => _NoMatchingMachineryDialog(),
+      );
+      return;
+    }
+    List<String> respondedEquipment = availableEq;
+    // Шторку показываем, когда в заказе несколько видов техники — даже
+    // если у исполнителя совпадает только один: пусть он осознанно
+    // подтвердит, что откликается именно на этот вид.
     if (eq.length > 1) {
       final List<String>? picked = await showModalBottomSheet<List<String>>(
         context: context,
         isScrollControlled: true,
         backgroundColor: Colors.transparent,
-        builder: (_) => _PickEquipmentSheet(options: eq),
+        builder: (_) => PickEquipmentSheet(options: availableEq),
       );
       if (picked == null || picked.isEmpty || !mounted) {
         return;
@@ -203,8 +223,11 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     // заказ не найден по id.
     final String customerId = order?.customerId ?? '1';
     final String customerName = order?.customerName ?? 'Александр Иванов';
-    final double customerRating = order?.customerRating ?? 4.5;
-    final int customerReviews = order?.customerReviews ?? 15;
+    // Фолбэки синхронизированы с `CatalogOrderMock` (4.6/10) и длиной
+    // `_customerInitialMock` в `reviews_screen.dart` — иначе в шапке
+    // «15 отзывов», а в списке откроется 10.
+    final double customerRating = order?.customerRating ?? 4.6;
+    final int customerReviews = order?.customerReviews ?? 10;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -272,7 +295,13 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                                     ),
                                   ),
                                 ),
-                        onReviewsTap: () => context.push('/profile/reviews'),
+                        onReviewsTap: () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => const ReviewsScreen(
+                              subject: ReviewSubject.customer,
+                            ),
+                          ),
+                        ),
                       ),
                       SizedBox(height: 10.h),
                       Text('№${widget.orderId.padLeft(6, '0')}',
@@ -392,15 +421,24 @@ class _OutlinedChip extends StatelessWidget {
   }
 }
 
-class _PickEquipmentSheet extends StatefulWidget {
-  const _PickEquipmentSheet({required this.options});
+/// Шторка выбора спецтехники. Возвращает `List<String>` с отмеченными
+/// позициями через `Navigator.pop`. Используется и при отклике из
+/// каталога (кнопка «Откликнуться»), и при подтверждении заказа из
+/// «Мои заказы» (кнопка «Подтвердить»).
+class PickEquipmentSheet extends StatefulWidget {
+  const PickEquipmentSheet({
+    super.key,
+    required this.options,
+    this.ctaLabel = 'Откликнуться',
+  });
   final List<String> options;
+  final String ctaLabel;
 
   @override
-  State<_PickEquipmentSheet> createState() => _PickEquipmentSheetState();
+  State<PickEquipmentSheet> createState() => _PickEquipmentSheetState();
 }
 
-class _PickEquipmentSheetState extends State<_PickEquipmentSheet> {
+class _PickEquipmentSheetState extends State<PickEquipmentSheet> {
   final Set<String> _picked = <String>{};
 
   @override
@@ -442,7 +480,7 @@ class _PickEquipmentSheetState extends State<_PickEquipmentSheet> {
             ),
           SizedBox(height: 16.h),
           PrimaryButton(
-            label: 'Откликнуться',
+            label: widget.ctaLabel,
             onPressed: _picked.isEmpty
                 ? null
                 : () => Navigator.of(context).pop(_picked.toList()),
@@ -488,6 +526,65 @@ class _CheckRow extends StatelessWidget {
             ),
             SizedBox(width: 16.w),
             Text(label, style: AppTextStyles.body),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Диалог «Нет подходящей техники» — показывается когда исполнитель
+/// пытается откликнуться на заказ, но ни один из требуемых видов
+/// спецтехники не заведён у него в услугах. Кнопка ведёт в «Мои услуги»,
+/// чтобы создать недостающую услугу.
+class _NoMatchingMachineryDialog extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      insetPadding: EdgeInsets.symmetric(horizontal: 16.w),
+      backgroundColor: Colors.transparent,
+      child: Container(
+        padding: EdgeInsets.fromLTRB(16.r, 14.r, 16.r, 22.r),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(20.r),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Align(
+              alignment: Alignment.centerRight,
+              child: GestureDetector(
+                onTap: () => Navigator.of(context).pop(),
+                child: Icon(Icons.close_rounded,
+                    size: 22.r, color: AppColors.textTertiary),
+              ),
+            ),
+            SizedBox(height: 20.h),
+            Text(
+              'Отклик не отправлен',
+              textAlign: TextAlign.center,
+              style:
+                  AppTextStyles.titleL.copyWith(fontWeight: FontWeight.w700),
+            ),
+            SizedBox(height: 8.h),
+            Text(
+              'У вас нет услуги с нужным видом спецтехники. '
+              'Добавьте её в «Мои услуги», чтобы откликнуться.',
+              textAlign: TextAlign.center,
+              style: AppTextStyles.bodyMRegular
+                  .copyWith(color: AppColors.textSecondary),
+            ),
+            SizedBox(height: 18.h),
+            PrimaryButton(
+              label: 'Перейти к моим услугам',
+              onPressed: () {
+                Navigator.of(context).pop();
+                context.push('/services');
+              },
+            ),
+            SizedBox(height: 12.h),
           ],
         ),
       ),

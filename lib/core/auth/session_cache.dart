@@ -1,4 +1,5 @@
 import 'package:dispatcher_1/features/auth/photo_crop_screen.dart';
+import 'package:dispatcher_1/features/catalog/order_detail_screen.dart';
 import 'package:dispatcher_1/features/executor_card/executor_card_screen.dart';
 import 'package:dispatcher_1/features/profile/widgets/verification_badge.dart';
 import 'package:dispatcher_1/features/services/my_services_screen.dart';
@@ -36,13 +37,14 @@ class SessionCache {
       hasSubscription: VerificationStatus.hasSubscription,
       cardLocation: ExecutorCardData.location,
       cardRadius: ExecutorCardData.radius,
-      cardMachinery: List<String>.from(ExecutorCardData.machinery),
-      cardCategories: List<String>.from(ExecutorCardData.categories),
       cardExperience: ExecutorCardData.experience,
       cardStatus: ExecutorCardData.status,
       cardAbout: ExecutorCardData.about,
       cardCreated: ExecutorCardScreen.cardCreated,
       services: List<ServiceMock>.from(ServiceData.services),
+      hasUnusedPaidSlot: ServiceData.hasUnusedPaidSlot,
+      respondedOrderIds:
+          Set<String>.from(OrderDetailScreen.respondedOrderIds),
     );
   }
 
@@ -60,8 +62,9 @@ class SessionCache {
     VerificationStatus.hasSubscription = s.hasSubscription;
     ExecutorCardData.location = s.cardLocation;
     ExecutorCardData.radius = s.cardRadius;
-    ExecutorCardData.machinery = List<String>.from(s.cardMachinery);
-    ExecutorCardData.categories = List<String>.from(s.cardCategories);
+    // Спецтехника и категории услуг не восстанавливаются отдельно —
+    // они computed из `ServiceData.services`, которые восстанавливаются
+    // ниже.
     ExecutorCardData.experience = s.cardExperience;
     ExecutorCardData.status = s.cardStatus;
     ExecutorCardData.about = s.cardAbout;
@@ -69,6 +72,10 @@ class SessionCache {
     ServiceData.services
       ..clear()
       ..addAll(s.services);
+    ServiceData.hasUnusedPaidSlot = s.hasUnusedPaidSlot;
+    OrderDetailScreen.respondedOrderIds
+      ..clear()
+      ..addAll(s.respondedOrderIds);
   }
 
   /// Выбросить снимок — вызывается при удалении аккаунта.
@@ -86,13 +93,13 @@ class _Snapshot {
     required this.hasSubscription,
     required this.cardLocation,
     required this.cardRadius,
-    required this.cardMachinery,
-    required this.cardCategories,
     required this.cardExperience,
     required this.cardStatus,
     required this.cardAbout,
     required this.cardCreated,
     required this.services,
+    required this.hasUnusedPaidSlot,
+    required this.respondedOrderIds,
   });
 
   final String userName;
@@ -102,11 +109,11 @@ class _Snapshot {
   final bool hasSubscription;
   final String? cardLocation;
   final String? cardRadius;
-  final List<String> cardMachinery;
-  final List<String> cardCategories;
   final String? cardExperience;
   final String? cardStatus;
   final String? cardAbout;
   final bool cardCreated;
   final List<ServiceMock> services;
+  final bool hasUnusedPaidSlot;
+  final Set<String> respondedOrderIds;
 }

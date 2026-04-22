@@ -65,25 +65,6 @@ Future<void> showConfirmWithdrawDialog(
   );
 }
 
-/// Подтверждение принятия заказа исполнителем (опционально, по флоу).
-Future<void> showConfirmAcceptDialog(
-  BuildContext context, {
-  required VoidCallback onConfirm,
-}) {
-  return showDialog<void>(
-    context: context,
-    barrierColor: Colors.black.withValues(alpha: 0.35),
-    builder: (BuildContext ctx) => _ConfirmDialog(
-      title: 'Вы уверены, что хотите\nпринять заказ?',
-      primaryLabel: 'Подтвердить',
-      onPrimary: () {
-        Navigator.of(ctx).pop();
-        onConfirm();
-      },
-    ),
-  );
-}
-
 /// Алерт «Заказ принят. Свяжитесь с заказчиком по указанным на странице
 /// данным.» — показывается исполнителю сразу после подтверждения заказа
 /// из статуса «Ждёт подтверждения». Аналог `showExecutorSelectedDialog`

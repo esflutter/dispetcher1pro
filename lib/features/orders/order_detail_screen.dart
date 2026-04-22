@@ -13,10 +13,14 @@ import 'package:dispatcher_1/core/widgets/labeled_section.dart';
 import 'package:dispatcher_1/core/widgets/photo_gallery_screen.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
 import 'package:dispatcher_1/features/catalog/customer_card_screen.dart';
+import 'package:dispatcher_1/features/catalog/order_detail_screen.dart'
+    show PickEquipmentSheet;
 import 'package:dispatcher_1/features/catalog/widgets/catalog_search_bar.dart';
 import 'package:dispatcher_1/features/orders/review_screen.dart';
 import 'package:dispatcher_1/features/orders/widgets/order_alerts.dart';
 import 'package:dispatcher_1/features/orders/widgets/order_status_pill.dart';
+import 'package:dispatcher_1/features/profile/reviews_screen.dart';
+import 'package:dispatcher_1/features/services/my_services_screen.dart';
 
 /// Состояние экрана деталей «моего» заказа.
 enum MyOrderDetailState {
@@ -62,8 +66,8 @@ class MyOrderDetailScreen extends StatefulWidget {
     this.customerName = 'Александр Иванов',
     this.customerPhone = '+7 999 123-45-67',
     this.customerEmail,
-    this.customerRating = 4.5,
-    this.customerReviews = 15,
+    this.customerRating = 4.6,
+    this.customerReviews = 10,
     this.publishedAgo = 'Вчера в 14:30',
     this.orderNumber = '№123456',
     this.workDescription = const <String>[
@@ -256,7 +260,13 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
                                 ),
                               ),
                             ),
-                    onReviewsTap: () => context.push('/profile/reviews'),
+                    onReviewsTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const ReviewsScreen(
+                          subject: ReviewSubject.customer,
+                        ),
+                      ),
+                    ),
                     // Кнопка вызова справа — только в статусе «Свяжитесь
                     // с заказчиком» (accepted). В остальных статусах
                     // у исполнителя нет прав связываться напрямую.
@@ -382,6 +392,35 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
                       ],
                     ),
                   ),
+                  // Блок «Стоимость услуг» — показывается всегда, когда
+                  // среди моих услуг есть релевантные по требуемой в
+                  // заказе технике. Если релевантных нет — блок
+                  // скрывается автоматически (SizedBox.shrink).
+                  Builder(
+                    builder: (BuildContext _) {
+                      final Set<String> neededEq = widget.equipment.toSet();
+                      final List<ServiceMock> matched = <ServiceMock>[];
+                      for (final ServiceMock s in ServiceData.services) {
+                        if (s.machinery.isEmpty) continue;
+                        if (neededEq.contains(s.machinery.first)) {
+                          matched.add(s);
+                        }
+                      }
+                      if (matched.isEmpty) return const SizedBox.shrink();
+                      return LabeledSection(
+                        title: 'Цена',
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            for (int i = 0; i < matched.length; i++) ...<Widget>[
+                              if (i > 0) SizedBox(height: 2.h),
+                              _PriceLine(service: matched[i]),
+                            ],
+                          ],
+                        ),
+                      );
+                    },
+                  ),
                   if (widget.photos.isNotEmpty)
                     LabeledSection(
                       title: 'Фото',
@@ -443,28 +482,40 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
             PrimaryButton(
               label: 'Подтвердить',
               enabled: !widget.isBlocked,
-              onPressed: () => showConfirmAcceptDialog(
-                context,
-                onConfirm: () async {
-                  widget.onConfirm?.call();
-                  setState(() => _state = MyOrderDetailState.confirmed);
-                  // Мэтч: заказ подтверждён — показываем попап с
-                  // подсказкой связаться с заказчиком. Контакты уже
-                  // открылись на текущей странице (accepted), куда
-                  // попадает пользователь после `setState` выше.
-                  if (mounted) await showOrderAcceptedDialog(context);
-                  // После закрытия попапа автоскроллим наверх — там
-                  // шапка заказчика с номером телефона и иконкой
-                  // вызова, которые только что появились.
-                  if (mounted && _scrollCtrl.hasClients) {
-                    _scrollCtrl.animateTo(
-                      0,
-                      duration: const Duration(milliseconds: 300),
-                      curve: Curves.easeOut,
-                    );
-                  }
-                },
-              ),
+              onPressed: () async {
+                // Шторка выбора техники — исполнитель отмечает, на
+                // какой из требуемой в заказе техники он выходит.
+                // Возвращает List<String> по «Подтвердить», либо null
+                // при закрытии шторки (отмена).
+                final List<String>? picked =
+                    await showModalBottomSheet<List<String>>(
+                  context: context,
+                  isScrollControlled: true,
+                  backgroundColor: Colors.transparent,
+                  builder: (_) => PickEquipmentSheet(
+                    options: widget.equipment,
+                    ctaLabel: 'Подтвердить',
+                  ),
+                );
+                if (picked == null || picked.isEmpty || !mounted) return;
+                widget.onConfirm?.call();
+                setState(() => _state = MyOrderDetailState.confirmed);
+                // Мэтч: заказ подтверждён — показываем попап с подсказкой
+                // связаться с заказчиком. Контакты уже открылись на
+                // текущей странице (accepted), куда попадает пользователь
+                // после `setState` выше.
+                if (mounted) await showOrderAcceptedDialog(context);
+                // После закрытия попапа автоскроллим наверх — там шапка
+                // заказчика с номером телефона и иконкой вызова, которые
+                // только что появились.
+                if (mounted && _scrollCtrl.hasClients) {
+                  _scrollCtrl.animateTo(
+                    0,
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeOut,
+                  );
+                }
+              },
             ),
             SizedBox(height: 8.h),
             SecondaryButton(
@@ -587,5 +638,53 @@ class _OutlinedChip extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// Строка блока «Стоимость услуг»: «Экскаватор — 3 500 ₽/час, 17 000 ₽/день».
+/// Цены (primary-цветом) — из `ServiceMock`. Если цена пустая или «0» —
+/// соответствующий кусок строки просто не выводится.
+class _PriceLine extends StatelessWidget {
+  const _PriceLine({required this.service});
+  final ServiceMock service;
+
+  bool _hasPrice(String v) => v.isNotEmpty && v != '0';
+
+  @override
+  Widget build(BuildContext context) {
+    final String eq =
+        service.machinery.isEmpty ? service.title : service.machinery.first;
+    final TextStyle base = TextStyle(
+      fontFamily: 'Roboto',
+      fontSize: 14.sp,
+      fontWeight: FontWeight.w400,
+      height: 1.4,
+      color: AppColors.textPrimary,
+    );
+    final TextStyle priceDigits = base.copyWith(
+      fontSize: 16.sp,
+      fontWeight: FontWeight.w600,
+      color: AppColors.primary,
+    );
+    final TextStyle priceUnit = base.copyWith(
+      fontSize: 16.sp,
+      fontWeight: FontWeight.w600,
+      color: AppColors.primary,
+    );
+    final List<TextSpan> spans = <TextSpan>[TextSpan(text: '$eq — ')];
+    final bool hasHour = _hasPrice(service.pricePerHour);
+    final bool hasDay = _hasPrice(service.pricePerDay);
+    if (hasHour) {
+      spans.add(
+          TextSpan(text: service.pricePerHour, style: priceDigits));
+      spans.add(TextSpan(text: ' ₽/час', style: priceUnit));
+    }
+    if (hasHour && hasDay) spans.add(const TextSpan(text: '   '));
+    if (hasDay) {
+      spans.add(
+          TextSpan(text: service.pricePerDay, style: priceDigits));
+      spans.add(TextSpan(text: ' ₽/день', style: priceUnit));
+    }
+    return Text.rich(TextSpan(children: spans), style: base);
   }
 }
