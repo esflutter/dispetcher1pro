@@ -16,6 +16,7 @@ class CustomerHeader extends StatelessWidget {
     required this.rating,
     required this.reviews,
     required this.onTap,
+    this.onReviewsTap,
     this.onCall,
   });
 
@@ -23,6 +24,10 @@ class CustomerHeader extends StatelessWidget {
   final double rating;
   final int reviews;
   final VoidCallback onTap;
+
+  /// Отдельный колбэк на «N отзывов». Если задан — тап по подчёркнутому
+  /// тексту открывает экран отзывов, не триггеря [onTap].
+  final VoidCallback? onReviewsTap;
   final VoidCallback? onCall;
 
   String _fmtRating(double v) =>
@@ -83,15 +88,19 @@ class CustomerHeader extends StatelessWidget {
                             ),
                           ),
                           SizedBox(width: 16.w),
-                          Text(
-                            '$reviews отзывов',
-                            style: TextStyle(
-                              fontFamily: 'Roboto',
-                              fontSize: 16.sp,
-                              fontWeight: FontWeight.w400,
-                              height: 1.3,
-                              color: AppColors.textPrimary,
-                              decoration: TextDecoration.underline,
+                          GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: onReviewsTap,
+                            child: Text(
+                              '$reviews отзывов',
+                              style: TextStyle(
+                                fontFamily: 'Roboto',
+                                fontSize: 16.sp,
+                                fontWeight: FontWeight.w400,
+                                height: 1.3,
+                                color: AppColors.textPrimary,
+                                decoration: TextDecoration.underline,
+                              ),
                             ),
                           ),
                         ],

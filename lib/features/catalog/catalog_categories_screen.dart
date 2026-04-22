@@ -45,7 +45,7 @@ class _CatalogCategoriesScreenState extends State<CatalogCategoriesScreen> {
         offset: Offset(-2, 0)),
     _Category('manipulator', 'Манипулятор',
         'assets/images/catalog/manipulator.webp',
-        scale: 1.03),
+        scale: 0.94, offset: Offset(-4, 0)),
     _Category('mini_loader', 'Минипогрузчик',
         'assets/images/catalog/mini_loader.webp',
         scale: 0.95),

@@ -36,30 +36,109 @@ class _CustomerInfo {
   final bool hasMatch;
 }
 
-_CustomerInfo _customerFor(String id) => _CustomerInfo(
-      id: id,
-      name: 'Александр Иванов',
-      status: 'Физ. лицо',
-      reviewsCount: 15,
-      rating: 4.5,
-      phone: '+7 999 123-45-67',
-      email: null,
-      about: 'Частный заказчик. Периодически нужны услуги спецтехники для '
-          'строительных работ и благоустройства участка.',
-      // До появления бэкенда: считаем, что совпадений по заказам ещё не
-      // было — контакты скрыты. На реальных данных флаг придёт с сервера.
-      hasMatch: false,
-    );
+/// Доп. поля по каждому заказчику (то, чего нет в `CatalogOrderMock`).
+/// Имя / рейтинг / число отзывов НЕ дублируем — тянем из моков заказов.
+const Map<String, ({String status, String? phone, String? email, String about})>
+    _customerExtras = <String, ({String status, String? phone, String? email, String about})>{
+  '1': (
+    status: 'Физ. лицо',
+    phone: '+7 999 123-45-67',
+    email: null,
+    about: 'Частный заказчик. Периодически нужны услуги спецтехники для '
+        'строительных работ и благоустройства участка.',
+  ),
+  '2': (
+    status: 'ИП',
+    phone: '+7 999 234-56-78',
+    email: 'petrov@example.ru',
+    about: 'Строительная бригада. Регулярно заказываем спецтехнику на объекты.',
+  ),
+  '3': (
+    status: 'Физ. лицо',
+    phone: '+7 999 345-67-89',
+    email: null,
+    about: 'Частный заказчик. Ведём работы на собственном участке.',
+  ),
+  '4': (
+    status: 'ООО',
+    phone: '+7 999 456-78-90',
+    email: 'kozlov@example.ru',
+    about: 'Компания, занимается строительством и благоустройством.',
+  ),
+};
+
+_CustomerInfo _customerFor(String id) {
+  CatalogOrderMock? orderRef;
+  for (final CatalogOrderMock o in CatalogOrderMock.all) {
+    if (o.customerId == id) {
+      orderRef = o;
+      break;
+    }
+  }
+  final extras = _customerExtras[id];
+  return _CustomerInfo(
+    id: id,
+    name: orderRef?.customerName ?? 'Заказчик',
+    status: extras?.status ?? 'Физ. лицо',
+    reviewsCount: orderRef?.customerReviews ?? 0,
+    rating: orderRef?.customerRating ?? 0.0,
+    phone: extras?.phone,
+    email: extras?.email,
+    about: extras?.about,
+    // До появления бэкенда: считаем, что совпадений по заказам ещё не
+    // было — контакты скрыты. На реальных данных флаг придёт с сервера.
+    hasMatch: false,
+  );
+}
 
 /// Карточка заказчика — публичный профиль, который видит исполнитель.
+///
+/// Основные поля (имя/рейтинг/отзывы/телефон/email) можно переопределить
+/// параметрами, если экран-источник уже знает эти данные — это нужно
+/// для входов из «Моих заказов» и «Моего графика», где заказ не лежит в
+/// `CatalogOrderMock.all` и lookup по `customerId` вернул бы дефолт
+/// «Заказчик, 0 отзывов». Если override задан — используем его; иначе —
+/// fallback на лукап по id.
 class CustomerCardScreen extends StatelessWidget {
-  const CustomerCardScreen({super.key, required this.customerId});
+  const CustomerCardScreen({
+    super.key,
+    required this.customerId,
+    this.customerName,
+    this.customerRating,
+    this.customerReviews,
+    this.customerPhone,
+    this.customerEmail,
+    this.hasMatch,
+  });
 
   final String customerId;
+  final String? customerName;
+  final double? customerRating;
+  final int? customerReviews;
+  final String? customerPhone;
+  final String? customerEmail;
+
+  /// Было ли у исполнителя и этого заказчика хотя бы одно принятое
+  /// взаимодействие. Если да — контакты показываем; если нет (или null
+  /// → fallback на дефолт `false`) — телефон/email скрыты.
+  final bool? hasMatch;
 
   @override
   Widget build(BuildContext context) {
-    final _CustomerInfo c = _customerFor(customerId);
+    final _CustomerInfo base = _customerFor(customerId);
+    final _CustomerInfo c = _CustomerInfo(
+      id: customerId,
+      name: (customerName != null && customerName!.trim().isNotEmpty)
+          ? customerName!
+          : base.name,
+      status: base.status,
+      reviewsCount: customerReviews ?? base.reviewsCount,
+      rating: customerRating ?? base.rating,
+      phone: customerPhone ?? base.phone,
+      email: customerEmail ?? base.email,
+      about: base.about,
+      hasMatch: hasMatch ?? base.hasMatch,
+    );
     final List<CatalogOrderMock> orders = CatalogOrderMock.all
         .where((CatalogOrderMock o) => o.customerId == customerId)
         .toList();
@@ -108,7 +187,7 @@ class CustomerCardScreen extends StatelessWidget {
                 SizedBox(height: 16.h),
               ],
               if (showEmail) ...<Widget>[
-                _Field(label: 'Email', value: c.email!),
+                _Field(label: 'Электронная почта', value: c.email!),
                 SizedBox(height: 16.h),
               ],
               if (hasAbout) ...<Widget>[

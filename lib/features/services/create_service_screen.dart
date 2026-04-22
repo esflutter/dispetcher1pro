@@ -52,6 +52,21 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
 
   final Set<String> _selCat = {};
   final Set<String> _selMach = {};
+  bool _machLimitError = false;
+  final GlobalKey _machBlockKey = GlobalKey();
+
+  void _scrollMachIntoView() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final BuildContext? ctx = _machBlockKey.currentContext;
+      if (ctx == null) return;
+      Scrollable.ensureVisible(
+        ctx,
+        alignment: 0.5,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
+    });
+  }
 
   static const _radiusOptions = [
     'В радиусе 10 км',
@@ -242,16 +257,46 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
                   }),
                 ),
                 SizedBox(height: 16.h),
-                _SectionTitle('Спецтехника'),
-                SizedBox(height: 8.h),
-                _ChipWrap(
-                  items: _machinery,
-                  selected: _selMach,
-                  onToggle: (v) => setState(() {
-                    _selMach.contains(v)
-                        ? _selMach.remove(v)
-                        : _selMach.add(v);
-                  }),
+                Column(
+                  key: _machBlockKey,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    _SectionTitle('Спецтехника'),
+                    SizedBox(height: 8.h),
+                    _ChipWrap(
+                      items: _machinery,
+                      selected: _selMach,
+                      onToggle: (v) {
+                        setState(() {
+                          if (_selMach.contains(v)) {
+                            _selMach.remove(v);
+                            _machLimitError = false;
+                          } else if (_selMach.isEmpty) {
+                            _selMach.add(v);
+                            _machLimitError = false;
+                          } else {
+                            _machLimitError = true;
+                          }
+                        });
+                        if (_machLimitError) _scrollMachIntoView();
+                      },
+                    ),
+                    if (_machLimitError) ...<Widget>[
+                      SizedBox(height: 8.h),
+                      Text(
+                        'Для одной услуги можно выбрать только один вид '
+                        'спецтехники. Создайте новую услугу, чтобы '
+                        'добавить ещё.',
+                        style: TextStyle(
+                          fontFamily: 'Roboto',
+                          fontSize: 13.sp,
+                          fontWeight: FontWeight.w400,
+                          height: 1.3,
+                          color: AppColors.error,
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
                 SizedBox(height: 16.h),
                 _SectionTitle('Название услуги'),
@@ -275,13 +320,13 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
                 _SectionTitle('Фото'),
                 SizedBox(height: 4.h),
                 Text(
-                  'По желанию добавьте изображения к услуге, до 8 шт',
+                  'По желанию добавьте фото, до 8 шт.',
                   style: TextStyle(
                     fontFamily: 'Roboto',
                     fontSize: 14.sp,
                     fontWeight: FontWeight.w400,
                     height: 1.3,
-                    color: AppColors.textSecondary,
+                    color: AppColors.textTertiary,
                   ),
                 ),
                 SizedBox(height: 8.h),
@@ -304,7 +349,7 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
                         hint: '₽ / час',
                         suffix: ' ₽ / час',
                         keyboardType: TextInputType.number,
-                        maxLength: 9,
+                        maxLength: 7,
                         thousandSeparator: true,
                       ),
                     ),
@@ -315,7 +360,7 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
                         hint: '₽ / день',
                         suffix: ' ₽ / день',
                         keyboardType: TextInputType.number,
-                        maxLength: 9,
+                        maxLength: 7,
                         thousandSeparator: true,
                       ),
                     ),
@@ -326,14 +371,17 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
                 SizedBox(height: 8.h),
                 SizedBox(
                   width: (MediaQuery.of(context).size.width - 16.w * 2 - 12.w) / 2,
-                  child: _TintField(
-                    controller: _minHoursCtrl,
-                    hint: 'от 4 часов',
-                    prefix: 'от ',
-                    suffix: ' ${hoursWord(_minHoursCtrl.text)}',
-                    keyboardType: TextInputType.number,
-                    maxLength: 3,
-                    digitsOnly: true,
+                  child: ListenableBuilder(
+                    listenable: _minHoursCtrl,
+                    builder: (_, _) => _TintField(
+                      controller: _minHoursCtrl,
+                      hint: 'от 4 часов',
+                      prefix: 'от ',
+                      suffix: ' ${hoursWord(_minHoursCtrl.text)}',
+                      keyboardType: TextInputType.number,
+                      maxLength: 3,
+                      digitsOnly: true,
+                    ),
                   ),
                 ),
                 SizedBox(height: 16.h),
@@ -620,61 +668,72 @@ class _TintField extends StatelessWidget {
     final bool hasAffixDef = suffix != null || prefix != null;
 
     if (hasAffixDef) {
-      final bool hasText = controller.text.isNotEmpty;
-      // Измеряем ширину prefix чтобы сдвинуть курсор
-      double prefixWidth = 0;
-      if (hasText && prefix != null) {
-        final tp = TextPainter(
-          text: TextSpan(text: prefix, style: AppTextStyles.body),
-          textDirection: TextDirection.ltr,
-        )..layout();
-        prefixWidth = tp.width;
-      }
-      return Stack(
-        children: [
-          TextField(
-            controller: controller,
-            keyboardType: keyboardType,
-            inputFormatters: _buildFormatters(),
-            style: hasText
-                ? AppTextStyles.body.copyWith(color: Colors.transparent)
-                : AppTextStyles.body,
-            decoration: InputDecoration(
-              hintText: hasText ? null : hint,
-              hintStyle: AppTextStyles.body.copyWith(color: AppColors.textTertiary),
-              filled: true,
-              fillColor: AppColors.fieldFill,
-              contentPadding: EdgeInsets.fromLTRB(
-                16.w + prefixWidth, 12.h, 16.w, 12.h,
-              ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12.r),
-                borderSide: BorderSide.none,
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12.r),
-                borderSide: BorderSide.none,
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12.r),
-                borderSide: const BorderSide(color: AppColors.primary),
-              ),
-            ),
-          ),
-          if (hasText)
-            Positioned.fill(
-              child: IgnorePointer(
-                child: Container(
-                  padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 12.h),
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    '${prefix ?? ''}${controller.text}${suffix ?? ''}',
-                    style: AppTextStyles.body,
+      // Слушаем controller, чтобы оверлей с prefix/suffix появлялся сразу
+      // при вводе, а не ждал следующего setState родителя.
+      return ListenableBuilder(
+        listenable: controller,
+        builder: (context, _) {
+          final bool hasText = controller.text.isNotEmpty;
+          double prefixWidth = 0;
+          if (hasText && prefix != null) {
+            final tp = TextPainter(
+              text: TextSpan(text: prefix, style: AppTextStyles.body),
+              textDirection: TextDirection.ltr,
+            )..layout();
+            prefixWidth = tp.width;
+          }
+          return Stack(
+            children: [
+              TextField(
+                controller: controller,
+                keyboardType: keyboardType,
+                inputFormatters: _buildFormatters(),
+                style: hasText
+                    ? AppTextStyles.body.copyWith(color: Colors.transparent)
+                    : AppTextStyles.body,
+                decoration: InputDecoration(
+                  hintText: hasText ? null : hint,
+                  hintStyle: AppTextStyles.body
+                      .copyWith(color: AppColors.textTertiary),
+                  filled: true,
+                  fillColor: AppColors.fieldFill,
+                  contentPadding: EdgeInsets.fromLTRB(
+                    16.w + prefixWidth, 12.h, 16.w, 12.h,
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12.r),
+                    borderSide: BorderSide.none,
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12.r),
+                    borderSide: BorderSide.none,
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12.r),
+                    borderSide: const BorderSide(color: AppColors.primary),
                   ),
                 ),
               ),
-            ),
-        ],
+              if (hasText)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: Container(
+                      padding: EdgeInsets.symmetric(
+                          horizontal: 16.w, vertical: 12.h),
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        '${prefix ?? ''}${controller.text}${suffix ?? ''}',
+                        style: AppTextStyles.body,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        softWrap: false,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          );
+        },
       );
     }
 

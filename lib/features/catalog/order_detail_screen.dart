@@ -265,9 +265,14 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                             : () => Navigator.of(context).push(
                                   MaterialPageRoute<void>(
                                     builder: (_) => CustomerCardScreen(
-                                        customerId: customerId),
+                                      customerId: customerId,
+                                      customerName: customerName,
+                                      customerRating: customerRating,
+                                      customerReviews: customerReviews,
+                                    ),
                                   ),
                                 ),
+                        onReviewsTap: () => context.push('/profile/reviews'),
                       ),
                       SizedBox(height: 10.h),
                       Text('№${widget.orderId.padLeft(6, '0')}',

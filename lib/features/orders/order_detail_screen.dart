@@ -242,9 +242,21 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
                         : () => Navigator.of(context).push(
                               MaterialPageRoute<void>(
                                 builder: (_) => CustomerCardScreen(
-                                    customerId: widget.customerId!),
+                                  customerId: widget.customerId!,
+                                  customerName: widget.customerName,
+                                  customerRating: widget.customerRating,
+                                  customerReviews: widget.customerReviews,
+                                  customerPhone: widget.customerPhone,
+                                  customerEmail: widget.customerEmail,
+                                  // Контакты раскрываем, когда у исполнителя
+                                  // уже подтверждена сделка с этим заказчиком
+                                  // (тот же критерий, что и у номера телефона
+                                  // на экране деталей заказа).
+                                  hasMatch: _showPhone,
+                                ),
                               ),
                             ),
+                    onReviewsTap: () => context.push('/profile/reviews'),
                     // Кнопка вызова справа — только в статусе «Свяжитесь
                     // с заказчиком» (accepted). В остальных статусах
                     // у исполнителя нет прав связываться напрямую.
