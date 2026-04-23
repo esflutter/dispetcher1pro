@@ -20,6 +20,7 @@ import 'package:dispatcher_1/features/orders/review_screen.dart';
 import 'package:dispatcher_1/features/orders/widgets/order_alerts.dart';
 import 'package:dispatcher_1/features/orders/widgets/order_status_pill.dart';
 import 'package:dispatcher_1/features/profile/reviews_screen.dart';
+import 'package:dispatcher_1/features/profile/widgets/verification_badge.dart';
 import 'package:dispatcher_1/features/services/my_services_screen.dart';
 
 /// Состояние экрана деталей «моего» заказа.
@@ -262,8 +263,10 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
                             ),
                     onReviewsTap: () => Navigator.of(context).push(
                       MaterialPageRoute<void>(
-                        builder: (_) => const ReviewsScreen(
+                        builder: (_) => ReviewsScreen(
                           subject: ReviewSubject.customer,
+                          initialRating: widget.customerRating,
+                          initialCount: widget.customerReviews,
                         ),
                       ),
                     ),
@@ -392,35 +395,43 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
                       ],
                     ),
                   ),
-                  // Блок «Стоимость услуг» — показывается всегда, когда
-                  // среди моих услуг есть релевантные по требуемой в
-                  // заказе технике. Если релевантных нет — блок
-                  // скрывается автоматически (SizedBox.shrink).
-                  Builder(
-                    builder: (BuildContext _) {
-                      final Set<String> neededEq = widget.equipment.toSet();
-                      final List<ServiceMock> matched = <ServiceMock>[];
-                      for (final ServiceMock s in ServiceData.services) {
-                        if (s.machinery.isEmpty) continue;
-                        if (neededEq.contains(s.machinery.first)) {
-                          matched.add(s);
+                  // Блок «Цена» — мои расценки по требуемой в заказе
+                  // технике. Показывается только в статусах
+                  // «Свяжитесь с заказчиком» (confirmed) и
+                  // «Завершён» (completed), т.е. когда уже произошёл
+                  // мэтч и услуги зафиксированы. В «Новых»/«Не принятых»
+                  // блока нет — цена устанавливается исполнителем и
+                  // не является частью заказа заказчика.
+                  if (_state == MyOrderDetailState.confirmed ||
+                      _state == MyOrderDetailState.completed)
+                    Builder(
+                      builder: (BuildContext _) {
+                        final List<List<String>> rows = <List<String>>[];
+                        for (final String eq in widget.equipment) {
+                          final List<String>? price =
+                              ServiceData.priceFor(eq);
+                          if (price == null) continue;
+                          rows.add(<String>[eq, price[0], price[1]]);
                         }
-                      }
-                      if (matched.isEmpty) return const SizedBox.shrink();
-                      return LabeledSection(
-                        title: 'Цена',
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: <Widget>[
-                            for (int i = 0; i < matched.length; i++) ...<Widget>[
-                              if (i > 0) SizedBox(height: 2.h),
-                              _PriceLine(service: matched[i]),
+                        if (rows.isEmpty) return const SizedBox.shrink();
+                        return LabeledSection(
+                          title: 'Цена',
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: <Widget>[
+                              for (int i = 0; i < rows.length; i++) ...<Widget>[
+                                if (i > 0) SizedBox(height: 2.h),
+                                _PriceLine(
+                                  equipment: rows[i][0],
+                                  pricePerHour: rows[i][1],
+                                  pricePerDay: rows[i][2],
+                                ),
+                              ],
                             ],
-                          ],
-                        ),
-                      );
-                    },
-                  ),
+                          ),
+                        );
+                      },
+                    ),
                   if (widget.photos.isNotEmpty)
                     LabeledSection(
                       title: 'Фото',
@@ -483,21 +494,27 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
               label: 'Подтвердить',
               enabled: !widget.isBlocked,
               onPressed: () async {
-                // Шторка выбора техники — исполнитель отмечает, на
-                // какой из требуемой в заказе техники он выходит.
-                // Возвращает List<String> по «Подтвердить», либо null
-                // при закрытии шторки (отмена).
-                final List<String>? picked =
-                    await showModalBottomSheet<List<String>>(
-                  context: context,
-                  isScrollControlled: true,
-                  backgroundColor: Colors.transparent,
-                  builder: (_) => PickEquipmentSheet(
-                    options: widget.equipment,
-                    ctaLabel: 'Подтвердить',
-                  ),
-                );
-                if (picked == null || picked.isEmpty || !mounted) return;
+                if (!VerificationStatus.hasSubscription) {
+                  final bool? go = await showSubscriptionPausedDialog(context);
+                  if (go == true && mounted) context.push('/subscription');
+                  return;
+                }
+                // Шторка выбора техники нужна только когда в заказе
+                // больше одного вида — есть из чего выбирать. При
+                // единственной технике подтверждаем сразу без шторки.
+                if (widget.equipment.length > 1) {
+                  final List<String>? picked =
+                      await showModalBottomSheet<List<String>>(
+                    context: context,
+                    isScrollControlled: true,
+                    backgroundColor: Colors.transparent,
+                    builder: (_) => PickEquipmentSheet(
+                      options: widget.equipment,
+                      ctaLabel: 'Подтвердить',
+                    ),
+                  );
+                  if (picked == null || picked.isEmpty || !mounted) return;
+                }
                 widget.onConfirm?.call();
                 setState(() => _state = MyOrderDetailState.confirmed);
                 // Мэтч: заказ подтверждён — показываем попап с подсказкой
@@ -641,19 +658,23 @@ class _OutlinedChip extends StatelessWidget {
   }
 }
 
-/// Строка блока «Стоимость услуг»: «Экскаватор — 3 500 ₽/час, 17 000 ₽/день».
-/// Цены (primary-цветом) — из `ServiceMock`. Если цена пустая или «0» —
-/// соответствующий кусок строки просто не выводится.
+/// Строка блока «Цена»: «Экскаватор — 1 500 ₽/час   12 000 ₽/день».
+/// Цифры и единицы — оранжевые (primary). Если какая-то из цен пустая
+/// или «0» — соответствующий кусок строки не выводится.
 class _PriceLine extends StatelessWidget {
-  const _PriceLine({required this.service});
-  final ServiceMock service;
+  const _PriceLine({
+    required this.equipment,
+    required this.pricePerHour,
+    required this.pricePerDay,
+  });
+  final String equipment;
+  final String pricePerHour;
+  final String pricePerDay;
 
   bool _hasPrice(String v) => v.isNotEmpty && v != '0';
 
   @override
   Widget build(BuildContext context) {
-    final String eq =
-        service.machinery.isEmpty ? service.title : service.machinery.first;
     final TextStyle base = TextStyle(
       fontFamily: 'Roboto',
       fontSize: 14.sp,
@@ -671,18 +692,16 @@ class _PriceLine extends StatelessWidget {
       fontWeight: FontWeight.w600,
       color: AppColors.primary,
     );
-    final List<TextSpan> spans = <TextSpan>[TextSpan(text: '$eq — ')];
-    final bool hasHour = _hasPrice(service.pricePerHour);
-    final bool hasDay = _hasPrice(service.pricePerDay);
+    final List<TextSpan> spans = <TextSpan>[TextSpan(text: '$equipment — ')];
+    final bool hasHour = _hasPrice(pricePerHour);
+    final bool hasDay = _hasPrice(pricePerDay);
     if (hasHour) {
-      spans.add(
-          TextSpan(text: service.pricePerHour, style: priceDigits));
+      spans.add(TextSpan(text: pricePerHour, style: priceDigits));
       spans.add(TextSpan(text: ' ₽/час', style: priceUnit));
     }
     if (hasHour && hasDay) spans.add(const TextSpan(text: '   '));
     if (hasDay) {
-      spans.add(
-          TextSpan(text: service.pricePerDay, style: priceDigits));
+      spans.add(TextSpan(text: pricePerDay, style: priceDigits));
       spans.add(TextSpan(text: ' ₽/день', style: priceUnit));
     }
     return Text.rich(TextSpan(children: spans), style: base);

@@ -61,7 +61,7 @@ class _ExecutorCardScreenState extends State<ExecutorCardScreen> {
   bool get _filled =>
       AccountBlock.isBlocked ||
       (VerificationStatus.current.isVerified &&
-          VerificationStatus.hasSubscription &&
+          VerificationStatus.isSubscriptionValid &&
           ExecutorCardScreen.cardCreated);
 
   ExecutorCardStatus get _status {
@@ -129,7 +129,7 @@ class _ExecutorCardScreenState extends State<ExecutorCardScreen> {
     }
 
     if (VerificationStatus.current.isVerified) {
-      if (!VerificationStatus.hasSubscription) {
+      if (!VerificationStatus.isSubscriptionValid) {
         final bool? paid = await Navigator.of(context).push<bool>(
           MaterialPageRoute<bool>(
             fullscreenDialog: true,

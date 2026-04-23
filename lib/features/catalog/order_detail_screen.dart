@@ -14,7 +14,9 @@ import 'package:dispatcher_1/features/catalog/widgets/respond_bottom_sheet.dart'
 import 'package:dispatcher_1/features/catalog/widgets/subscription_paywall.dart';
 import 'package:dispatcher_1/features/executor_card/executor_card_screen.dart';
 import 'package:dispatcher_1/features/orders/my_orders_screen.dart';
+import 'package:dispatcher_1/features/orders/widgets/order_alerts.dart';
 import 'package:dispatcher_1/features/profile/account_block.dart';
+import 'package:dispatcher_1/features/services/my_services_screen.dart';
 import 'package:dispatcher_1/features/profile/reviews_screen.dart';
 import 'package:dispatcher_1/features/profile/widgets/verification_badge.dart';
 
@@ -133,6 +135,12 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
 
     // 3. Проверка подписки.
     if (!_hasSubscription) {
+      if (VerificationStatus.subscriptionPaidUntilText != null) {
+        // Подписка приостановлена — показываем попап с кнопкой возобновления.
+        final bool? go = await showSubscriptionPausedDialog(context);
+        if (go == true && mounted) context.push('/subscription');
+        return;
+      }
       final bool? subscribed = await Navigator.of(context).push<bool>(
         MaterialPageRoute<bool>(
           fullscreenDialog: true,
@@ -143,7 +151,17 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
       VerificationStatus.hasSubscription = true;
     }
 
-    // 4. Фильтруем технику заказа по тому, что есть у исполнителя в
+    // 4. Проверка карточки исполнителя — должна быть создана.
+    if (!ExecutorCardScreen.cardCreated) {
+      final bool? go = await showExecutorCardRequiredDialog(context);
+      if (go == true && mounted) {
+        await context.push('/executor-card/edit');
+        if (mounted) setState(() {});
+      }
+      return;
+    }
+
+    // 5. Фильтруем технику заказа по тому, что есть у исполнителя в
     // услугах (`ExecutorCardData.machinery` — computed из services).
     // Если пересечения нет — откликнуться нельзя, показываем диалог с
     // подсказкой добавить нужный вид техники.
@@ -161,9 +179,10 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
       return;
     }
     List<String> respondedEquipment = availableEq;
-    // Шторку показываем, когда в заказе несколько видов техники — даже
-    // если у исполнителя совпадает только один: пусть он осознанно
-    // подтвердит, что откликается именно на этот вид.
+    // Шторку выбора показываем только когда в заказе требуется
+    // больше одного вида техники. Если требуется ровно один —
+    // откликаемся без шторки, даже если у исполнителя совпали не
+    // все (всё равно выбирать не из чего).
     if (eq.length > 1) {
       final List<String>? picked = await showModalBottomSheet<List<String>>(
         context: context,
@@ -297,8 +316,10 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                                 ),
                         onReviewsTap: () => Navigator.of(context).push(
                           MaterialPageRoute<void>(
-                            builder: (_) => const ReviewsScreen(
+                            builder: (_) => ReviewsScreen(
                               subject: ReviewSubject.customer,
+                              initialRating: customerRating,
+                              initialCount: customerReviews,
                             ),
                           ),
                         ),
@@ -474,9 +495,27 @@ class _PickEquipmentSheetState extends State<PickEquipmentSheet> {
             _CheckRow(
               label: e,
               checked: _picked.contains(e),
-              onTap: () => setState(() {
-                if (!_picked.add(e)) _picked.remove(e);
-              }),
+              onTap: () {
+                final bool alreadyChecked = _picked.contains(e);
+                if (!alreadyChecked) {
+                  final bool hasService = ServiceData.services
+                      .any((ServiceMock s) => s.machinery.contains(e));
+                  if (!hasService) {
+                    showNoServiceForEquipmentDialog(
+                      context,
+                      equipment: e,
+                      onGoToServices: () {
+                        Navigator.of(context).pop();
+                        context.push('/services');
+                      },
+                    );
+                    return;
+                  }
+                }
+                setState(() {
+                  if (!_picked.add(e)) _picked.remove(e);
+                });
+              },
             ),
           SizedBox(height: 16.h),
           PrimaryButton(
@@ -584,7 +623,19 @@ class _NoMatchingMachineryDialog extends StatelessWidget {
                 context.push('/services');
               },
             ),
-            SizedBox(height: 12.h),
+            SizedBox(height: 20.h),
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => Navigator.of(context).pop(),
+              child: Center(
+                child: Text(
+                  'Вернуться',
+                  style: AppTextStyles.bodyMedium
+                      .copyWith(color: AppColors.textPrimary),
+                ),
+              ),
+            ),
+            SizedBox(height: 8.h),
           ],
         ),
       ),

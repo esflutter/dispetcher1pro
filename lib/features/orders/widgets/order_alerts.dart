@@ -122,6 +122,91 @@ Future<void> showOrderAcceptedDialog(BuildContext context) {
   );
 }
 
+/// Попап «Подписка приостановлена» — показывается при попытке откликнуться
+/// или принять заказ, когда подписка приостановлена. Кнопка ведёт на экран
+/// управления подпиской. Возвращает `true`, если пользователь нажал кнопку.
+Future<bool?> showSubscriptionPausedDialog(BuildContext context) {
+  return showDialog<bool>(
+    context: context,
+    barrierColor: Colors.black.withValues(alpha: 0.35),
+    builder: (BuildContext ctx) => Dialog(
+      insetPadding: EdgeInsets.symmetric(horizontal: 16.w),
+      backgroundColor: Colors.transparent,
+      child: Container(
+        padding: EdgeInsets.fromLTRB(16.r, 14.r, 16.r, 22.r),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(20.r),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Align(
+              alignment: Alignment.centerRight,
+              child: GestureDetector(
+                onTap: () => Navigator.of(ctx).pop(),
+                child: Icon(
+                  Icons.close_rounded,
+                  size: 22.r,
+                  color: AppColors.textTertiary,
+                ),
+              ),
+            ),
+            SizedBox(height: 12.h),
+            Text(
+              'Подписка приостановлена',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontFamily: 'Roboto',
+                fontSize: 20.sp,
+                fontWeight: FontWeight.w600,
+                height: 1.3,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            SizedBox(height: 10.h),
+            Text(
+              'Возобновите подписку, чтобы откликаться на заказы и принимать их',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontFamily: 'Roboto',
+                fontSize: 16.sp,
+                fontWeight: FontWeight.w400,
+                height: 1.3,
+                color: AppColors.textSecondary,
+              ),
+            ),
+            SizedBox(height: 20.h),
+            PrimaryButton(
+              label: 'Управление подпиской',
+              onPressed: () => Navigator.of(ctx).pop(true),
+            ),
+            SizedBox(height: 20.h),
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => Navigator.of(ctx).pop(),
+              child: Center(
+                child: Text(
+                  'Вернуться',
+                  style: TextStyle(
+                    fontFamily: 'Roboto',
+                    fontSize: 16.sp,
+                    fontWeight: FontWeight.w500,
+                    height: 1.3,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ),
+            ),
+            SizedBox(height: 8.h),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
 /// Алерт «Вы оставили отзыв» — показывается после успешной отправки отзыва.
 /// Возвращает `true`, если пользователь нажал «Мои отзывы», иначе `null`.
 Future<bool?> showReviewSentDialog(BuildContext context) {
@@ -190,6 +275,180 @@ Future<bool?> showReviewSentDialog(BuildContext context) {
               label: 'Ок',
               onPressed: () => Navigator.of(ctx).pop(true),
             ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+/// Попап «Для отклика необходима карточка исполнителя».
+/// Показывается при попытке откликнуться, если подписка оплачена,
+/// но карточка ещё не создана. Возвращает `true` если нажали кнопку перехода.
+Future<bool?> showExecutorCardRequiredDialog(BuildContext context) {
+  return showDialog<bool>(
+    context: context,
+    barrierColor: Colors.black.withValues(alpha: 0.35),
+    builder: (BuildContext ctx) => Dialog(
+      insetPadding: EdgeInsets.symmetric(horizontal: 16.w),
+      backgroundColor: Colors.transparent,
+      child: Container(
+        padding: EdgeInsets.fromLTRB(16.r, 14.r, 16.r, 22.r),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(20.r),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Align(
+              alignment: Alignment.centerRight,
+              child: GestureDetector(
+                onTap: () => Navigator.of(ctx).pop(),
+                child: Icon(
+                  Icons.close_rounded,
+                  size: 22.r,
+                  color: AppColors.textTertiary,
+                ),
+              ),
+            ),
+            SizedBox(height: 12.h),
+            Text(
+              'Создайте карточку исполнителя',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontFamily: 'Roboto',
+                fontSize: 20.sp,
+                fontWeight: FontWeight.w600,
+                height: 1.3,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            SizedBox(height: 10.h),
+            Text(
+              'Для отклика на заказ необходимо создать карточку исполнителя',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontFamily: 'Roboto',
+                fontSize: 16.sp,
+                fontWeight: FontWeight.w400,
+                height: 1.3,
+                color: AppColors.textSecondary,
+              ),
+            ),
+            SizedBox(height: 20.h),
+            PrimaryButton(
+              label: 'Создать карточку',
+              onPressed: () => Navigator.of(ctx).pop(true),
+            ),
+            SizedBox(height: 20.h),
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => Navigator.of(ctx).pop(),
+              child: Center(
+                child: Text(
+                  'Вернуться',
+                  style: TextStyle(
+                    fontFamily: 'Roboto',
+                    fontSize: 16.sp,
+                    fontWeight: FontWeight.w500,
+                    height: 1.3,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ),
+            ),
+            SizedBox(height: 8.h),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+/// Попап «У вас нет услуги с техникой [equipment]».
+/// Показывается при попытке выбрать технику в шторке отклика,
+/// если у исполнителя нет соответствующей услуги.
+Future<void> showNoServiceForEquipmentDialog(
+  BuildContext context, {
+  required String equipment,
+  required VoidCallback onGoToServices,
+}) {
+  return showDialog<void>(
+    context: context,
+    barrierColor: Colors.black.withValues(alpha: 0.35),
+    builder: (BuildContext ctx) => Dialog(
+      insetPadding: EdgeInsets.symmetric(horizontal: 16.w),
+      backgroundColor: Colors.transparent,
+      child: Container(
+        padding: EdgeInsets.fromLTRB(16.r, 14.r, 16.r, 22.r),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(20.r),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Align(
+              alignment: Alignment.centerRight,
+              child: GestureDetector(
+                onTap: () => Navigator.of(ctx).pop(),
+                child: Icon(Icons.close_rounded,
+                    size: 22.r, color: AppColors.textTertiary),
+              ),
+            ),
+            SizedBox(height: 12.h),
+            Text(
+              'Нет услуги с этой техникой',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontFamily: 'Roboto',
+                fontSize: 20.sp,
+                fontWeight: FontWeight.w600,
+                height: 1.3,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            SizedBox(height: 10.h),
+            Text(
+              'Создайте услугу с техникой «$equipment», чтобы откликнуться на этот заказ',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontFamily: 'Roboto',
+                fontSize: 16.sp,
+                fontWeight: FontWeight.w400,
+                height: 1.3,
+                color: AppColors.textSecondary,
+              ),
+            ),
+            SizedBox(height: 20.h),
+            PrimaryButton(
+              label: 'Мои услуги',
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                onGoToServices();
+              },
+            ),
+            SizedBox(height: 20.h),
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => Navigator.of(ctx).pop(),
+              child: Center(
+                child: Text(
+                  'Вернуться',
+                  style: TextStyle(
+                    fontFamily: 'Roboto',
+                    fontSize: 16.sp,
+                    fontWeight: FontWeight.w500,
+                    height: 1.3,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ),
+            ),
+            SizedBox(height: 8.h),
           ],
         ),
       ),

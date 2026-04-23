@@ -31,6 +31,7 @@ class DaySettings {
     this.location,
     this.machinery = const <String>{},
     this.categories = const <String>{},
+    this.clearDayOff = false,
   });
 
   /// Варианты радиуса — общие для «Параметров дня» и карточки
@@ -65,6 +66,7 @@ class DaySettings {
   final String? location;
   final Set<String> machinery;
   final Set<String> categories;
+  final bool clearDayOff;
 
   DaySettings copyWith({bool? accepting}) => DaySettings(
         accepting: accepting ?? this.accepting,
@@ -286,6 +288,9 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   DaySettings _settingsFor(DateTime d) =>
       _daySettings[_dateKey(d)] ?? DaySettings.fromExecutorCard();
 
+  String _fmtTime(TimeOfDay t) =>
+      '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+
   void _updateAccepting(DateTime key, bool value) {
     final DaySettings current =
         _daySettings[key] ?? DaySettings.fromExecutorCard();
@@ -348,9 +353,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     );
     if (updated == null) return;
     setState(() {
-      // «Параметры дня» управляют настройками дня, но НЕ признаком
-      // «выходной» — он ставится исключительно оранжевой кнопкой
-      // внизу графика.
+      if (updated.clearDayOff) _dayStates.remove(key);
       _daySettings[key] = updated;
       _acceptingOrders = updated.accepting;
     });
@@ -607,8 +610,9 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
               ),
             ),
             SizedBox(height: 12.h),
-            // Тоггл приёма заказов
             if (state != DayState.dayOff) ...[
+              if (_acceptingOrders)
+                _DaySettingsStrip(settings: _settingsFor(_selectedDate), fmtTime: _fmtTime),
               Divider(height: 1, thickness: 0.5, color: Colors.grey.shade300),
               Padding(
                 padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 14.h),
@@ -616,7 +620,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                   children: [
                     Expanded(
                       child: Text('Приём заказов',
-                          style: AppTextStyles.button),  // 16sp w600
+                          style: AppTextStyles.button),
                     ),
                     ScheduleToggle(
                       value: _acceptingOrders,
@@ -701,6 +705,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       ),
       itemBuilder: (_, i) => _OrderCard(
         order: orders[i],
+        date: _selectedDate,
         onConfirm: () => _confirmOrder(orders[i]),
         onRemove: () => _removeOrder(orders[i]),
       ),
@@ -778,10 +783,19 @@ class ScheduleToggle extends StatelessWidget {
 class _OrderCard extends StatelessWidget {
   const _OrderCard({
     required this.order,
+    required this.date,
     required this.onConfirm,
     required this.onRemove,
   });
   final _ScheduledOrder order;
+  final DateTime date;
+
+  static const List<String> _monthsGen = [
+    '', 'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
+    'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря',
+  ];
+
+  String get _fullDate => '${date.day} ${_monthsGen[date.month]} · ${order.rentDate}';
 
   /// Подтверждение заказа («Подтвердить» в деталях) — статус в графике
   /// должен смениться на `accepted` («Свяжитесь с заказчиком»).
@@ -809,7 +823,7 @@ class _OrderCard extends StatelessWidget {
           builder: (_) => MyOrderDetailScreen(
             title: order.title,
             equipment: order.machinery,
-            rentDate: order.rentDate,
+            rentDate: _fullDate,
             address: order.address,
             state: detailState,
             customerId: order.customerId,
@@ -846,9 +860,88 @@ class _OrderCard extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
         ),
         SizedBox(height: 8.h),
-        _LabelLine(label: 'Дата аренды:', value: order.rentDate),
+        _LabelLine(label: 'Дата аренды:', value: _fullDate),
         SizedBox(height: 5.h),
         _LabelLine(label: 'Адрес:', value: order.address, underlined: true),
+        ],
+      ),
+    );
+  }
+}
+
+/// Блок под тогглом «Приём заказов» — чипы техники, время работы, радиус.
+/// Берёт данные из сохранённых параметров дня ([DaySettings]).
+class _DaySettingsStrip extends StatelessWidget {
+  const _DaySettingsStrip({
+    required this.settings,
+    required this.fmtTime,
+  });
+
+  final DaySettings settings;
+  final String Function(TimeOfDay) fmtTime;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool hasMachinery = settings.machinery.isNotEmpty;
+    final bool hasTime =
+        settings.allDay || (settings.timeFrom != null && settings.timeTo != null);
+    final bool hasRadius = settings.radiusIndex >= 0 &&
+        settings.radiusIndex < DaySettings.radiusOptions.length;
+
+    if (!hasMachinery && !hasTime && !hasRadius) return const SizedBox.shrink();
+
+    final String radiusLabel = hasRadius
+        ? 'Заказы ${DaySettings.radiusOptions[settings.radiusIndex][0].toLowerCase()}'
+            '${DaySettings.radiusOptions[settings.radiusIndex].substring(1)}'
+        : '';
+
+    return Padding(
+      padding: EdgeInsets.fromLTRB(16.w, 0, 16.w, 4.h),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          if (hasMachinery) ...<Widget>[
+            Wrap(
+              spacing: 8.w,
+              runSpacing: 8.h,
+              children: settings.machinery
+                  .map((String m) => Container(
+                        padding: EdgeInsets.symmetric(
+                            horizontal: 12.w, vertical: 6.h),
+                        decoration: BoxDecoration(
+                          color: AppColors.surface,
+                          border: Border.all(color: AppColors.primary, width: 1),
+                          borderRadius: BorderRadius.circular(100.r),
+                        ),
+                        child: Text(
+                          m,
+                          style: AppTextStyles.chip.copyWith(
+                            color: AppColors.textPrimary,
+                            fontSize: 13.sp,
+                            fontWeight: FontWeight.w400,
+                          ),
+                        ),
+                      ))
+                  .toList(),
+            ),
+            SizedBox(height: 10.h),
+          ],
+          if (hasTime) ...<Widget>[
+            Text(
+              settings.allDay
+                  ? 'Весь день'
+                  : 'С ${fmtTime(settings.timeFrom!)} до ${fmtTime(settings.timeTo!)}',
+              style: AppTextStyles.body.copyWith(fontSize: 14.sp),
+            ),
+            SizedBox(height: 10.h),
+          ],
+          if (hasRadius)
+            Text(
+              radiusLabel,
+              style: AppTextStyles.caption
+                  .copyWith(color: AppColors.textTertiary),
+            ),
+          SizedBox(height: 8.h),
         ],
       ),
     );

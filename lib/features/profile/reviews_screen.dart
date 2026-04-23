@@ -33,9 +33,15 @@ class ReviewsScreen extends StatefulWidget {
   const ReviewsScreen({
     super.key,
     this.subject = ReviewSubject.executor,
+    this.initialRating,
+    this.initialCount,
   });
 
   final ReviewSubject subject;
+  /// Рейтинг и количество отзывов из карточки заказчика/исполнителя.
+  /// Если заданы — используются в шапке вместо вычисленных из мока.
+  final double? initialRating;
+  final int? initialCount;
 
   // Отзывы об исполнителе (пишет заказчик).
   static const String _t1 = 'Исполнитель очень ответственный и чётко выполняет задачи. Приехал вовремя, привёз всё необходимое оборудование. Работу сделал качественно и аккуратно, убрал за собой территорию. Общение было комфортным, всегда на связи. Обязательно обращусь ещё раз. Однозначно рекомендую к сотрудничеству.';
@@ -153,12 +159,14 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
     final int count;
     final String ratingText;
     if (_isCustomer) {
-      count = reviews.length;
+      count = widget.initialCount ?? reviews.length;
       if (count == 0) {
         ratingText = '0,0';
+      } else if (widget.initialRating != null) {
+        ratingText = widget.initialRating!.toStringAsFixed(1).replaceAll('.', ',');
       } else {
         final double avg =
-            reviews.fold<int>(0, (int s, Review r) => s + r.rating) / count;
+            reviews.fold<int>(0, (int s, Review r) => s + r.rating) / reviews.length;
         ratingText = avg.toStringAsFixed(1).replaceAll('.', ',');
       }
     } else {

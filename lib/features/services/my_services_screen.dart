@@ -32,6 +32,26 @@ class ServiceData {
     hasUnusedPaidSlot = false;
   }
 
+  /// Возвращает пару `[pricePerHour, pricePerDay]` для блока «Цена» в
+  /// деталях мэтчнутого заказа. Приоритет — собственные услуги
+  /// исполнителя из [services]. Если услуги нет — берём из [presets]
+  /// (ориентировочные ставки для случая, когда карточка ещё не
+  /// заполнена). Возвращает `null`, если техника не покрыта ни там,
+  /// ни там.
+  static List<String>? priceFor(String equipment) {
+    for (final ServiceMock s in services) {
+      if (s.machinery.isNotEmpty && s.machinery.first == equipment) {
+        return <String>[s.pricePerHour, s.pricePerDay];
+      }
+    }
+    for (final ServiceMock p in presets) {
+      if (p.machinery.isNotEmpty && p.machinery.first == equipment) {
+        return <String>[p.pricePerHour, p.pricePerDay];
+      }
+    }
+    return null;
+  }
+
   static const List<ServiceMock> presets = [
     ServiceMock(
       id: '1',

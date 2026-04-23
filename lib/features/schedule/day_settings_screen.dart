@@ -11,6 +11,7 @@ import 'package:dispatcher_1/features/catalog/widgets/catalog_search_bar.dart';
 import 'package:dispatcher_1/features/catalog/catalog_filter_screen.dart';
 import 'package:dispatcher_1/features/schedule/schedule_screen.dart';
 import 'package:dispatcher_1/features/schedule/widgets/schedule_alerts.dart';
+import 'package:dispatcher_1/features/services/my_services_screen.dart';
 
 /// Экран «Параметры дня» для группы «Мой график».
 class DaySettingsScreen extends StatefulWidget {
@@ -51,33 +52,20 @@ class _DaySettingsScreenState extends State<DaySettingsScreen> {
   final Set<String> _selCat = {};
 
   static const List<String> _radiusOptions = DaySettings.radiusOptions;
-  static const _machinery = [
-    'Экскаватор-погрузчик',
-    'Экскаватор',
-    'Погрузчик',
-    'Миниэкскаватор',
-    'Буроям',
-    'Самогруз',
-    'Автокран',
-    'Бетононасос',
-    'Эвакуатор',
-    'Автовышка',
-    'Манипулятор',
-    'Минипогрузчик',
-    'Самосвал',
-    'Минитрактор',
-  ];
-  static const _categories = [
-    'Земляные работы',
-    'Погрузочно-разгрузочные работы',
-    'Перевозка материалов',
-    'Строительные работы',
-    'Дорожные работы',
-    'Буровые работы',
-    'Высотные работы',
-    'Демонтажные работы',
-    'Благоустройство территории',
-  ];
+
+  List<String> get _machinery {
+    final List<ServiceMock> src = ServiceData.services.isNotEmpty
+        ? ServiceData.services
+        : ServiceData.presets;
+    return src.expand((ServiceMock s) => s.machinery).toSet().toList();
+  }
+
+  List<String> get _categories {
+    final List<ServiceMock> src = ServiceData.services.isNotEmpty
+        ? ServiceData.services
+        : ServiceData.presets;
+    return src.expand((ServiceMock s) => s.categories).toSet().toList();
+  }
 
   @override
   void initState() {
@@ -133,21 +121,26 @@ class _DaySettingsScreenState extends State<DaySettingsScreen> {
               ),
               padding: EdgeInsets.fromLTRB(16.w, 12.h, 16.w, 16.h),
               child: PrimaryButton(
-                label: 'Сохранить',
-                // Возвращаем полный набор параметров, чтобы родитель
-                // сохранил их и подставил при следующем открытии.
-                onPressed: () => Navigator.of(context).pop(
-                  DaySettings(
-                    accepting: _accepting,
-                    timeFrom: _timeFrom,
-                    timeTo: _timeTo,
-                    allDay: _allDay,
-                    radiusIndex: _radiusIndex,
-                    location: _location,
-                    machinery: Set<String>.from(_selMach),
-                    categories: Set<String>.from(_selCat),
-                  ),
-                ),
+                label: _state == DayState.dayOff ? 'Отметить рабочим' : 'Сохранить',
+                onPressed: () {
+                  if (_state == DayState.dayOff) {
+                    setState(() => _state = DayState.noOrders);
+                  } else {
+                    Navigator.of(context).pop(
+                      DaySettings(
+                        accepting: _accepting,
+                        timeFrom: _timeFrom,
+                        timeTo: _timeTo,
+                        allDay: _allDay,
+                        radiusIndex: _radiusIndex,
+                        location: _location,
+                        machinery: Set<String>.from(_selMach),
+                        categories: Set<String>.from(_selCat),
+                        clearDayOff: widget.initialState == DayState.dayOff,
+                      ),
+                    );
+                  }
+                },
               ),
             ),
           ],

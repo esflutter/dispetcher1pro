@@ -35,6 +35,13 @@ enum VerificationStatus {
 
   bool get isVerified => this == VerificationStatus.verified;
 
+  /// `true` если подписка активна ИЛИ приостановлена (переключатель
+  /// выключен, но оплаченный период ещё не закончился). В обоих случаях
+  /// пользователь имеет полный доступ — переключатель управляет только
+  /// автосписанием.
+  static bool get isSubscriptionValid =>
+      hasSubscription || subscriptionPaidUntilText != null;
+
   /// Полный сброс состояния верификации — для logout. Возвращает к
   /// `notVerified` и выключает подписку, чтобы следующий пользователь
   /// на этом устройстве не унаследовал чужой статус.

@@ -16,6 +16,11 @@ import 'package:dispatcher_1/features/profile/account_block.dart';
 class MyOrdersStore {
   MyOrdersStore._();
 
+  static final DateTime _now = DateTime.now();
+  static DateTime _minsAgo(int m) => _now.subtract(Duration(minutes: m));
+  static DateTime _hoursAgo(int h) => _now.subtract(Duration(hours: h));
+  static DateTime _daysAgo(int d) => _now.subtract(Duration(days: d));
+
   static final List<_OrderMock> _newOrders = <_OrderMock>[
     _OrderMock(
       id: 'n0',
@@ -25,6 +30,7 @@ class MyOrdersStore {
       rentDate: '18 июня · 08:00–17:00',
       address: 'Московская область, Москва, Улица1, д 144',
       publishedAgo: '1 час назад',
+      statusUpdatedAt: _hoursAgo(1),
       customerId: '1',
       customerName: 'Александр Иванов',
       customerPhone: '+7 999 123-45-67',
@@ -37,6 +43,7 @@ class MyOrdersStore {
       rentDate: '15 июня · 09:00–18:00',
       address: 'Московская область, Москва, Улица1, д 144',
       publishedAgo: '2 часа назад',
+      statusUpdatedAt: _hoursAgo(2),
       customerId: '2',
       customerName: 'Пётр Иванов',
       customerPhone: '+7 999 234-56-78',
@@ -49,6 +56,7 @@ class MyOrdersStore {
       rentDate: '15 июня · 09:00–18:00',
       address: 'Московская область, Москва, Улица1, д 144',
       publishedAgo: 'Сегодня в 11:30',
+      statusUpdatedAt: _hoursAgo(3),
       customerId: '3',
       customerName: 'Сергей Петров',
       customerPhone: '+7 999 345-67-89',
@@ -67,6 +75,7 @@ class MyOrdersStore {
       rentDate: '15 июня · 09:00–18:00',
       address: 'Московская область, Москва, Улица1, д 144',
       publishedAgo: 'Сегодня в 11:30',
+      statusUpdatedAt: _hoursAgo(4),
       customerId: '4',
       customerName: 'Михаил Смирнов',
       customerPhone: '+7 999 456-78-90',
@@ -82,6 +91,7 @@ class MyOrdersStore {
       rentDate: '15 июня · 09:00–18:00',
       address: 'Московская область, Москва, Улица1, д 144',
       publishedAgo: '2 часа назад',
+      statusUpdatedAt: _minsAgo(45),
       customerId: '1',
       customerName: 'Александр Иванов',
       customerPhone: '+7 999 123-45-67',
@@ -103,6 +113,7 @@ class MyOrdersStore {
       rentDate: '15 июня · 09:00–18:00',
       address: 'Московская область, Москва, Улица1, д 144',
       publishedAgo: 'Сегодня в 11:30',
+      statusUpdatedAt: _hoursAgo(2),
       customerId: '2',
       customerName: 'Пётр Иванов',
       customerPhone: '+7 999 123-45-67',
@@ -118,6 +129,7 @@ class MyOrdersStore {
       rentDate: '15 июня · 09:00–18:00',
       address: 'Московская область, Москва, Улица1, д 144',
       publishedAgo: 'Вчера в 14:30',
+      statusUpdatedAt: _daysAgo(1),
       customerId: '1',
       customerName: 'Александр Иванов',
       customerPhone: '+7 999 123-45-67',
@@ -135,6 +147,7 @@ class MyOrdersStore {
       rentDate: '15 июня · 09:00–18:00',
       address: 'Московская область, Москва, Улица1, д 144',
       publishedAgo: '2 часа назад',
+      statusUpdatedAt: _hoursAgo(2),
       customerId: '3',
       customerName: 'Сергей Петров',
     ),
@@ -152,6 +165,7 @@ class MyOrdersStore {
       rentDate: '15 июня · 09:00–18:00',
       address: 'Московская область, Москва, Улица1, д 144',
       publishedAgo: 'Вчера в 14:30',
+      statusUpdatedAt: _daysAgo(1),
       customerId: '4',
       customerName: 'Михаил Смирнов',
     ),
@@ -169,6 +183,7 @@ class MyOrdersStore {
       rentDate: '15 июня · 09:00–18:00',
       address: 'Московская область, Москва, Улица1, д 144',
       publishedAgo: '3 дня назад',
+      statusUpdatedAt: _daysAgo(3),
       customerId: '5',
       customerName: 'Виктор Новиков',
     ),
@@ -205,6 +220,7 @@ class MyOrdersStore {
         rentDate: rentDate,
         address: address,
         publishedAgo: publishedAgo,
+        statusUpdatedAt: DateTime.now(),
         customerId: customerId,
         customerName: customerName,
         customerRating: customerRating,
@@ -338,15 +354,17 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
     if (items.isEmpty) {
       return _EmptyOrders(onGoToCatalog: widget.onGoToCatalog);
     }
+    final List<_OrderMock> sorted = List<_OrderMock>.from(items)
+      ..sort((a, b) => b.statusUpdatedAt.compareTo(a.statusUpdatedAt));
     return MediaQuery.removePadding(
       context: context,
       removeTop: true,
       child: ListView.builder(
         padding: EdgeInsets.zero,
-        itemCount: items.length,
+        itemCount: sorted.length,
         itemBuilder: (BuildContext context, int i) {
-          final _OrderMock o = items[i];
-          final bool isLast = i == items.length - 1;
+          final _OrderMock o = sorted[i];
+          final bool isLast = i == sorted.length - 1;
           return Column(
             children: <Widget>[
               MyOrderCard(
@@ -355,7 +373,7 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
                 equipment: o.equipment,
                 rentDate: o.rentDate,
                 address: o.address,
-                publishedAgo: o.publishedAgo,
+                publishedAgo: o.timeAgo,
                 customerName: o.customerName,
                 customerPhone: o.customerPhone,
                 onTap: () => Navigator.of(context).push(
@@ -365,7 +383,8 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
                       equipment: o.equipment,
                       rentDate: o.rentDate,
                       address: o.address,
-                      publishedAgo: o.publishedAgo,
+                      publishedAgo: o.timeAgo,
+                      orderNumber: o.displayNumber,
                       customerId: o.customerId,
                       customerName: o.customerName ?? CropResult.namePlaceholder,
                       customerPhone: o.customerPhone ?? '+7 999 123-45-67',
@@ -438,8 +457,26 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
   }
 }
 
+String _pluralMin(int n) {
+  if (n % 10 == 1 && n % 100 != 11) { return 'минуту'; }
+  if (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20)) { return 'минуты'; }
+  return 'минут';
+}
+
+String _pluralH(int n) {
+  if (n % 10 == 1 && n % 100 != 11) { return 'час'; }
+  if (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20)) { return 'часа'; }
+  return 'часов';
+}
+
+String _pluralD(int n) {
+  if (n % 10 == 1 && n % 100 != 11) { return 'день'; }
+  if (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20)) { return 'дня'; }
+  return 'дней';
+}
+
 class _OrderMock {
-  const _OrderMock({
+  _OrderMock({
     required this.id,
     required this.status,
     required this.title,
@@ -447,13 +484,14 @@ class _OrderMock {
     required this.rentDate,
     required this.address,
     required this.publishedAgo,
+    DateTime? statusUpdatedAt,
     this.customerId,
     this.customerName,
     this.customerPhone,
     this.customerEmail,
     this.customerRating = 4.6,
     this.customerReviews = 10,
-  });
+  }) : statusUpdatedAt = statusUpdatedAt ?? DateTime.now();
 
   final String id;
   final MyOrderStatus status;
@@ -462,12 +500,45 @@ class _OrderMock {
   final String rentDate;
   final String address;
   final String publishedAgo;
+  final DateTime statusUpdatedAt;
   final String? customerId;
   final String? customerName;
   final String? customerPhone;
   final String? customerEmail;
   final double customerRating;
   final int customerReviews;
+
+  String get displayNumber {
+    final String pfx = id.isNotEmpty ? id[0] : 'n';
+    final String digits = id.replaceAll(RegExp(r'\D'), '');
+    final int base = pfx == 'a' ? 81220000 : pfx == 'r' ? 81210000 : 81230000;
+    final int n = base + (int.tryParse(digits) ?? 0);
+    return '№$n';
+  }
+
+  String get timeAgo {
+    final DateTime now = DateTime.now();
+    final Duration diff = now.difference(statusUpdatedAt);
+    if (diff.inSeconds < 60) return 'Только что';
+    if (diff.inMinutes < 60) {
+      final int m = diff.inMinutes;
+      return '$m ${_pluralMin(m)} назад';
+    }
+    if (diff.inHours < 24) {
+      final int h = diff.inHours;
+      return '$h ${_pluralH(h)} назад';
+    }
+    final DateTime today = DateTime(now.year, now.month, now.day);
+    final DateTime upDay = DateTime(
+        statusUpdatedAt.year, statusUpdatedAt.month, statusUpdatedAt.day);
+    if (upDay == today.subtract(const Duration(days: 1))) {
+      final String hh = statusUpdatedAt.hour.toString().padLeft(2, '0');
+      final String mm = statusUpdatedAt.minute.toString().padLeft(2, '0');
+      return 'Вчера в $hh:$mm';
+    }
+    final int d = today.difference(upDay).inDays;
+    return '$d ${_pluralD(d)} назад';
+  }
 
   _OrderMock copyWith({MyOrderStatus? status}) {
     return _OrderMock(
@@ -478,6 +549,9 @@ class _OrderMock {
       rentDate: rentDate,
       address: address,
       publishedAgo: publishedAgo,
+      statusUpdatedAt: (status != null && status != this.status)
+          ? DateTime.now()
+          : statusUpdatedAt,
       customerId: customerId,
       customerName: customerName,
       customerPhone: customerPhone,
