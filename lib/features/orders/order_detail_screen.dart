@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:dispatcher_1/core/my_orders/my_orders_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
+import 'package:dispatcher_1/core/widgets/clickable_address.dart';
 import 'package:dispatcher_1/core/utils/phone_dial.dart';
 import 'package:dispatcher_1/core/utils/photo_source.dart';
 import 'package:dispatcher_1/core/widgets/customer_header.dart';
@@ -21,7 +23,6 @@ import 'package:dispatcher_1/features/orders/widgets/order_alerts.dart';
 import 'package:dispatcher_1/features/orders/widgets/order_status_pill.dart';
 import 'package:dispatcher_1/features/profile/reviews_screen.dart';
 import 'package:dispatcher_1/features/profile/widgets/verification_badge.dart';
-import 'package:dispatcher_1/features/services/my_services_screen.dart';
 
 /// Состояние экрана деталей «моего» заказа.
 enum MyOrderDetailState {
@@ -64,8 +65,8 @@ class MyOrderDetailScreen extends StatefulWidget {
     this.rentDate = '15 июня · 09:00–18:00',
     this.address = 'Московская область, Москва, Улица1, д 144',
     this.customerId,
-    this.customerName = 'Александр Иванов',
-    this.customerPhone = '+7 999 123-45-67',
+    this.customerName = '',
+    this.customerPhone = '',
     this.customerEmail,
     this.customerRating = 4.6,
     this.customerReviews = 10,
@@ -83,6 +84,10 @@ class MyOrderDetailScreen extends StatefulWidget {
     this.onConfirm,
     this.onWithdraw,
     this.isBlocked = false,
+    this.matchId,
+    this.agreedPricePerHour,
+    this.agreedPricePerDay,
+    this.serviceMachineryTitle,
   });
 
   final MyOrderDetailState state;
@@ -132,6 +137,20 @@ class MyOrderDetailScreen extends StatefulWidget {
 
   final bool isBlocked;
 
+  /// id соответствующего `order_matches` — нужен экранам, которые пишут
+  /// результат обратно в БД (review_screen → INSERT reviews с match_id).
+  final String? matchId;
+
+  /// Снапшот цены, зафиксированный триггером `snapshot_match_price` в
+  /// момент создания мэтча. Это та цена, которая отображалась у
+  /// заказчика, когда он отправил отклик/принял предложение —
+  /// последующие правки услуги её не меняют.
+  final double? agreedPricePerHour;
+  final double? agreedPricePerDay;
+
+  /// Техника услуги, по которой шёл отклик. Подпись к строке «Цена».
+  final String? serviceMachineryTitle;
+
   @override
   State<MyOrderDetailScreen> createState() => _MyOrderDetailScreenState();
 }
@@ -142,6 +161,13 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
   late MyOrderDetailState _state;
   late MyOrderStatus _rejectedStatus;
   bool _reviewLeft = false;
+
+  /// Подгружаемые из БД контакты заказчика — доступны RLS-политикой
+  /// `profiles_private` только участнику accepted-мэтча. До загрузки
+  /// показываем то, что пришло в _effectivePhone (обычно пустая
+  /// строка, т.к. заказчик ещё не открыл свой номер).
+  String? _dbCustomerPhone;
+  String? _dbCustomerEmail;
 
   /// Контроллер прокрутки тела экрана — нужен, чтобы после подтверждения
   /// заказа и закрытия попапа автоматически вернуть пользователя к
@@ -154,7 +180,55 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
     _state = widget.state;
     _rejectedStatus = widget.rejectedStatus;
     _reviewLeft = _reviewedOrders.contains(widget.orderNumber);
+    if (_state == MyOrderDetailState.confirmed ||
+        _state == MyOrderDetailState.completed) {
+      _loadContacts();
+    }
   }
+
+  Future<void> _loadContacts() async {
+    final String? customerId = widget.customerId;
+    if (customerId == null || customerId.isEmpty) return;
+    try {
+      final ({String? phone, String? email})? c =
+          await MyOrdersService.instance.getCustomerContacts(customerId);
+      if (c == null || !mounted) return;
+      setState(() {
+        _dbCustomerPhone = c.phone;
+        _dbCustomerEmail = c.email;
+      });
+    } catch (_) {/* RLS не пропустил — оставим то что есть */}
+  }
+
+  bool get _hasAgreedPrice =>
+      (widget.agreedPricePerHour != null &&
+              widget.agreedPricePerHour! > 0) ||
+      (widget.agreedPricePerDay != null && widget.agreedPricePerDay! > 0);
+
+  /// «1000» → «1 000». Пустая строка для null/<=0 — _PriceLine сам
+  /// скрывает соответствующую часть.
+  String _fmtAgreedPrice(double? v) {
+    if (v == null || v <= 0) return '';
+    final int i = v.round();
+    final String s = i.toString();
+    final StringBuffer b = StringBuffer();
+    final int n = s.length;
+    for (int k = 0; k < n; k++) {
+      if (k > 0 && (n - k) % 3 == 0) b.write(' ');
+      b.write(s[k]);
+    }
+    return b.toString();
+  }
+
+  String get _effectivePhone =>
+      (_dbCustomerPhone != null && _dbCustomerPhone!.isNotEmpty)
+          ? _dbCustomerPhone!
+          : widget.customerPhone;
+
+  String? get _effectiveEmail =>
+      (_dbCustomerEmail != null && _dbCustomerEmail!.isNotEmpty)
+          ? _dbCustomerEmail
+          : widget.customerEmail;
 
   @override
   void dispose() {
@@ -251,8 +325,8 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
                                   customerName: widget.customerName,
                                   customerRating: widget.customerRating,
                                   customerReviews: widget.customerReviews,
-                                  customerPhone: widget.customerPhone,
-                                  customerEmail: widget.customerEmail,
+                                  customerPhone: _effectivePhone,
+                                  customerEmail: _effectiveEmail,
                                   // Контакты раскрываем, когда у исполнителя
                                   // уже подтверждена сделка с этим заказчиком
                                   // (тот же критерий, что и у номера телефона
@@ -274,7 +348,7 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
                     // с заказчиком» (accepted). В остальных статусах
                     // у исполнителя нет прав связываться напрямую.
                     onCall: _pillStatus == MyOrderStatus.accepted
-                        ? () => dialPhone(context, widget.customerPhone)
+                        ? () => dialPhone(context, _effectivePhone)
                         : null,
                   ),
                   if (_showPhone) ...<Widget>[
@@ -291,12 +365,12 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
                     ),
                     SizedBox(height: 4.h),
                     Text(
-                      widget.customerPhone,
+                      _effectivePhone,
                       style: AppTextStyles.subBody
                           .copyWith(fontWeight: FontWeight.w400),
                     ),
-                    if (widget.customerEmail != null &&
-                        widget.customerEmail!.trim().isNotEmpty) ...<Widget>[
+                    if (_effectiveEmail != null &&
+                        _effectiveEmail!.trim().isNotEmpty) ...<Widget>[
                       SizedBox(height: 12.h),
                       Text(
                         'Электронная почта',
@@ -310,7 +384,7 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
                       ),
                       SizedBox(height: 4.h),
                       Text(
-                        widget.customerEmail!,
+                        _effectiveEmail!,
                         style: AppTextStyles.subBody
                             .copyWith(fontWeight: FontWeight.w400),
                       ),
@@ -344,12 +418,10 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
                   ),
                   LabeledSection(
                     title: 'Адрес',
-                    child: Text(
+                    child: ClickableAddress(
                       widget.address,
-                      style: AppTextStyles.subBody.copyWith(
-                        fontWeight: FontWeight.w400,
-                        decoration: TextDecoration.underline,
-                      ),
+                      baseStyle: AppTextStyles.subBody
+                          .copyWith(fontWeight: FontWeight.w400),
                     ),
                   ),
                   if (widget.description.trim().isNotEmpty)
@@ -395,42 +467,22 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
                       ],
                     ),
                   ),
-                  // Блок «Цена» — мои расценки по требуемой в заказе
-                  // технике. Показывается только в статусах
-                  // «Свяжитесь с заказчиком» (confirmed) и
-                  // «Завершён» (completed), т.е. когда уже произошёл
-                  // мэтч и услуги зафиксированы. В «Новых»/«Не принятых»
-                  // блока нет — цена устанавливается исполнителем и
-                  // не является частью заказа заказчика.
-                  if (_state == MyOrderDetailState.confirmed ||
-                      _state == MyOrderDetailState.completed)
-                    Builder(
-                      builder: (BuildContext _) {
-                        final List<List<String>> rows = <List<String>>[];
-                        for (final String eq in widget.equipment) {
-                          final List<String>? price =
-                              ServiceData.priceFor(eq);
-                          if (price == null) continue;
-                          rows.add(<String>[eq, price[0], price[1]]);
-                        }
-                        if (rows.isEmpty) return const SizedBox.shrink();
-                        return LabeledSection(
-                          title: 'Цена',
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: <Widget>[
-                              for (int i = 0; i < rows.length; i++) ...<Widget>[
-                                if (i > 0) SizedBox(height: 2.h),
-                                _PriceLine(
-                                  equipment: rows[i][0],
-                                  pricePerHour: rows[i][1],
-                                  pricePerDay: rows[i][2],
-                                ),
-                              ],
-                            ],
-                          ),
-                        );
-                      },
+                  // Блок «Цена» — снапшот ставок из `order_matches`,
+                  // зафиксированный триггером в момент создания мэтча.
+                  // Показывается в статусах, когда мэтч уже состоялся
+                  // («Ожидает ответа заказчика»/«Ждёт подтверждения»/
+                  //  «Свяжитесь с заказчиком»/«Завершён»). Цена
+                  // привязана к одной услуге, поэтому одна строка с
+                  // подписью техники этой услуги.
+                  if (_state != MyOrderDetailState.rejected &&
+                      _hasAgreedPrice)
+                    LabeledSection(
+                      title: 'Цена',
+                      child: _PriceLine(
+                        equipment: widget.serviceMachineryTitle ?? '',
+                        pricePerHour: _fmtAgreedPrice(widget.agreedPricePerHour),
+                        pricePerDay: _fmtAgreedPrice(widget.agreedPricePerDay),
+                      ),
                     ),
                   if (widget.photos.isNotEmpty)
                     LabeledSection(
@@ -570,8 +622,8 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
                 await Navigator.of(context).push<bool>(
               MaterialPageRoute<bool>(
                 builder: (_) => ReviewScreen(
-                  orderId: widget.orderNumber,
-                  customerId: widget.customerId,
+                  matchId: widget.matchId,
+                  targetId: widget.customerId,
                 ),
               ),
             );

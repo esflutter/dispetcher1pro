@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
@@ -133,10 +134,11 @@ class _ChatScreenState extends State<ChatScreen> {
     });
 
     // Заглушка ответа ассистента
-    Future<void>.delayed(const Duration(milliseconds: 800), () {
+    Future<void>.delayed(const Duration(milliseconds: 800), () async {
       if (!mounted) return;
+      final bool documentsSentNow = _awaitingDocuments && hasImages;
       setState(() {
-        if (_awaitingDocuments && hasImages) {
+        if (documentsSentNow) {
           _awaitingDocuments = false;
           _messages.add(
             ChatMessage(
@@ -166,6 +168,23 @@ class _ChatScreenState extends State<ChatScreen> {
         }
         _scrollToBottom();
       });
+      // Реальная фиксация сабмита: переводим
+      // profiles.verification_status в 'pending'. До интеграции
+      // полноценного UI загрузки документов — этого достаточно,
+      // чтобы статус в профиле и каталоге обновился.
+      if (documentsSentNow) {
+        try {
+          final user = Supabase.instance.client.auth.currentUser;
+          if (user != null) {
+            await Supabase.instance.client
+                .from('profiles')
+                .update(<String, dynamic>{
+              'verification_status': 'pending',
+            }).eq('id', user.id);
+            VerificationStatus.current = VerificationStatus.inProgress;
+          }
+        } catch (_) {/* silent */}
+      }
     });
   }
 

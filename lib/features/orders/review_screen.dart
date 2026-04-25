@@ -1,19 +1,37 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
 import 'package:dispatcher_1/features/orders/widgets/order_alerts.dart';
 
 /// Экран «Как всё прошло?» — оценка пользователя + комментарий + кнопка.
-/// Принимает `orderId` и `customerId`, чтобы при появлении бэкенда было
-/// к чему привязать отзыв. Сейчас используется только вызывающим
-/// экраном: он получает назад `true` и помечает заказ как прокомментированный.
+///
+/// INSERT в `public.reviews`: автор — `auth.uid()`, `target_id` = тот,
+/// кого оцениваем (заказчик — для исполнителя, исполнитель — для заказчика),
+/// `subject` — соответствующий enum. RLS-политика `reviews_insert_participant`
+/// пропустит только если match в статусе `completed` и стороны совпадают.
+/// Триггер `handle_review_insert` пересчитывает рейтинг target'а.
 class ReviewScreen extends StatefulWidget {
-  const ReviewScreen({super.key, this.orderId, this.customerId});
+  const ReviewScreen({
+    super.key,
+    this.matchId,
+    this.targetId,
+    this.subject = 'customer',
+  });
 
-  final String? orderId;
-  final String? customerId;
+  /// id соответствующего `order_matches` — обязательно для реального INSERT.
+  /// Если null, экран работает в "демо"-режиме: показывает успех без записи.
+  final String? matchId;
+
+  /// id пользователя, которому выставляется отзыв (`profiles.id`).
+  final String? targetId;
+
+  /// 'customer' — исполнитель оценивает заказчика (приложение исполнителя).
+  /// 'executor' — наоборот (приложение заказчика).
+  final String subject;
 
   @override
   State<ReviewScreen> createState() => _ReviewScreenState();
@@ -21,6 +39,7 @@ class ReviewScreen extends StatefulWidget {
 
 class _ReviewScreenState extends State<ReviewScreen> {
   int _rating = 0;
+  bool _submitting = false;
   final TextEditingController _comment = TextEditingController();
 
   @override
@@ -30,10 +49,45 @@ class _ReviewScreenState extends State<ReviewScreen> {
   }
 
   Future<void> _submit() async {
-    // TODO(backend): отправить отзыв на сервер с orderId/customerId
-    // вместе с _rating и _comment.text.trim(). Пока только закрываем
-    // экран и возвращаем true — вызывающий помечает заказ как
-    // прокомментированный в `_reviewedOrders`.
+    if (_submitting) return;
+    setState(() => _submitting = true);
+
+    if (widget.matchId != null && widget.targetId != null) {
+      try {
+        final SupabaseClient client = Supabase.instance.client;
+        final User? user = client.auth.currentUser;
+        if (user == null) {
+          throw const AuthException('Нет активной сессии');
+        }
+        final String? text = _comment.text.trim().isEmpty
+            ? null
+            : _comment.text.trim();
+        await client.from('reviews').insert(<String, dynamic>{
+          'match_id': widget.matchId,
+          'author_id': user.id,
+          'target_id': widget.targetId,
+          'subject': widget.subject,
+          'rating': _rating,
+          'text': ?text,
+        });
+      } on PostgrestException catch (e) {
+        if (!mounted) return;
+        setState(() => _submitting = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Не удалось отправить отзыв: ${e.message}')),
+        );
+        return;
+      } catch (_) {
+        if (!mounted) return;
+        setState(() => _submitting = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Не удалось отправить отзыв.')),
+        );
+        return;
+      }
+    }
+
+    if (!mounted) return;
     await showReviewSentDialog(context);
     if (!mounted) return;
     Navigator.of(context).pop(true);
@@ -41,7 +95,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final bool canSubmit = _rating > 0;
+    final bool canSubmit = _rating > 0 && !_submitting;
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(

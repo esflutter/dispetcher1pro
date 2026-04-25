@@ -1,0 +1,13 @@
+@echo off
+rem Шаблон локального запуска с подстановкой ключей Supabase (Windows).
+rem СКОПИРУЙТЕ в run_dev.bat (этот файл уже в .gitignore) и подставьте реальные значения.
+rem
+rem Использование:
+rem   run_dev.bat
+
+set SUPABASE_URL=https://your-subdomain.beget.app
+set SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.xxx.yyy
+
+flutter run ^
+  --dart-define=SUPABASE_URL=%SUPABASE_URL% ^
+  --dart-define=SUPABASE_ANON_KEY=%SUPABASE_ANON_KEY%

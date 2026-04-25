@@ -3,6 +3,11 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import 'package:dispatcher_1/core/my_services/models.dart';
+import 'package:dispatcher_1/core/my_services/my_services_service.dart';
+import 'package:dispatcher_1/core/storage/storage_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
 import 'package:dispatcher_1/core/utils/photo_source.dart';
@@ -164,44 +169,80 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
     super.dispose();
   }
 
-  void _save() {
-    final id = _isEdit
-        ? widget.serviceId!
-        : DateTime.now().millisecondsSinceEpoch.toString();
-
-    final service = ServiceMock(
-      id: id,
+  Future<ServiceDraft> _currentDraft() async {
+    final int? radiusKm = switch (_radiusIndex) {
+      0 => 10,
+      1 => 20,
+      2 => 50,
+      _ => null,
+    };
+    // Загружаем только локальные файлы (asset-пути — это превью из
+    // предыдущего черновика, они уже где-то отображаются и не
+    // требуют загрузки).
+    final List<String> uploadedUrls = <String>[];
+    for (final String path in _photos) {
+      if (path.startsWith('assets/') || path.startsWith('http')) {
+        uploadedUrls.add(path);
+        continue;
+      }
+      try {
+        final String url =
+            await StorageService.instance.uploadServicePhoto(File(path));
+        uploadedUrls.add(url);
+      } catch (_) {/* пропускаем неудачную загрузку */}
+    }
+    return ServiceDraft(
       title: _titleCtrl.text.isEmpty ? 'Новая услуга' : _titleCtrl.text,
-      categories: _selCat.toList(),
-      machinery: _selMach.toList(),
-      // Пустая цена — так и сохраняем пустой: в деталях и карточке
-      // блок «₽ / час» / «₽ / день» тогда просто не отображается.
-      pricePerHour: _priceHourCtrl.text,
-      pricePerDay: _priceDayCtrl.text,
-      minOrder: _minHoursCtrl.text.isEmpty ? '1' : _minHoursCtrl.text,
-      description: _descCtrl.text,
-      photos: List<String>.from(_photos),
-      address: _address,
-      radiusIndex: _radiusIndex,
+      description: _descCtrl.text.trim().isEmpty ? null : _descCtrl.text,
+      machineryTitles: _selMach.toList(),
+      categoryTitles: _selCat.toList(),
+      pricePerHour: _parsePrice(_priceHourCtrl.text),
+      pricePerDay: _parsePrice(_priceDayCtrl.text),
+      minHours: int.tryParse(_minHoursCtrl.text),
+      photos: uploadedUrls,
+      locationAddress: _address,
+      radiusKm: radiusKm,
     );
+  }
 
-    if (_isEdit) {
-      final idx = ServiceData.services.indexWhere((s) => s.id == id);
-      if (idx >= 0) ServiceData.services[idx] = service;
-    } else {
-      ServiceData.services.add(service);
+  double? _parsePrice(String s) {
+    final String cleaned = s.replaceAll(RegExp(r'\s'), '');
+    if (cleaned.isEmpty) return null;
+    return double.tryParse(cleaned);
+  }
+
+  Future<bool> _save() async {
+    final ServiceDraft draft = await _currentDraft();
+    try {
+      if (_isEdit) {
+        await MyServicesService.instance.update(widget.serviceId!, draft);
+      } else {
+        await MyServicesService.instance.create(draft);
+      }
+      await ServiceData.refresh();
+      return true;
+    } on PostgrestException catch (e) {
+      if (!mounted) return false;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Ошибка сохранения: ${e.message}')),
+      );
+      return false;
+    } catch (_) {
+      if (!mounted) return false;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Не удалось сохранить услугу.')),
+      );
+      return false;
     }
   }
 
   Future<void> _onCreateTap() async {
-    // Paywall оплачен ещё до открытия этой формы (в `my_services_screen`
-    // → кнопка «Создать услугу» → `ServicePaywall`). Здесь остаётся
-    // только сохранить услугу и показать диалог публикации.
-    _save();
+    // Paywall оплачен до этой формы (в `my_services_screen`).
+    final bool ok = await _save();
+    if (!ok || !mounted) return;
     // Оплаченный слот израсходован. Следующее создание услуги потребует
     // новой оплаты.
     ServiceData.hasUnusedPaidSlot = false;
-    if (!mounted) return;
     await showServicePublishedDialog(context);
     if (!mounted) return;
     Navigator.of(context).pop();
@@ -484,8 +525,9 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
       children: [
         PrimaryButton(
           label: 'Сохранить',
-          onPressed: () {
-            _save();
+          onPressed: () async {
+            final bool ok = await _save();
+            if (!ok || !mounted) return;
             Navigator.of(context).pop();
           },
         ),
@@ -495,15 +537,21 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
           onPressed: () async {
             final ok = await showDeleteServiceDialog(context);
             if (!mounted) return;
-            if (ok == true) {
-              ServiceData.services
-                  .removeWhere((s) => s.id == widget.serviceId);
-              if (mounted) {
-                final nav = Navigator.of(context);
-                nav.pop(); // закрыть редактирование
-                if (nav.canPop()) nav.pop(); // закрыть просмотр
-              }
+            if (ok != true) return;
+            try {
+              await MyServicesService.instance.archive(widget.serviceId!);
+              await ServiceData.refresh();
+            } catch (e) {
+              if (!mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Не удалось удалить: $e')),
+              );
+              return;
             }
+            if (!mounted) return;
+            final nav = Navigator.of(context);
+            nav.pop(); // закрыть редактирование
+            if (nav.canPop()) nav.pop(); // закрыть просмотр
           },
         ),
       ],

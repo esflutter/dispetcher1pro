@@ -46,3 +46,34 @@ app.*.map.json
 
 # Figma API caches (большие JSON, не нужны в репо)
 .figma_cache/
+
+# --- Секреты / ключи / окружение ---
+# Любые env-файлы, пароли, ключи — никогда в репозиторий.
+# Поверх этого: .env.example коммитится как образец (там только имена, без значений).
+.env
+.env.*
+!.env.example
+*.env
+secrets/
+# Локальные скрипты запуска с реальными ключами (Supabase и т.п.)
+run_dev.sh
+run_dev.bat
+run_prod.sh
+run_prod.bat
+# VSCode launch-конфиг может содержать --dart-define=SUPABASE_ANON_KEY=...
+.vscode/launch.json
+# MCP-конфиг может содержать Basic auth с реальным паролем от Supabase.
+# Коммитится только .mcp.json.example.
+.mcp.json
+!.mcp.json.example
+# Страховка: любые файлы с суффиксом _local.dart — не коммитятся
+**/*_local.dart
+# Keystore / подписи Android
+/android/key.properties
+/android/app/*.jks
+/android/app/*.keystore
+# Supabase / сертификаты
+*.pem
+*.key
+*.crt
+!**/assets/**/*.pem

@@ -1,5 +1,4 @@
 import 'package:dispatcher_1/features/auth/photo_crop_screen.dart';
-import 'package:dispatcher_1/features/catalog/order_detail_screen.dart';
 import 'package:dispatcher_1/features/executor_card/executor_card_screen.dart';
 import 'package:dispatcher_1/features/profile/widgets/verification_badge.dart';
 import 'package:dispatcher_1/features/services/my_services_screen.dart';
@@ -43,8 +42,6 @@ class SessionCache {
       cardCreated: ExecutorCardScreen.cardCreated,
       services: List<ServiceMock>.from(ServiceData.services),
       hasUnusedPaidSlot: ServiceData.hasUnusedPaidSlot,
-      respondedOrderIds:
-          Set<String>.from(OrderDetailScreen.respondedOrderIds),
     );
   }
 
@@ -73,9 +70,6 @@ class SessionCache {
       ..clear()
       ..addAll(s.services);
     ServiceData.hasUnusedPaidSlot = s.hasUnusedPaidSlot;
-    OrderDetailScreen.respondedOrderIds
-      ..clear()
-      ..addAll(s.respondedOrderIds);
   }
 
   /// Выбросить снимок — вызывается при удалении аккаунта.
@@ -99,7 +93,6 @@ class _Snapshot {
     required this.cardCreated,
     required this.services,
     required this.hasUnusedPaidSlot,
-    required this.respondedOrderIds,
   });
 
   final String userName;
@@ -115,5 +108,4 @@ class _Snapshot {
   final bool cardCreated;
   final List<ServiceMock> services;
   final bool hasUnusedPaidSlot;
-  final Set<String> respondedOrderIds;
 }

@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Шаблон локального запуска с подстановкой ключей Supabase.
+# СКОПИРУЙТЕ в run_dev.sh (этот файл уже в .gitignore) и подставьте реальные значения.
+#
+# Использование:
+#   bash run_dev.sh
+#
+# Ключи передаются через --dart-define и попадают в compile-time константы
+# класса Env (lib/core/config/env.dart). В исходниках их нет.
+
+SUPABASE_URL="https://your-subdomain.beget.app"
+SUPABASE_ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.xxx.yyy"
+
+flutter run \
+  --dart-define=SUPABASE_URL="$SUPABASE_URL" \
+  --dart-define=SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY"

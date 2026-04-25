@@ -5,7 +5,6 @@ import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
 import 'package:dispatcher_1/features/catalog/catalog_filter_screen.dart';
 import 'package:dispatcher_1/features/catalog/order_detail_screen.dart';
-import 'package:dispatcher_1/features/catalog/order_feed_screen.dart';
 import 'package:dispatcher_1/features/catalog/widgets/applied_filter_chips.dart';
 import 'package:dispatcher_1/features/catalog/widgets/catalog_search_bar.dart';
 
@@ -110,20 +109,11 @@ class _OrdersMapFullScreenState extends State<OrdersMapFullScreen> {
         .toList();
   }
 
-  /// Источник данных — общий [CatalogOrderMock.all]. Карта показывает тот же
-  /// набор заказов, что и лента; при открытии деталей данные совпадают.
-  /// Модель [_MapOrder] хранит одно значение техники, поэтому берём первое
-  /// из списка `equipment`.
-  static List<_MapOrder> get _orders => CatalogOrderMock.all
-      .map((CatalogOrderMock o) => _MapOrder(
-            id: o.id,
-            equipment: o.equipment.isNotEmpty ? o.equipment.first : '',
-            title: o.title,
-            rentDate: o.rentDate,
-            address: o.address,
-            publishedAgo: o.publishedAgo,
-          ))
-      .toList();
+  /// Полноэкранная карта заказов пока не подключена к БД — реальные
+  /// координаты заказов потребуют интеграции геокодера. Экран открывается,
+  /// показывает подложку-карту и сообщение «Заказы не найдены». Список
+  /// наполнится, когда будет готов отдельный ticket на интеграцию карты.
+  static List<_MapOrder> get _orders => const <_MapOrder>[];
 
   void _shift(int delta) {
     final int count = _visibleOrders.length;

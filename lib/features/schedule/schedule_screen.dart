@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:dispatcher_1/core/schedule/schedule_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
 import 'package:dispatcher_1/core/widgets/dark_sub_app_bar.dart';
@@ -252,6 +253,52 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     _weekStart = _mondayOf(_selectedDate);
     _originWeek = _weekStart;
     _pageCtrl = PageController(initialPage: _initialPage);
+    _loadFromDb();
+  }
+
+  /// Загружаем все мои override'ы из `schedule_day_overrides`. Дни без
+  /// записей остаются дефолтно рабочими.
+  Future<void> _loadFromDb() async {
+    try {
+      final Map<DateTime, ScheduleDayOverride> rows =
+          await ScheduleService.instance.loadMyOverrides();
+      if (!mounted) return;
+      setState(() {
+        for (final MapEntry<DateTime, ScheduleDayOverride> e in rows.entries) {
+          final ScheduleDayOverride o = e.value;
+          if (!o.accepting) {
+            _dayStates[e.key] = DayState.dayOff;
+          }
+          _daySettings[e.key] = DaySettings(
+            accepting: o.accepting,
+            timeFrom: _parseHm(o.timeFrom),
+            timeTo: _parseHm(o.timeTo),
+            allDay: o.wholeDay,
+            radiusIndex: o.radiusKm == 10
+                ? 0
+                : o.radiusKm == 20
+                    ? 1
+                    : o.radiusKm == 50
+                        ? 2
+                        : -1,
+            location: o.locationAddress,
+            machinery: Set<String>.from(o.machineryTitles),
+            categories: Set<String>.from(o.categoryTitles),
+          );
+        }
+        _acceptingOrders = _acceptingFor(_selectedDate);
+      });
+    } catch (_) {/* silent */}
+  }
+
+  TimeOfDay? _parseHm(String? s) {
+    if (s == null) return null;
+    final List<String> parts = s.split(':');
+    if (parts.length < 2) return null;
+    final int? h = int.tryParse(parts[0]);
+    final int? m = int.tryParse(parts[1]);
+    if (h == null || m == null) return null;
+    return TimeOfDay(hour: h, minute: m);
   }
 
   @override
@@ -357,6 +404,34 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       _daySettings[key] = updated;
       _acceptingOrders = updated.accepting;
     });
+    // Sync override в БД. UPSERT, чтобы повторное сохранение этого дня
+    // обновляло запись.
+    final int? radiusKm = updated.radiusIndex == 0
+        ? 10
+        : updated.radiusIndex == 1
+            ? 20
+            : updated.radiusIndex == 2
+                ? 50
+                : null;
+    final String? tFrom = updated.timeFrom == null
+        ? null
+        : '${updated.timeFrom!.hour.toString().padLeft(2, '0')}:${updated.timeFrom!.minute.toString().padLeft(2, '0')}';
+    final String? tTo = updated.timeTo == null
+        ? null
+        : '${updated.timeTo!.hour.toString().padLeft(2, '0')}:${updated.timeTo!.minute.toString().padLeft(2, '0')}';
+    try {
+      await ScheduleService.instance.upsertOverride(
+        day: _selectedDate,
+        accepting: updated.accepting,
+        timeFrom: tFrom,
+        timeTo: tTo,
+        wholeDay: updated.allDay,
+        radiusKm: radiusKm,
+        locationAddress: updated.location,
+        machineryTitles: updated.machinery.toList(),
+        categoryTitles: updated.categories.toList(),
+      );
+    } catch (_) {/* отображение мгновенно есть; БД-ошибка тихо */}
   }
 
   /// Переключает «выходной» для текущего дня. Если день помечается
@@ -371,6 +446,10 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
         _dayStates.remove(key);
         _acceptingOrders = _acceptingFor(_selectedDate);
       });
+      // День возвращается к дефолту → удаляем override.
+      try {
+        await ScheduleService.instance.resetToDefault(_selectedDate);
+      } catch (_) {/* silent */}
       return;
     }
 
@@ -388,6 +467,13 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       _dayStates[key] = DayState.dayOff;
       _acceptingOrders = false;
     });
+    // Override: «нерабочий день» → accepting=false.
+    try {
+      await ScheduleService.instance.upsertOverride(
+        day: _selectedDate,
+        accepting: false,
+      );
+    } catch (_) {/* silent */}
   }
 
   Future<void> _toggleAcceptance(bool value) async {
@@ -398,11 +484,15 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     final key = _dateKey(_selectedDate);
     setState(() {
       _acceptingOrders = value;
-      // Зелёный тумблер только открывает/закрывает приём новых
-      // заказов. День остаётся рабочим — существующие заказы видны.
-      // Пометка «выходной» ставится оранжевой кнопкой ниже.
       _updateAccepting(key, value);
     });
+    // Зелёный тумблер: если он переключён — это уже override от дефолта.
+    try {
+      await ScheduleService.instance.upsertOverride(
+        day: _selectedDate,
+        accepting: value,
+      );
+    } catch (_) {/* silent */}
   }
 
   Future<bool?> _showCloseDialog() {

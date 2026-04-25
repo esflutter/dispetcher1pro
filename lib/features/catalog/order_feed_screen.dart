@@ -1,7 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:dispatcher_1/core/catalog/catalog_service.dart';
+import 'package:dispatcher_1/core/catalog/format.dart';
+import 'package:dispatcher_1/core/catalog/models.dart';
 import 'package:dispatcher_1/core/location_permission.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
@@ -14,9 +19,10 @@ import 'package:dispatcher_1/features/catalog/widgets/order_card.dart';
 import 'package:dispatcher_1/features/shell/main_shell.dart';
 import 'package:dispatcher_1/features/shell/widgets/main_bottom_nav_bar.dart';
 
-/// Лента заказов категории. Соответствует Figma «Лента заказов»:
-/// тёмный AppBar → строка поиска + оранжевый фильтр → pill-табы
-/// «Списком / На карте» → список карточек или карта.
+/// Лента заказов категории. Источник — `public.orders` через
+/// [CatalogService.listPublishedOrders]. Фильтры (техника/категории)
+/// по-прежнему живут в глобальном [AppliedFilter]; строка поиска —
+/// локальная, с небольшим debounce перед запросом.
 class OrderFeedScreen extends StatefulWidget {
   const OrderFeedScreen({
     super.key,
@@ -36,52 +42,53 @@ class _OrderFeedScreenState extends State<OrderFeedScreen> {
   final TextEditingController _searchCtrl = TextEditingController();
   String _query = '';
   bool _addressSelected = false;
+  Timer? _debounceTimer;
+  late Future<List<OrderListItem>> _ordersFuture;
 
   @override
   void initState() {
     super.initState();
     AppliedFilter.revision.addListener(_onFilterChanged);
+    _ordersFuture = _fetchOrders();
   }
 
   @override
   void dispose() {
     AppliedFilter.revision.removeListener(_onFilterChanged);
+    _debounceTimer?.cancel();
     _searchCtrl.dispose();
     super.dispose();
   }
 
+  Future<List<OrderListItem>> _fetchOrders() {
+    return CatalogService.instance.listPublishedOrders(
+      machineryTitles: AppliedFilter.equipment,
+      categoryTitles: AppliedFilter.categories,
+      search: _query.trim().isEmpty ? null : _query,
+      dateFrom: AppliedFilter.dateFrom,
+      dateTo: AppliedFilter.exactDate ? null : AppliedFilter.dateTo,
+      addressContains: AppliedFilter.address,
+    );
+  }
+
   void _onFilterChanged() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    setState(() => _ordersFuture = _fetchOrders());
+  }
+
+  void _onSearchChanged(String v) {
+    setState(() {
+      _query = v;
+      _addressSelected = false;
+    });
+    _debounceTimer?.cancel();
+    _debounceTimer = Timer(const Duration(milliseconds: 300), () {
+      if (!mounted) return;
+      setState(() => _ordersFuture = _fetchOrders());
+    });
   }
 
   bool get _hasActiveFilter => hasActiveFilter();
-
-  List<CatalogOrderMock> get _visibleOrders {
-    final String q = _query.trim().toLowerCase();
-    Iterable<CatalogOrderMock> res = CatalogOrderMock.all;
-
-    if (AppliedFilter.categories.isNotEmpty) {
-      res = res.where((CatalogOrderMock o) =>
-          o.categories.any(AppliedFilter.categories.contains));
-    }
-    if (AppliedFilter.equipment.isNotEmpty) {
-      res = res.where((CatalogOrderMock o) =>
-          o.equipment.any(AppliedFilter.equipment.contains));
-    }
-
-    if (q.isNotEmpty) {
-      res = res.where((CatalogOrderMock o) {
-        if (o.title.toLowerCase().contains(q)) return true;
-        if (o.address.toLowerCase().contains(q)) return true;
-        for (final String e in o.equipment) {
-          if (e.toLowerCase().contains(q)) return true;
-        }
-        return false;
-      });
-    }
-
-    return res.toList();
-  }
 
   void _openFilter() {
     Navigator.of(context).push(
@@ -101,9 +108,6 @@ class _OrderFeedScreenState extends State<OrderFeedScreen> {
         elevation: 0,
         centerTitle: true,
         toolbarHeight: 48.h,
-        // +2 сверху и -10 снизу: добавляем верхний паддинг статус-бару
-        // самой AppBar, общий toolbarHeight сокращаем на 8 — в сумме
-        // даёт сдвиг вверх на 10 снизу и прибавку 2 сверху.
         leading: Padding(
           padding: EdgeInsets.only(top: 2.h),
           child: IconButton(
@@ -128,8 +132,6 @@ class _OrderFeedScreenState extends State<OrderFeedScreen> {
         items: kMainNavItems,
         currentIndex: 0,
         onTap: (int i) {
-          // Сначала выставляем нужный таб в shell через общий notifier,
-          // затем возвращаемся к корневому маршруту shell.
           MainShell.selectedTab.value = i;
           Navigator.of(context).popUntil((Route<dynamic> r) => r.isFirst);
         },
@@ -153,10 +155,7 @@ class _OrderFeedScreenState extends State<OrderFeedScreen> {
                   controller: _searchCtrl,
                   hintText: _tab == 1 ? 'Поиск по адресу' : 'Поиск',
                   onFilterTap: _openFilter,
-                  onChanged: (String v) => setState(() {
-                    _query = v;
-                    _addressSelected = false;
-                  }),
+                  onChanged: _onSearchChanged,
                   showFilterBadge: _hasActiveFilter,
                 ),
               ),
@@ -174,67 +173,38 @@ class _OrderFeedScreenState extends State<OrderFeedScreen> {
               else
                 SizedBox(height: 16.h),
               Expanded(
-                // IndexedStack вместо ternary — чтобы состояние обоих табов
-                // (ввод в поиске, позиция скролла, карта) сохранялось при
-                // переключении и не сбрасывалось при setState от ввода текста.
-                child: IndexedStack(
-                  index: _tab,
-                  children: <Widget>[
-                    _visibleOrders.isEmpty
-                        ? const _EmptyOrdersState()
-                        : MediaQuery.removePadding(
-                            context: context,
-                            removeTop: true,
-                            child: ListView.separated(
-                              // Верхний отступ задают либо чип-ряд (его
-                              // собственный 8.h bottom), либо
-                              // SizedBox(16.h) выше — здесь всегда 0.
-                              padding:
-                                  EdgeInsets.fromLTRB(16.w, 0, 16.w, 16.h),
-                              itemCount: _visibleOrders.length,
-                              separatorBuilder: (_, _) =>
-                                  SizedBox(height: 16.h),
-                              itemBuilder: (BuildContext context, int i) {
-                                final CatalogOrderMock o = _visibleOrders[i];
-                                return Container(
-                                  decoration: BoxDecoration(
-                                    color: AppColors.fieldFill,
-                                    borderRadius: BorderRadius.circular(14.r),
-                                  ),
-                                  clipBehavior: Clip.antiAlias,
-                                  child: OrderCard(
-                                    title: o.title,
-                                    address: o.address,
-                                    rentDate: o.rentDate,
-                                    publishedAgo: o.publishedAgo,
-                                    equipment: o.equipment,
-                                    highlightEquipment:
-                                        AppliedFilter.equipment,
-                                    onTap: () => Navigator.of(context).push(
-                                      MaterialPageRoute<void>(
-                                        builder: (_) => OrderDetailScreen(
-                                          orderId: o.id,
-                                          multipleEquipment:
-                                              o.equipment.length > 1,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
-                          ),
-                    _OrdersMapWithCard(orders: _visibleOrders),
-                  ],
+                child: FutureBuilder<List<OrderListItem>>(
+                  future: _ordersFuture,
+                  builder: (BuildContext context,
+                      AsyncSnapshot<List<OrderListItem>> snap) {
+                    if (snap.connectionState != ConnectionState.done) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    if (snap.hasError) {
+                      return _FeedError(
+                        onRetry: () => setState(() {
+                          _ordersFuture = _fetchOrders();
+                        }),
+                      );
+                    }
+                    final List<OrderListItem> orders =
+                        snap.data ?? const <OrderListItem>[];
+                    return IndexedStack(
+                      index: _tab,
+                      children: <Widget>[
+                        orders.isEmpty
+                            ? const _EmptyOrdersState()
+                            : _OrderList(orders: orders),
+                        _OrdersMapWithCard(orders: orders),
+                      ],
+                    );
+                  },
                 ),
               ),
             ],
           ),
-          // Выпадающий список адресов при вводе на вкладке «На карте».
           if (_tab == 1 && _query.trim().isNotEmpty && !_addressSelected)
             Positioned(
-              // Вплотную под строкой поиска: высота поиска (44h) + нижний
-              // паддинг CatalogSearchBar (12h).
               top: 44.h + 3.h,
               left: 16.w,
               right: 16.w,
@@ -245,12 +215,57 @@ class _OrderFeedScreenState extends State<OrderFeedScreen> {
                   setState(() {
                     _query = address;
                     _addressSelected = true;
+                    _ordersFuture = _fetchOrders();
                   });
                   FocusScope.of(context).unfocus();
                 },
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+class _OrderList extends StatelessWidget {
+  const _OrderList({required this.orders});
+  final List<OrderListItem> orders;
+
+  @override
+  Widget build(BuildContext context) {
+    return MediaQuery.removePadding(
+      context: context,
+      removeTop: true,
+      child: ListView.separated(
+        padding: EdgeInsets.fromLTRB(16.w, 0, 16.w, 16.h),
+        itemCount: orders.length,
+        separatorBuilder: (_, _) => SizedBox(height: 16.h),
+        itemBuilder: (BuildContext context, int i) {
+          final OrderListItem o = orders[i];
+          return Container(
+            decoration: BoxDecoration(
+              color: AppColors.fieldFill,
+              borderRadius: BorderRadius.circular(14.r),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: OrderCard(
+              title: o.title,
+              address: o.address,
+              rentDate: formatRentDate(o),
+              publishedAgo: formatPublishedAgo(o.publishedAt),
+              equipment: o.machineryTitles,
+              highlightEquipment: AppliedFilter.equipment,
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => OrderDetailScreen(
+                    orderId: o.id,
+                    multipleEquipment: o.machineryTitles.length > 1,
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -304,238 +319,29 @@ class _EmptyOrdersState extends StatelessWidget {
   }
 }
 
-class CatalogOrderMock {
-  const CatalogOrderMock({
-    required this.id,
-    required this.title,
-    required this.address,
-    required this.rentDate,
-    required this.publishedAgo,
-    required this.equipment,
-    this.categories = const <String>[],
-    required this.customerId,
-    required this.customerName,
-    required this.customerRating,
-    required this.customerReviews,
-  });
-  final String id;
-  final String title;
-  final String address;
-  final String rentDate;
-  final String publishedAgo;
-  final List<String> equipment;
-  final List<String> categories;
+class _FeedError extends StatelessWidget {
+  const _FeedError({required this.onRetry});
+  final VoidCallback onRetry;
 
-  /// Заказчик, опубликовавший заказ. Держим поля прямо в моке, а не
-  /// отдельным `CustomerMock`, чтобы при тапе карточки в список деталей
-  /// прокинуть ровно те же имя/рейтинг/число отзывов, что видит
-  /// исполнитель в ленте — без рассинхрона с хардкод-плейсхолдером.
-  final String customerId;
-  final String customerName;
-  final double customerRating;
-  final int customerReviews;
-
-  // Рейтинг/число отзывов у всех заказчиков синхронизированы с
-  // `_customerInitialMock` в `reviews_screen.dart` (10 отзывов, средний
-  // рейтинг 4,6). Иначе в шапке «4,9 • 43 отзыва», а в списке — 5.
-  static const List<CatalogOrderMock> all = <CatalogOrderMock>[
-    CatalogOrderMock(
-      id: '48201347',
-      title: 'Нужен экскаватор для копки траншеи',
-      address: 'Москва, ул. Новослободская, д 45',
-      rentDate: '10 июня · 09:00–18:00',
-      publishedAgo: '2 часа назад',
-      equipment: <String>['Экскаватор'],
-      categories: <String>['Земляные работы'],
-      customerId: '1',
-      customerName: 'Александр Иванов',
-      customerRating: 4.6,
-      customerReviews: 10,
-    ),
-    CatalogOrderMock(
-      id: '59102768',
-      title: 'Земляные работы',
-      address: 'Москва, ул. Садовая-Кудринская, д 12',
-      rentDate: '11 июня · 08:00–17:00',
-      publishedAgo: 'Сегодня в 11:30',
-      equipment: <String>['Автокран', 'Экскаватор'],
-      categories: <String>['Земляные работы', 'Строительные работы'],
-      customerId: '2',
-      customerName: 'Сергей Петров',
-      customerRating: 4.6,
-      customerReviews: 10,
-    ),
-    CatalogOrderMock(
-      id: '60418223',
-      title: 'Разработка котлована под фундамент',
-      address: 'Московская область, Реутов, ул. Октября, д 3',
-      rentDate: '12 июня · 09:00–17:00',
-      publishedAgo: 'Сегодня в 09:15',
-      equipment: <String>[
-        'Экскаватор',
-        'Автокран',
-        'Эвакуатор',
-        'Манипулятор',
-        'Автовышка',
-      ],
-      categories: <String>['Земляные работы', 'Строительные работы'],
-      customerId: '3',
-      customerName: 'Дмитрий Сидоров',
-      customerRating: 4.6,
-      customerReviews: 10,
-    ),
-    CatalogOrderMock(
-      id: '72144591',
-      title: 'Нужен экскаватор для копки траншеи',
-      address: 'Москва, Комсомольский пр-т, д 28',
-      rentDate: '13 июня · 10:00–18:00',
-      publishedAgo: '4 часа назад',
-      equipment: <String>['Экскаватор'],
-      categories: <String>['Земляные работы'],
-      customerId: '4',
-      customerName: 'Андрей Козлов',
-      customerRating: 4.6,
-      customerReviews: 10,
-    ),
-    CatalogOrderMock(
-      id: '83055903',
-      title: 'Вывоз грунта со стройплощадки',
-      address: 'Московская область, Химки, ул. Ленина, д 5',
-      rentDate: '16 июня · 08:00–14:00',
-      publishedAgo: '30 минут назад',
-      equipment: <String>['Самосвал'],
-      categories: <String>['Перевозка материалов', 'Земляные работы'],
-      customerId: '2',
-      customerName: 'Сергей Петров',
-      customerRating: 4.6,
-      customerReviews: 10,
-    ),
-    CatalogOrderMock(
-      id: '84720115',
-      title: 'Монтаж рекламного баннера на фасаде',
-      address: 'Москва, ул. Тверская, д 22',
-      rentDate: '17 июня · 10:00–15:00',
-      publishedAgo: '1 час назад',
-      equipment: <String>['Автовышка'],
-      categories: <String>['Высотные работы', 'Строительные работы'],
-      customerId: '3',
-      customerName: 'Дмитрий Сидоров',
-      customerRating: 4.6,
-      customerReviews: 10,
-    ),
-    CatalogOrderMock(
-      id: '92863449',
-      title: 'Бурение скважины на участке',
-      address: 'Московская область, Одинцово, ул. Чистяковой, д 18',
-      rentDate: '18 июня · 09:00–17:00',
-      publishedAgo: '3 часа назад',
-      equipment: <String>['Буроям'],
-      categories: <String>['Буровые работы'],
-      customerId: '1',
-      customerName: 'Александр Иванов',
-      customerRating: 4.6,
-      customerReviews: 10,
-    ),
-    CatalogOrderMock(
-      id: '10456284',
-      title: 'Перевозка стройматериалов на объект',
-      address: 'Московская область, Подольск, ул. Кирова, д 88',
-      rentDate: '19 июня · 07:00–16:00',
-      publishedAgo: '5 часов назад',
-      equipment: <String>['Манипулятор', 'Самосвал'],
-      categories: <String>['Перевозка материалов',
-          'Погрузочно-разгрузочные работы'],
-      customerId: '4',
-      customerName: 'Андрей Козлов',
-      customerRating: 4.6,
-      customerReviews: 10,
-    ),
-    CatalogOrderMock(
-      id: '21509715',
-      title: 'Разгрузка товара со склада',
-      address: 'Московская область, Балашиха, Советская ул., д 14',
-      rentDate: '20 июня · 10:00–15:00',
-      publishedAgo: 'Вчера в 10:15',
-      equipment: <String>['Погрузчик', 'Минипогрузчик'],
-      categories: <String>['Погрузочно-разгрузочные работы'],
-      customerId: '2',
-      customerName: 'Сергей Петров',
-      customerRating: 4.6,
-      customerReviews: 10,
-    ),
-    CatalogOrderMock(
-      id: '31608463',
-      title: 'Демонтаж кирпичного забора',
-      address: 'Московская область, Мытищи, Новомытищинский пр-т, д 30',
-      rentDate: '21 июня · 08:00–17:00',
-      publishedAgo: 'Вчера в 16:40',
-      equipment: <String>['Экскаватор-погрузчик', 'Самосвал'],
-      categories: <String>['Демонтажные работы', 'Перевозка материалов'],
-      customerId: '3',
-      customerName: 'Дмитрий Сидоров',
-      customerRating: 4.6,
-      customerReviews: 10,
-    ),
-    CatalogOrderMock(
-      id: '42871928',
-      title: 'Планировка придомовой территории',
-      address: 'Московская область, Красногорск, ул. Речная, д 7',
-      rentDate: '22 июня · 09:00–13:00',
-      publishedAgo: '2 дня назад',
-      equipment: <String>['Минитрактор'],
-      categories: <String>['Благоустройство территории',
-          'Дорожные работы'],
-      customerId: '1',
-      customerName: 'Александр Иванов',
-      customerRating: 4.6,
-      customerReviews: 10,
-    ),
-    CatalogOrderMock(
-      id: '53724659',
-      title: 'Подача бетона на высоту',
-      address: 'Москва, Ленинский пр-т, д 65',
-      rentDate: '23 июня · 11:00–17:00',
-      publishedAgo: '3 дня назад',
-      equipment: <String>['Бетононасос', 'Автокран'],
-      categories: <String>['Строительные работы', 'Высотные работы'],
-      customerId: '2',
-      customerName: 'Сергей Петров',
-      customerRating: 4.6,
-      customerReviews: 10,
-    ),
-    CatalogOrderMock(
-      id: '66281374',
-      title: 'Эвакуация автомобиля со двора',
-      address: 'Москва, Профсоюзная ул., д 102',
-      rentDate: '24 июня · 08:00–14:00',
-      publishedAgo: '4 дня назад',
-      equipment: <String>['Эвакуатор'],
-      categories: <String>['Перевозка материалов'],
-      customerId: '1',
-      customerName: 'Александр Иванов',
-      customerRating: 4.6,
-      customerReviews: 10,
-    ),
-    CatalogOrderMock(
-      id: '75913428',
-      title: 'Копка ям под столбы ограждения',
-      address: 'Москва, ул. Таганская, д 24',
-      rentDate: '25 июня · 10:00–18:00',
-      publishedAgo: '5 дней назад',
-      equipment: <String>['Миниэкскаватор', 'Буроям'],
-      categories: <String>['Земляные работы', 'Буровые работы'],
-      customerId: '4',
-      customerName: 'Андрей Козлов',
-      customerRating: 4.6,
-      customerReviews: 10,
-    ),
-  ];
-
-  static CatalogOrderMock? byId(String id) {
-    for (final CatalogOrderMock o in all) {
-      if (o.id == id) return o;
-    }
-    return null;
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: EdgeInsets.all(16.w),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Text(
+              'Не удалось загрузить ленту',
+              style: AppTextStyles.bodyMRegular
+                  .copyWith(color: AppColors.textPrimary),
+            ),
+            SizedBox(height: 12.h),
+            TextButton(onPressed: onRetry, child: const Text('Повторить')),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -544,7 +350,7 @@ class CatalogOrderMock {
 class _OrdersMapWithCard extends StatefulWidget {
   const _OrdersMapWithCard({required this.orders});
 
-  final List<CatalogOrderMock> orders;
+  final List<OrderListItem> orders;
 
   @override
   State<_OrdersMapWithCard> createState() => _OrdersMapWithCardState();
@@ -552,24 +358,18 @@ class _OrdersMapWithCard extends StatefulWidget {
 
 class _OrdersMapWithCardState extends State<_OrdersMapWithCard> {
   int _current = 0;
-  // Направление последнего свайпа: 1 — вверх (следующий),
-  // -1 — вниз (предыдущий). Используется, чтобы задать направление
-  // слайд-анимации в AnimatedSwitcher.
   int _direction = 1;
 
   @override
   void didUpdateWidget(covariant _OrdersMapWithCard oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Если набор заказов поменялся (например, применили/сняли фильтр),
-    // возвращаемся к первой карточке — иначе пользователь увидит
-    // произвольный заказ из середины отфильтрованного списка.
     if (!_sameOrders(oldWidget.orders, widget.orders)) {
       _current = 0;
       _direction = 1;
     }
   }
 
-  bool _sameOrders(List<CatalogOrderMock> a, List<CatalogOrderMock> b) {
+  bool _sameOrders(List<OrderListItem> a, List<OrderListItem> b) {
     if (a.length != b.length) return false;
     for (int i = 0; i < a.length; i++) {
       if (a[i].id != b[i].id) return false;
@@ -581,8 +381,7 @@ class _OrdersMapWithCardState extends State<_OrdersMapWithCard> {
     if (widget.orders.isEmpty) return;
     setState(() {
       _direction = delta;
-      _current =
-          (_current + delta) % widget.orders.length;
+      _current = (_current + delta) % widget.orders.length;
       if (_current < 0) _current += widget.orders.length;
     });
   }
@@ -592,9 +391,10 @@ class _OrdersMapWithCardState extends State<_OrdersMapWithCard> {
     if (widget.orders.isEmpty) {
       return const OrdersMapScreen();
     }
-    // Если список отфильтровался короче, держим индекс в пределах.
     final int idx = _current % widget.orders.length;
-    final CatalogOrderMock o = widget.orders[idx];
+    final OrderListItem o = widget.orders[idx];
+    final String firstMachinery =
+        o.machineryTitles.isEmpty ? '' : o.machineryTitles.first;
     return Stack(
       children: <Widget>[
         const Positioned.fill(child: OrdersMapScreen()),
@@ -606,7 +406,6 @@ class _OrdersMapWithCardState extends State<_OrdersMapWithCard> {
             behavior: HitTestBehavior.opaque,
             onVerticalDragEnd: (DragEndDetails d) {
               final double v = d.primaryVelocity ?? 0;
-              // Свайп вверх → следующий, вниз → предыдущий.
               if (v < -150) {
                 _shift(1);
               } else if (v > 150) {
@@ -617,7 +416,7 @@ class _OrdersMapWithCardState extends State<_OrdersMapWithCard> {
               MaterialPageRoute<void>(
                 builder: (_) => OrderDetailScreen(
                   orderId: o.id,
-                  multipleEquipment: o.equipment.length > 1,
+                  multipleEquipment: o.machineryTitles.length > 1,
                 ),
               ),
             ),
@@ -636,16 +435,10 @@ class _OrdersMapWithCardState extends State<_OrdersMapWithCard> {
               ),
               transitionBuilder: (Widget child, Animation<double> anim) {
                 final bool isIncoming = child.key == ValueKey<int>(idx);
-                // Входящая въезжает из направления свайпа, уходящая —
-                // улетает в противоположную сторону. Плюс масштаб и fade.
                 final double dir = _direction.toDouble();
                 final Animation<Offset> slide = Tween<Offset>(
-                  begin: isIncoming
-                      ? Offset(0, 0.55 * dir)
-                      : Offset.zero,
-                  end: isIncoming
-                      ? Offset.zero
-                      : Offset(0, -0.9 * dir),
+                  begin: isIncoming ? Offset(0, 0.55 * dir) : Offset.zero,
+                  end: isIncoming ? Offset.zero : Offset(0, -0.9 * dir),
                 ).animate(anim);
                 final Animation<double> scale = Tween<double>(
                   begin: isIncoming ? 0.88 : 1.0,
@@ -688,19 +481,19 @@ class _OrdersMapWithCardState extends State<_OrdersMapWithCard> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: <Widget>[
                         Text(
-                          o.equipment.first,
+                          firstMachinery,
                           style: TextStyle(
                             fontFamily: 'Roboto',
                             fontSize: 12.sp,
                             color: AppliedFilter.equipment
-                                    .contains(o.equipment.first)
+                                    .contains(firstMachinery)
                                 ? AppColors.primary
                                 : AppColors.textTertiary,
                             height: 1.3,
                           ),
                         ),
                         Text(
-                          o.publishedAgo,
+                          formatPublishedAgo(o.publishedAt),
                           style: TextStyle(
                             fontFamily: 'Roboto',
                             fontSize: 12.sp,
@@ -721,7 +514,8 @@ class _OrdersMapWithCardState extends State<_OrdersMapWithCard> {
                       ),
                     ),
                     SizedBox(height: 8.h),
-                    _MapCardLine(label: 'Дата аренды:', value: o.rentDate),
+                    _MapCardLine(
+                        label: 'Дата аренды:', value: formatRentDate(o)),
                     SizedBox(height: 4.h),
                     _MapCardLine(label: 'Адрес:', value: o.address),
                   ],
@@ -768,6 +562,7 @@ class _MapCardLine extends StatelessWidget {
 }
 
 /// Выпадающий список моковых адресов для вкладки «На карте».
+/// Пока статический список — подключение геокодера это отдельная задача.
 class _AddressSuggestions extends StatelessWidget {
   const _AddressSuggestions({
     required this.query,

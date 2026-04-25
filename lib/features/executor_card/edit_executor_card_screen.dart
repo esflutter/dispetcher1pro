@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:dispatcher_1/core/executor_card/executor_card_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_spacing.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
@@ -375,15 +376,57 @@ class _EditExecutorCardScreenState extends State<EditExecutorCardScreen> {
               padding: EdgeInsets.fromLTRB(16.w, 12.h, 16.w, 16.h),
               child: PrimaryButton(
                 label: 'Сохранить',
-                onPressed: () {
+                onPressed: () async {
+                  // Локальное обновление моковых сторов — чтобы экраны,
+                  // которые ещё на них смотрят, сразу увидели новые данные.
                   ExecutorCardData.location = _location.text;
-                  ExecutorCardData.radius = _radiusIndex >= 0 ? _radiusOptions[_radiusIndex] : null;
-                  // Спецтехника и категории услуг не сохраняются отдельно —
-                  // они computed из `ServiceData.services`; здесь не трогаем.
+                  ExecutorCardData.radius = _radiusIndex >= 0
+                      ? _radiusOptions[_radiusIndex]
+                      : null;
                   ExecutorCardData.experience = _experience.text;
                   ExecutorCardData.status = _selectedStatus;
                   ExecutorCardData.about = _about.text;
                   ExecutorCardScreen.cardCreated = true;
+
+                  // Реальный UPSERT в БД. Радиус — 10/20/50 км в int
+                  // (колонка `executor_cards.radius_km`).
+                  final int? radiusKm = _radiusIndex == 0
+                      ? 10
+                      : _radiusIndex == 1
+                          ? 20
+                          : _radiusIndex == 2
+                              ? 50
+                              : null;
+                  final String? legalStatus = switch (_selectedStatus) {
+                    'Физ. лицо' => 'individual',
+                    'Самозанятый' => 'self_employed',
+                    'ИП' => 'ip',
+                    'Юр. лицо' => 'legal_entity',
+                    _ => null,
+                  };
+                  final int? experienceYears =
+                      int.tryParse(_experience.text.trim());
+                  try {
+                    await ExecutorCardService.instance.upsert(
+                      locationAddress: _location.text.trim().isEmpty
+                          ? null
+                          : _location.text.trim(),
+                      radiusKm: radiusKm,
+                      isPublished: radiusKm != null,
+                      about: _about.text.trim().isEmpty
+                          ? null
+                          : _about.text.trim(),
+                      legalStatus: legalStatus,
+                      experienceYears: experienceYears,
+                    );
+                  } catch (e) {
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Не удалось сохранить: $e')),
+                    );
+                    return;
+                  }
+                  if (!context.mounted) return;
                   Navigator.of(context).pop();
                 },
               ),

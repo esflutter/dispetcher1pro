@@ -3,6 +3,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:dispatcher_1/core/catalog/catalog_service.dart';
+import 'package:dispatcher_1/core/catalog/machinery_visual.dart';
+import 'package:dispatcher_1/core/catalog/models.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_spacing.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
@@ -23,39 +26,7 @@ class CatalogCategoriesScreen extends StatefulWidget {
 }
 
 class _CatalogCategoriesScreenState extends State<CatalogCategoriesScreen> {
-  static const List<_Category> _categories = <_Category>[
-    _Category('excavator_loader', 'Экскаватор-погрузчик',
-        'assets/images/catalog/excavator_loader.webp',
-        scale: 0.90),
-    _Category('excavator', 'Экскаватор', 'assets/images/catalog/excavator.webp',
-        offset: Offset(-2, 0)),
-    _Category('loader', 'Погрузчик', 'assets/images/catalog/loader.webp',
-        scale: 1.15),
-    _Category('mini_excavator', 'Миниэкскаватор',
-        'assets/images/catalog/mini_excavator.webp',
-        scale: 0.95, offset: Offset(-2, 0)),
-    _Category('auger', 'Буроям', 'assets/images/catalog/auger.webp'),
-    _Category('samogruz', 'Самогруз', 'assets/images/catalog/samogruz.webp'),
-    _Category('autocrane', 'Автокран', 'assets/images/catalog/autocrane.webp'),
-    _Category('concrete_pump', 'Бетононасос',
-        'assets/images/catalog/concrete_pump.webp'),
-    _Category('tow_truck', 'Эвакуатор', 'assets/images/catalog/tow_truck.webp'),
-    _Category('aerial_platform', 'Автовышка',
-        'assets/images/catalog/aerial_platform.webp',
-        offset: Offset(-2, 0)),
-    _Category('manipulator', 'Манипулятор',
-        'assets/images/catalog/manipulator.webp',
-        scale: 0.94, offset: Offset(-4, 0)),
-    _Category('mini_loader', 'Минипогрузчик',
-        'assets/images/catalog/mini_loader.webp',
-        scale: 0.95),
-    _Category('dump_truck', 'Самосвал',
-        'assets/images/catalog/dump_truck.webp',
-        scale: 1.03),
-    _Category('mini_tractor', 'Минитрактор',
-        'assets/images/catalog/mini_tractor.webp',
-        scale: 0.9025),
-  ];
+  late Future<List<MachineryRef>> _machineryFuture;
 
   static const List<_SearchableOrder> _allOrders = <_SearchableOrder>[
     _SearchableOrder(
@@ -110,6 +81,12 @@ class _CatalogCategoriesScreenState extends State<CatalogCategoriesScreen> {
   String _query = '';
 
   @override
+  void initState() {
+    super.initState();
+    _machineryFuture = CatalogService.instance.listActiveMachinery();
+  }
+
+  @override
   void dispose() {
     _searchCtrl.dispose();
     super.dispose();
@@ -150,43 +127,62 @@ class _CatalogCategoriesScreenState extends State<CatalogCategoriesScreen> {
   }
 
   Widget _buildCategoriesGrid() {
-    return Padding(
-      padding: EdgeInsets.symmetric(horizontal: AppSpacing.screenH),
-      child: GridView.builder(
-        padding: EdgeInsets.symmetric(vertical: AppSpacing.md),
-        itemCount: _categories.length,
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-          mainAxisSpacing: 12.h,
-          crossAxisSpacing: 12.w,
-          childAspectRatio: 168 / 112,
-        ),
-        itemBuilder: (BuildContext context, int i) {
-          final _Category c = _categories[i];
-          return CategoryCard(
-            title: c.title,
-            imageAsset: c.asset,
-            imageScale: c.scale,
-            imageOffset: c.offset,
-            onTap: () {
-              // Выбор категории = быстрый фильтр: заменяем список техники
-              // на одну выбранную и инкрементим ревизию, чтобы лента
-              // перерисовалась с учётом фильтра.
-              AppliedFilter.equipment
-                ..clear()
-                ..add(c.title);
-              AppliedFilter.revision.value =
-                  AppliedFilter.revision.value + 1;
-              Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => OrderFeedScreen(
-                      categoryId: c.id, categoryTitle: c.title),
-                ),
+    return FutureBuilder<List<MachineryRef>>(
+      future: _machineryFuture,
+      builder: (BuildContext context, AsyncSnapshot<List<MachineryRef>> snap) {
+        if (snap.connectionState != ConnectionState.done) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snap.hasError) {
+          return _CatalogLoadError(
+            onRetry: () => setState(() {
+              _machineryFuture = CatalogService.instance.listActiveMachinery();
+            }),
+          );
+        }
+        final List<MachineryRef> items = snap.data ?? const <MachineryRef>[];
+        return Padding(
+          padding: EdgeInsets.symmetric(horizontal: AppSpacing.screenH),
+          child: GridView.builder(
+            padding: EdgeInsets.symmetric(vertical: AppSpacing.md),
+            itemCount: items.length,
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              mainAxisSpacing: 12.h,
+              crossAxisSpacing: 12.w,
+              childAspectRatio: 168 / 112,
+            ),
+            itemBuilder: (BuildContext context, int i) {
+              final MachineryRef m = items[i];
+              final MachineryVisual v = MachineryVisual.lookup(m.title);
+              return CategoryCard(
+                title: m.title,
+                imageAsset: v.asset,
+                imageScale: v.scale,
+                imageOffset: v.offset,
+                onTap: () {
+                  // Выбор техники = быстрый фильтр: заменяем список техники
+                  // на одну выбранную и инкрементим ревизию, чтобы лента
+                  // перерисовалась с учётом фильтра.
+                  AppliedFilter.equipment
+                    ..clear()
+                    ..add(m.title);
+                  AppliedFilter.revision.value =
+                      AppliedFilter.revision.value + 1;
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => OrderFeedScreen(
+                        categoryId: m.id.toString(),
+                        categoryTitle: m.title,
+                      ),
+                    ),
+                  );
+                },
               );
             },
-          );
-        },
-      ),
+          ),
+        );
+      },
     );
   }
 
@@ -353,21 +349,33 @@ class _CatalogHeader extends StatelessWidget {
   }
 }
 
-class _Category {
-  const _Category(
-    this.id,
-    this.title,
-    this.asset, {
-    this.scale = 1.0,
-    this.offset = Offset.zero,
-  });
-  final String id;
-  final String title;
-  final String asset;
-  /// Множитель визуального размера иллюстрации (см. CategoryCard.imageScale).
-  final double scale;
-  /// Пиксельный сдвиг иллюстрации (см. CategoryCard.imageOffset).
-  final Offset offset;
+class _CatalogLoadError extends StatelessWidget {
+  const _CatalogLoadError({required this.onRetry});
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: EdgeInsets.all(AppSpacing.md),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Text(
+              'Не удалось загрузить каталог',
+              style: AppTextStyles.bodyMRegular
+                  .copyWith(color: AppColors.textPrimary),
+            ),
+            SizedBox(height: 12.h),
+            TextButton(
+              onPressed: onRetry,
+              child: const Text('Повторить'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _SearchableOrder {

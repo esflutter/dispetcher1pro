@@ -122,4 +122,16 @@ class AccountBlock {
     _until = null;
     if (notifier.value) notifier.value = false;
   }
+
+  /// Установить точную дату снятия (из `profiles.blocked_until` БД).
+  /// Если в прошлом или null — блок снимается.
+  static void setUntil(DateTime? until) {
+    if (until == null || until.isBefore(DateTime.now())) {
+      _until = null;
+      if (notifier.value) notifier.value = false;
+      return;
+    }
+    _until = until;
+    if (!notifier.value) notifier.value = true;
+  }
 }

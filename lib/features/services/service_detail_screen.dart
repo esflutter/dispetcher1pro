@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:dispatcher_1/core/my_services/models.dart';
+import 'package:dispatcher_1/core/my_services/my_services_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
 import 'package:dispatcher_1/core/utils/photo_source.dart';
@@ -11,23 +13,16 @@ import 'package:dispatcher_1/core/widgets/dark_sub_app_bar.dart';
 import 'package:dispatcher_1/core/widgets/photo_gallery_screen.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
 import 'package:dispatcher_1/features/catalog/widgets/catalog_search_bar.dart';
-import 'package:dispatcher_1/features/services/my_services_screen.dart';
 
 /// Склонение «час» после предлога «от» (род. падеж).
-String _hoursWord(String text) {
-  final int? n = int.tryParse(text);
-  if (n == null) return 'часов';
+String _hoursWord(int n) {
   final int mod100 = n % 100;
   if (mod100 >= 11 && mod100 <= 14) return 'часов';
   if (n % 10 == 1) return 'часа';
   return 'часов';
 }
 
-/// Цена непустая и не «0» — тогда показываем блок «₽ / час» или
-/// «₽ / день». Иначе скрываем, чтобы не рисовать «0 ₽».
-bool _hasPrice(String value) => value.isNotEmpty && value != '0';
-
-/// Экран «Детали услуги».
+/// Экран «Детали услуги» — читает одну услугу из БД.
 class ServiceDetailScreen extends StatefulWidget {
   const ServiceDetailScreen({super.key, required this.serviceId});
 
@@ -38,26 +33,16 @@ class ServiceDetailScreen extends StatefulWidget {
 }
 
 class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
-  ServiceMock? get _service {
-    try {
-      return ServiceData.services.firstWhere((s) => s.id == widget.serviceId);
-    } catch (_) {
-      return null;
-    }
+  late Future<MyServiceDetail?> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = MyServicesService.instance.getMine(widget.serviceId);
   }
 
   @override
   Widget build(BuildContext context) {
-    final s = _service;
-    if (s == null) {
-      return Scaffold(
-        appBar: const DarkSubAppBar(title: 'Детали услуги'),
-        body: Center(
-          child: Text('Услуга не найдена', style: AppTextStyles.body),
-        ),
-      );
-    }
-
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: const DarkSubAppBar(title: 'Детали услуги'),
@@ -66,118 +51,183 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
         child: AiAssistantFab(onTap: () => context.push('/assistant/chat')),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
-      body: Column(
-        children: [
-          Expanded(
-            child: SingleChildScrollView(
-              padding: EdgeInsets.fromLTRB(16.w, 16.h, 16.w, 0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    s.title,
-                    style: AppTextStyles.titleL.copyWith(
-                      fontWeight: FontWeight.w700,
-                      height: 1.2,
-                    ),
+      body: FutureBuilder<MyServiceDetail?>(
+        future: _future,
+        builder: (BuildContext context,
+            AsyncSnapshot<MyServiceDetail?> snap) {
+          if (snap.connectionState != ConnectionState.done) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snap.hasError) {
+            return _RetryView(
+              onRetry: () => setState(() {
+                _future =
+                    MyServicesService.instance.getMine(widget.serviceId);
+              }),
+            );
+          }
+          final MyServiceDetail? s = snap.data;
+          if (s == null) {
+            return Center(
+              child: Text('Услуга не найдена', style: AppTextStyles.body),
+            );
+          }
+          return _Content(
+            service: s,
+            onEdit: () async {
+              await context.push('/services/${widget.serviceId}/edit');
+              if (!mounted) return;
+              setState(() {
+                _future =
+                    MyServicesService.instance.getMine(widget.serviceId);
+              });
+            },
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _Content extends StatelessWidget {
+  const _Content({required this.service, required this.onEdit});
+  final MyServiceDetail service;
+  final VoidCallback onEdit;
+
+  String _fmtPrice(double? v) {
+    if (v == null) return '';
+    final int i = v.round();
+    final String s = i.toString();
+    final StringBuffer b = StringBuffer();
+    for (int k = 0; k < s.length; k++) {
+      if (k > 0 && (s.length - k) % 3 == 0) b.write(' ');
+      b.write(s[k]);
+    }
+    return b.toString();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final String perHour = _fmtPrice(service.pricePerHour);
+    final String perDay = _fmtPrice(service.pricePerDay);
+    final bool hasPerHour = perHour.isNotEmpty;
+    final bool hasPerDay = perDay.isNotEmpty;
+    return Column(
+      children: <Widget>[
+        Expanded(
+          child: SingleChildScrollView(
+            padding: EdgeInsets.fromLTRB(16.w, 16.h, 16.w, 0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  service.title,
+                  style: AppTextStyles.titleL.copyWith(
+                    fontWeight: FontWeight.w700,
+                    height: 1.2,
                   ),
-                  if (_hasPrice(s.pricePerHour) || _hasPrice(s.pricePerDay))
-                    SizedBox(height: 16.h),
-                  if (_hasPrice(s.pricePerHour) || _hasPrice(s.pricePerDay))
-                    Row(
-                      children: [
-                        if (_hasPrice(s.pricePerHour)) ...[
-                          Text('₽ / час',
-                              style: AppTextStyles.body.copyWith(
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.textPrimary,
-                              )),
-                          SizedBox(width: 6.w),
-                          Text('${s.pricePerHour} ₽',
-                              style: AppTextStyles.bodyMedium.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                  color: AppColors.primary)),
-                          if (_hasPrice(s.pricePerDay)) SizedBox(width: 24.w),
-                        ],
-                        if (_hasPrice(s.pricePerDay)) ...[
-                          Text('₽ / день',
-                              style: AppTextStyles.body.copyWith(
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.textPrimary,
-                              )),
-                          SizedBox(width: 6.w),
-                          Text('${s.pricePerDay} ₽',
-                              style: AppTextStyles.bodyMedium.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                  color: AppColors.primary)),
-                        ],
+                ),
+                if (hasPerHour || hasPerDay) SizedBox(height: 16.h),
+                if (hasPerHour || hasPerDay)
+                  Row(
+                    children: <Widget>[
+                      if (hasPerHour) ...<Widget>[
+                        Text('₽ / час',
+                            style: AppTextStyles.body.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.textPrimary,
+                            )),
+                        SizedBox(width: 6.w),
+                        Text('$perHour ₽',
+                            style: AppTextStyles.bodyMedium.copyWith(
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.primary)),
+                        if (hasPerDay) SizedBox(width: 24.w),
                       ],
-                    ),
+                      if (hasPerDay) ...<Widget>[
+                        Text('₽ / день',
+                            style: AppTextStyles.body.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.textPrimary,
+                            )),
+                        SizedBox(width: 6.w),
+                        Text('$perDay ₽',
+                            style: AppTextStyles.bodyMedium.copyWith(
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.primary)),
+                      ],
+                    ],
+                  ),
+                if (service.minHours != null) ...<Widget>[
                   SizedBox(height: 16.h),
                   Row(
-                    children: [
+                    children: <Widget>[
                       Text('Минимальный заказ:',
                           style: AppTextStyles.body.copyWith(
                             fontSize: 14.sp,
                             color: AppColors.textSecondary,
                           )),
                       SizedBox(width: 6.w),
-                      Text('от ${s.minOrder} ${_hoursWord(s.minOrder)}',
-                          style: AppTextStyles.bodyMedium.copyWith(
-                            fontSize: 14.sp,
-                            fontWeight: FontWeight.w600,
-                          )),
+                      Text(
+                        'от ${service.minHours} ${_hoursWord(service.minHours!)}',
+                        style: AppTextStyles.bodyMedium.copyWith(
+                          fontSize: 14.sp,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                     ],
                   ),
-                  SizedBox(height: 16.h),
-                  Text(s.description,
-                      style: AppTextStyles.body
-                          .copyWith(fontSize: 14.sp, height: 1.4)),
-                  SizedBox(height: 16.h),
-                  _SectionTitle('Спецтехника'),
-                  SizedBox(height: 8.h),
-                  _ChipRow(items: s.machinery),
-                  SizedBox(height: 16.h),
-                  _SectionTitle('Категория работ'),
-                  SizedBox(height: 8.h),
-                  _ChipRow(items: s.categories),
-                  SizedBox(height: 16.h),
-                  if (s.photos.isNotEmpty) ...<Widget>[
-                    _SectionTitle('Фото'),
-                    SizedBox(height: 8.h),
-                    _PhotosGrid(photos: s.photos),
-                  ],
                 ],
-              ),
-            ),
-          ),
-          Container(
-            decoration: BoxDecoration(
-              color: AppColors.background,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.08),
-                  blurRadius: 8,
-                  offset: const Offset(0, -2),
-                ),
+                if (service.description != null &&
+                    service.description!.trim().isNotEmpty) ...<Widget>[
+                  SizedBox(height: 16.h),
+                  Text(
+                    service.description!,
+                    style: AppTextStyles.body
+                        .copyWith(fontSize: 14.sp, height: 1.4),
+                  ),
+                ],
+                SizedBox(height: 16.h),
+                _SectionTitle('Спецтехника'),
+                SizedBox(height: 8.h),
+                _ChipRow(items: service.machineryTitles),
+                SizedBox(height: 16.h),
+                _SectionTitle('Категория работ'),
+                SizedBox(height: 8.h),
+                _ChipRow(items: service.categoryTitles),
+                SizedBox(height: 16.h),
+                if (service.photos.isNotEmpty) ...<Widget>[
+                  _SectionTitle('Фото'),
+                  SizedBox(height: 8.h),
+                  _PhotosGrid(photos: service.photos),
+                ],
               ],
             ),
-            padding: EdgeInsets.fromLTRB(
-              16.w,
-              12.h,
-              16.w,
-              16.h + MediaQuery.of(context).padding.bottom,
-            ),
-            child: PrimaryButton(
-              label: 'Редактировать',
-              onPressed: () async {
-                await context.push('/services/${widget.serviceId}/edit');
-                if (mounted) setState(() {});
-              },
-            ),
           ),
-        ],
-      ),
+        ),
+        Container(
+          decoration: BoxDecoration(
+            color: AppColors.background,
+            boxShadow: <BoxShadow>[
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.08),
+                blurRadius: 8,
+                offset: const Offset(0, -2),
+              ),
+            ],
+          ),
+          padding: EdgeInsets.fromLTRB(
+            16.w,
+            12.h,
+            16.w,
+            16.h + MediaQuery.of(context).padding.bottom,
+          ),
+          child: PrimaryButton(
+            label: 'Редактировать',
+            onPressed: onEdit,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -208,7 +258,7 @@ class _ChipRow extends StatelessWidget {
       runSpacing: 8.h,
       children: items
           .map(
-            (label) => Container(
+            (String label) => Container(
               padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 5.h),
               decoration: BoxDecoration(
                 color: AppColors.surface,
@@ -263,6 +313,30 @@ class _PhotosGrid extends StatelessWidget {
           child: isAssetPath(photos[i])
               ? Image.asset(photos[i], fit: BoxFit.cover)
               : Image.file(File(photos[i]), fit: BoxFit.cover),
+        ),
+      ),
+    );
+  }
+}
+
+class _RetryView extends StatelessWidget {
+  const _RetryView({required this.onRetry});
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: EdgeInsets.all(16.w),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Text('Не удалось загрузить услугу',
+                style: AppTextStyles.bodyMRegular
+                    .copyWith(color: AppColors.textPrimary)),
+            SizedBox(height: 12.h),
+            TextButton(onPressed: onRetry, child: const Text('Повторить')),
+          ],
         ),
       ),
     );

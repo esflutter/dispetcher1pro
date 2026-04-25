@@ -1,8 +1,13 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:dispatcher_1/core/auth/auth_reset.dart';
+import 'package:dispatcher_1/core/profile/profile_service.dart';
+import 'package:dispatcher_1/core/storage/storage_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_spacing.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
@@ -48,22 +53,24 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   @override
   void initState() {
     super.initState();
-    _nameFocus.addListener(() {
+    _nameFocus.addListener(() async {
       if (!_nameFocus.hasFocus) {
-        // Имя обязательно — пустое значение откатываем к последнему
-        // сохранённому валидному имени.
         final String value = _nameCtrl.text.trim();
         if (value.isEmpty) {
           _nameCtrl.text = CropResult.userName;
-        } else {
+        } else if (value != CropResult.userName) {
           CropResult.userName = value;
+          try {
+            await ProfileService.instance.update(name: value);
+          } catch (_) {
+            // Сеть/БД упала — имя останется в UI локально, но попадёт
+            // в БД при следующем успешном сохранении.
+          }
         }
       }
     });
-    _emailFocus.addListener(() {
+    _emailFocus.addListener(() async {
       if (_emailFocus.hasFocus) {
-        // Пользователь вернулся в поле редактировать — убираем подсказку
-        // об ошибке до следующего blur.
         if (_emailError != null) {
           setState(() => _emailError = null);
         }
@@ -71,11 +78,14 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         final String value = _emailCtrl.text.trim();
         final bool valid = value.isEmpty || _emailRegex.hasMatch(value);
         if (valid) {
-          CropResult.userEmail = value;
+          if (value != CropResult.userEmail) {
+            CropResult.userEmail = value;
+            try {
+              await ProfileService.instance.updatePrivateEmail(value);
+            } catch (_) {/* silent */}
+          }
           if (_emailError != null) setState(() => _emailError = null);
         } else {
-          // Невалидное значение не сохраняем в [CropResult]. Текст в поле
-          // не откатываем — чтобы пользователь увидел ошибку и исправил.
           setState(() => _emailError = 'Некорректная электронная почта');
         }
       }
@@ -185,10 +195,24 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 danger: true,
                 onTap: () async {
                   final confirmed = await showDeleteAccountAlert(context);
-                  if (confirmed == true && context.mounted) {
-                    deleteAccount();
-                    context.go('/auth/phone');
-                  }
+                  if (confirmed != true || !context.mounted) return;
+                  // hard_delete_user — security definer RPC: удаляет
+                  // auth.users (CASCADE убирает profiles и связанные
+                  // данные), создаёт маркер бана по SHA-256 от телефона.
+                  try {
+                    final user = Supabase.instance.client.auth.currentUser;
+                    if (user != null) {
+                      await Supabase.instance.client
+                          .rpc('hard_delete_user', params: <String, dynamic>{
+                        'p_user_id': user.id,
+                        'p_reason': 'user_request',
+                      });
+                    }
+                  } catch (_) {/* всё равно делаем local cleanup */}
+                  await Supabase.instance.client.auth.signOut();
+                  if (!context.mounted) return;
+                  deleteAccount();
+                  context.go('/auth/phone');
                 },
               ),
               SizedBox(height: AppSpacing.lg),
@@ -216,6 +240,24 @@ class _PhotoPickerState extends State<_PhotoPicker> {
     );
     if (result != null && mounted) {
       setState(() => CropResult.saved = result);
+      // Загружаем оригинал в Storage и сохраняем URL в profiles.avatar_url.
+      // Используем исходный путь (до кропа) — крой хранится только визуально
+      // в CropResult; серверное превью будем делать отдельно при показе.
+      final String? path = result.imagePath;
+      if (path != null && !path.startsWith('assets/')) {
+        _uploadAvatar(path);
+      }
+    }
+  }
+
+  Future<void> _uploadAvatar(String path) async {
+    try {
+      final String url =
+          await StorageService.instance.uploadAvatar(File(path));
+      await ProfileService.instance.update(avatarUrl: url);
+    } catch (_) {
+      // Ошибка загрузки не блокирует UI — локально кроп уже сохранён
+      // в CropResult.saved; синхронизируем при следующем успешном save.
     }
   }
 

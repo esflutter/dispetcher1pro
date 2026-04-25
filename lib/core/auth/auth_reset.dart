@@ -1,7 +1,6 @@
 import 'package:dispatcher_1/core/auth/session_cache.dart';
 import 'package:dispatcher_1/features/auth/photo_crop_screen.dart';
 import 'package:dispatcher_1/features/catalog/catalog_filter_screen.dart';
-import 'package:dispatcher_1/features/catalog/order_detail_screen.dart';
 import 'package:dispatcher_1/features/executor_card/executor_card_screen.dart';
 import 'package:dispatcher_1/features/orders/my_orders_screen.dart';
 import 'package:dispatcher_1/features/profile/account_block.dart';
@@ -55,10 +54,6 @@ void _clearAll() {
 
   // Заказы (новые/принятые/отклонённые).
   MyOrdersStore.clear();
-
-  // Трекер откликов на заказы из каталога — чтобы на свежем аккаунте
-  // кнопка «Откликнуться» не была заблокирована прошлой сессией.
-  OrderDetailScreen.clearResponded();
 
   // Применённые фильтры каталога.
   AppliedFilter.clear();

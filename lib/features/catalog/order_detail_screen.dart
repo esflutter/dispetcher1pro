@@ -1,27 +1,26 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:dispatcher_1/core/catalog/catalog_service.dart';
+import 'package:dispatcher_1/core/catalog/format.dart';
+import 'package:dispatcher_1/core/catalog/models.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
+import 'package:dispatcher_1/core/widgets/clickable_address.dart';
 import 'package:dispatcher_1/core/widgets/customer_header.dart';
 import 'package:dispatcher_1/core/widgets/labeled_section.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
 import 'package:dispatcher_1/features/catalog/customer_card_screen.dart';
-import 'package:dispatcher_1/features/catalog/order_feed_screen.dart';
 import 'package:dispatcher_1/features/catalog/widgets/catalog_search_bar.dart';
 import 'package:dispatcher_1/features/catalog/widgets/respond_bottom_sheet.dart';
-import 'package:dispatcher_1/features/catalog/widgets/subscription_paywall.dart';
-import 'package:dispatcher_1/features/executor_card/executor_card_screen.dart';
-import 'package:dispatcher_1/features/orders/my_orders_screen.dart';
-import 'package:dispatcher_1/features/orders/widgets/order_alerts.dart';
-import 'package:dispatcher_1/features/profile/account_block.dart';
-import 'package:dispatcher_1/features/services/my_services_screen.dart';
 import 'package:dispatcher_1/features/profile/reviews_screen.dart';
-import 'package:dispatcher_1/features/profile/widgets/verification_badge.dart';
 
-/// Карточка заказа (детали). По Figma — заголовок заказчика сверху,
-/// далее «номер заказа → заголовок → дата публикации → секции».
+/// Карточка заказа (детали). Данные — из `public.orders` через
+/// [CatalogService.getOrderDetail]. Состояние "уже откликнулся" —
+/// тоже из БД (наличие не-терминального `order_matches` для этого
+/// executor_id+order_id).
 class OrderDetailScreen extends StatefulWidget {
   const OrderDetailScreen({
     super.key,
@@ -39,215 +38,125 @@ class OrderDetailScreen extends StatefulWidget {
   /// заказчик → заказ → заказчик → ...» в стеке навигации.
   final bool fromCustomerCard;
 
-  /// Трекер id заказов, на которые этот исполнитель уже откликнулся.
-  /// Живёт в памяти до появления бэкенда — чтобы нельзя было отправить
-  /// повторный отклик на тот же заказ. Чистится при logout/deleteAccount
-  /// через [clearResponded].
-  static final Set<String> respondedOrderIds = <String>{};
-
-  /// Сбрасывает трекер откликов — вызывается при выходе/удалении аккаунта,
-  /// чтобы на свежем аккаунте кнопка «Откликнуться» не была заблокирована
-  /// прошлой сессией.
-  static void clearResponded() {
-    respondedOrderIds.clear();
-  }
-
   @override
   State<OrderDetailScreen> createState() => _OrderDetailScreenState();
 }
 
 class _OrderDetailScreenState extends State<OrderDetailScreen> {
-  static const List<String> _multiEquipment = <String>[
-    'Экскаватор',
-    'Автокран',
-    'Манипулятор',
-    'Погрузчик',
-    'Автовышка',
-  ];
+  late Future<_OrderScreenData> _future;
+
+  // Локальный флаг: только что сделали отклик в этой сессии экрана.
+  // Доп. к тому, что приехало из БД в начальной загрузке.
+  bool _justResponded = false;
+  bool _responding = false;
 
   @override
   void initState() {
     super.initState();
-    AccountBlock.notifier.addListener(_refresh);
+    _future = _load();
   }
 
-  @override
-  void dispose() {
-    AccountBlock.notifier.removeListener(_refresh);
-    super.dispose();
+  Future<_OrderScreenData> _load() async {
+    final CatalogService svc = CatalogService.instance;
+    final List<dynamic> results = await Future.wait<dynamic>(<Future<dynamic>>[
+      svc.getOrderDetail(widget.orderId),
+      svc.hasActiveMatchForOrder(widget.orderId),
+    ]);
+    final OrderDetail? order = results[0] as OrderDetail?;
+    final bool hasMatch = results[1] as bool;
+    return _OrderScreenData(order: order, alreadyResponded: hasMatch);
   }
 
-  void _refresh() {
-    if (mounted) setState(() {});
-  }
-
-  bool get _verified => VerificationStatus.current.isVerified;
-  bool get _hasSubscription => VerificationStatus.hasSubscription;
-  bool get _alreadyResponded =>
-      OrderDetailScreen.respondedOrderIds.contains(widget.orderId);
-
-  /// Реальный список техники заказа. Если заказ найден в моке —
-  /// отдаём его `equipment`; иначе падаем на фолбэк по флагу
-  /// `multipleEquipment` (используется в точках вызова, где нет
-  /// конкретного заказа — например, в тестовых плейсхолдерах).
-  List<String> get _orderEquipment {
-    final CatalogOrderMock? order = CatalogOrderMock.byId(widget.orderId);
-    if (order != null && order.equipment.isNotEmpty) {
-      return order.equipment;
-    }
-    return widget.multipleEquipment
-        ? _multiEquipment
-        : const <String>['Экскаватор'];
-  }
-
-  Future<void> _onRespondTap() async {
-    if (AccountBlock.isBlocked) {
-      await showDialog<void>(
-        context: context,
-        barrierColor: Colors.black.withValues(alpha: 0.35),
-        builder: (_) => _BlockedDialog(),
-      );
-      return;
-    }
-
-    // 1. Проверка верификации — в процессе.
-    if (VerificationStatus.current == VerificationStatus.inProgress) {
-      if (!mounted) return;
-      await showDialog<void>(
-        context: context,
-        barrierColor: Colors.black.withValues(alpha: 0.35),
-        builder: (_) => _InProgressDialog(),
-      );
-      return;
-    }
-
-    // 2. Верификация не пройдена — предлагаем отправить документы.
-    if (!_verified) {
-      if (!mounted) return;
-      await showDialog<void>(
-        context: context,
-        barrierColor: Colors.black.withValues(alpha: 0.35),
-        builder: (_) => RespondModalDialog(verified: false),
-      );
-      if (mounted) setState(() {});
-      return;
-    }
-
-    // 3. Проверка подписки.
-    if (!_hasSubscription) {
-      if (VerificationStatus.subscriptionPaidUntilText != null) {
-        // Подписка приостановлена — показываем попап с кнопкой возобновления.
-        final bool? go = await showSubscriptionPausedDialog(context);
-        if (go == true && mounted) context.push('/subscription');
+  Future<void> _onRespondTap(OrderDetail order) async {
+    if (_responding) return;
+    setState(() => _responding = true);
+    try {
+      final CatalogService svc = CatalogService.instance;
+      final Map<String, String> myServices =
+          await svc.listMyActiveServicesByMachinery();
+      // Пересечение техники заказа с моими услугами.
+      final List<String> availableEquipment = order.machineryTitles
+          .where((String t) => myServices.containsKey(t))
+          .toList();
+      if (availableEquipment.isEmpty) {
+        if (!mounted) return;
+        setState(() => _responding = false);
+        await showDialog<void>(
+          context: context,
+          barrierColor: Colors.black.withValues(alpha: 0.35),
+          builder: (_) => _NoMatchingMachineryDialog(),
+        );
         return;
       }
-      final bool? subscribed = await Navigator.of(context).push<bool>(
-        MaterialPageRoute<bool>(
-          fullscreenDialog: true,
-          builder: (_) => const SubscriptionPaywall(),
-        ),
-      );
-      if (subscribed != true || !mounted) return;
-      VerificationStatus.hasSubscription = true;
-    }
 
-    // 4. Проверка карточки исполнителя — должна быть создана.
-    if (!ExecutorCardScreen.cardCreated) {
-      final bool? go = await showExecutorCardRequiredDialog(context);
-      if (go == true && mounted) {
-        await context.push('/executor-card/edit');
-        if (mounted) setState(() {});
+      String pickedMachinery;
+      if (availableEquipment.length == 1) {
+        pickedMachinery = availableEquipment.first;
+      } else {
+        if (!mounted) return;
+        // Sheet поддерживает мультивыбор, но в БД один отклик = одна услуга.
+        // Берём первую выбранную технику.
+        final List<String>? picked =
+            await showModalBottomSheet<List<String>>(
+          context: context,
+          isScrollControlled: true,
+          backgroundColor: Colors.transparent,
+          builder: (_) => PickEquipmentSheet(options: availableEquipment),
+        );
+        if (picked == null || picked.isEmpty || !mounted) {
+          setState(() => _responding = false);
+          return;
+        }
+        pickedMachinery = picked.first;
       }
-      return;
-    }
 
-    // 5. Фильтруем технику заказа по тому, что есть у исполнителя в
-    // услугах (`ExecutorCardData.machinery` — computed из services).
-    // Если пересечения нет — откликнуться нельзя, показываем диалог с
-    // подсказкой добавить нужный вид техники.
-    final List<String> eq = _orderEquipment;
-    final Set<String> ownedMach = ExecutorCardData.machinery.toSet();
-    final List<String> availableEq =
-        eq.where((String e) => ownedMach.contains(e)).toList();
-    if (availableEq.isEmpty) {
+      final String? serviceId = myServices[pickedMachinery];
+      if (serviceId == null) {
+        if (!mounted) return;
+        setState(() => _responding = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Не удалось найти услугу для выбранной техники.')),
+        );
+        return;
+      }
+
+      await svc.respondToOrder(orderId: widget.orderId, serviceId: serviceId);
       if (!mounted) return;
+      setState(() {
+        _justResponded = true;
+        _responding = false;
+      });
       await showDialog<void>(
         context: context,
         barrierColor: Colors.black.withValues(alpha: 0.35),
-        builder: (_) => _NoMatchingMachineryDialog(),
+        builder: (_) => RespondModalDialog(verified: true),
       );
-      return;
-    }
-    List<String> respondedEquipment = availableEq;
-    // Шторку выбора показываем только когда в заказе требуется
-    // больше одного вида техники. Если требуется ровно один —
-    // откликаемся без шторки, даже если у исполнителя совпали не
-    // все (всё равно выбирать не из чего).
-    if (eq.length > 1) {
-      final List<String>? picked = await showModalBottomSheet<List<String>>(
-        context: context,
-        isScrollControlled: true,
-        backgroundColor: Colors.transparent,
-        builder: (_) => PickEquipmentSheet(options: availableEq),
-      );
-      if (picked == null || picked.isEmpty || !mounted) {
-        return;
+    } on PostgrestException catch (e) {
+      if (!mounted) return;
+      setState(() => _responding = false);
+      // Уникальный индекс на (order_id, executor_id) при не-completed
+      // статусах — повторный отклик = дубликат.
+      if (e.code == '23505') {
+        setState(() => _justResponded = true);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Вы уже отправляли отклик на этот заказ.')),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Не удалось отправить отклик: ${e.message}')),
+        );
       }
-      respondedEquipment = picked;
-    }
-
-    // 5. Отклик отправлен — фиксируем, чтобы повторно нельзя было,
-    // и добавляем заказ в «Мои заказы» → «Новые» со статусом
-    // `offerSent` («Ожидает ответа заказчика»).
-    OrderDetailScreen.respondedOrderIds.add(widget.orderId);
-    final CatalogOrderMock? catalogOrder =
-        CatalogOrderMock.byId(widget.orderId);
-    if (catalogOrder != null) {
-      MyOrdersStore.addResponded(
-        id: catalogOrder.id,
-        title: catalogOrder.title,
-        equipment: respondedEquipment,
-        rentDate: catalogOrder.rentDate,
-        address: catalogOrder.address,
-        publishedAgo: catalogOrder.publishedAgo,
-        customerId: catalogOrder.customerId,
-        customerName: catalogOrder.customerName,
-        customerRating: catalogOrder.customerRating,
-        customerReviews: catalogOrder.customerReviews,
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _responding = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Не удалось отправить отклик.')),
       );
     }
-    if (!mounted) return;
-    setState(() {});
-    await showDialog<void>(
-      context: context,
-      barrierColor: Colors.black.withValues(alpha: 0.35),
-      builder: (_) => RespondModalDialog(verified: true),
-    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final CatalogOrderMock? order = CatalogOrderMock.byId(widget.orderId);
-    final List<String> equipment = order?.equipment ?? _orderEquipment;
-    final String orderTitle = order?.title ?? 'Разработка котлована под фундамент';
-    final String orderAddress =
-        order?.address ?? 'Московская область, Москва, Улица1, д 144';
-    final String orderRentDate = order?.rentDate ?? '15 июня · 09:00–18:00';
-    final String orderPublishedAgo = order?.publishedAgo ?? 'Вчера в 14:30';
-    final List<String> orderCategories = (order?.categories.isNotEmpty ?? false)
-        ? order!.categories
-        : const <String>['Земляные работы', 'Подготовка строительной площадки'];
-    // Заказчик тянется из мока — чтобы шапка в деталях совпадала с тем,
-    // что исполнитель видел в ленте. Фолбэк оставлен на случай, если
-    // заказ не найден по id.
-    final String customerId = order?.customerId ?? '1';
-    final String customerName = order?.customerName ?? 'Александр Иванов';
-    // Фолбэки синхронизированы с `CatalogOrderMock` (4.6/10) и длиной
-    // `_customerInitialMock` в `reviews_screen.dart` — иначе в шапке
-    // «15 отзывов», а в списке откроется 10.
-    final double customerRating = order?.customerRating ?? 4.6;
-    final int customerReviews = order?.customerReviews ?? 10;
-
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -275,13 +184,19 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
         ),
         title: Padding(
           padding: EdgeInsets.only(top: 2.h),
-          child: Text(
-            orderTitle,
-            style: AppTextStyles.titleS.copyWith(color: Colors.white),
-            overflow: TextOverflow.ellipsis,
+          child: FutureBuilder<_OrderScreenData>(
+            future: _future,
+            builder: (BuildContext context,
+                AsyncSnapshot<_OrderScreenData> snap) {
+              final String title = snap.data?.order?.title ?? 'Заказ';
+              return Text(
+                title,
+                style: AppTextStyles.titleS.copyWith(color: Colors.white),
+                overflow: TextOverflow.ellipsis,
+              );
+            },
           ),
         ),
-        actions: const <Widget>[],
       ),
       floatingActionButton: Padding(
         padding: EdgeInsets.only(bottom: 88.h),
@@ -290,132 +205,286 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
         ),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
-      body: Column(
-        children: <Widget>[
-          Expanded(
-            child: SingleChildScrollView(
-              padding: EdgeInsets.fromLTRB(16.w, 16.h, 16.w, 24.h),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      CustomerHeader(
-                        name: customerName,
-                        rating: customerRating,
-                        reviews: customerReviews,
-                        onTap: widget.fromCustomerCard
-                            ? () => Navigator.of(context).maybePop()
-                            : () => Navigator.of(context).push(
-                                  MaterialPageRoute<void>(
-                                    builder: (_) => CustomerCardScreen(
-                                      customerId: customerId,
-                                      customerName: customerName,
-                                      customerRating: customerRating,
-                                      customerReviews: customerReviews,
-                                    ),
-                                  ),
-                                ),
-                        onReviewsTap: () => Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) => ReviewsScreen(
-                              subject: ReviewSubject.customer,
-                              initialRating: customerRating,
-                              initialCount: customerReviews,
-                            ),
-                          ),
-                        ),
-                      ),
-                      SizedBox(height: 10.h),
-                      Text('№${widget.orderId.padLeft(6, '0')}',
-                          style: AppTextStyles.caption
-                              .copyWith(color: AppColors.textTertiary)),
-                      SizedBox(height: 4.h),
-                      Text(orderTitle,
-                          style: AppTextStyles.titleL.copyWith(height: 1.2)),
-                      SizedBox(height: 7.h),
-                      Text(orderPublishedAgo,
-                          style: AppTextStyles.caption
-                              .copyWith(color: AppColors.textTertiary)),
-                      SizedBox(height: 11.h),
-                      LabeledSection(
-                        title: 'Дата и время аренды',
-                        child: Text(orderRentDate,
-                            style: AppTextStyles.subBody.copyWith(fontWeight: FontWeight.w400)),
-                      ),
-                      LabeledSection(
-                        title: 'Адрес',
-                        child: Text(
-                            orderAddress,
-                            style: AppTextStyles.subBody.copyWith(
-                              fontWeight: FontWeight.w400,
-                              decoration: TextDecoration.underline,
-                            )),
-                      ),
-                      LabeledSection(
-                        title: 'Требуемая спецтехника',
-                        child: Wrap(
-                          spacing: 8.w,
-                          runSpacing: 8.h,
-                          children: equipment
-                              .map((String e) => _OutlinedChip(label: e))
-                              .toList(),
-                        ),
-                      ),
-                      LabeledSection(
-                        title: 'Категория работ',
-                        child: Wrap(
-                          spacing: 8.w,
-                          runSpacing: 8.h,
-                          children: orderCategories
-                              .map((String c) => _OutlinedChip(label: c))
-                              .toList(),
-                        ),
-                      ),
-                      LabeledSection(
-                        title: 'Характер работ',
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: <Widget>[
-                            Text('Разработка грунта — 40 м³',
-                                style: AppTextStyles.subBody.copyWith(fontWeight: FontWeight.w400)),
-                            Text('Планировка участка — 2 × 12 × 15 м',
-                                style: AppTextStyles.subBody.copyWith(fontWeight: FontWeight.w400)),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-          Container(
-            decoration: BoxDecoration(
-              color: AppColors.background,
-              boxShadow: <BoxShadow>[
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.08),
-                  blurRadius: 8,
-                  offset: const Offset(0, -2),
-                ),
-              ],
-            ),
-            padding: EdgeInsets.fromLTRB(
-                16.w,
-                12.h,
-                16.w,
-                16.h + MediaQuery.of(context).padding.bottom),
-            child: PrimaryButton(
-              label: _alreadyResponded ? 'Вы уже откликнулись' : 'Откликнуться',
-              enabled: !AccountBlock.isBlocked && !_alreadyResponded,
-              onPressed: (AccountBlock.isBlocked || _alreadyResponded)
-                  ? null
-                  : _onRespondTap,
-            ),
-          ),
-        ],
+      body: FutureBuilder<_OrderScreenData>(
+        future: _future,
+        builder: (BuildContext context,
+            AsyncSnapshot<_OrderScreenData> snap) {
+          if (snap.connectionState != ConnectionState.done) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snap.hasError) {
+            return _DetailError(
+              onRetry: () => setState(() {
+                _future = _load();
+              }),
+            );
+          }
+          final _OrderScreenData? data = snap.data;
+          final OrderDetail? order = data?.order;
+          if (data == null || order == null) {
+            return _OrderNotFound();
+          }
+          final bool alreadyResponded =
+              data.alreadyResponded || _justResponded;
+          return _OrderDetailBody(
+            order: order,
+            alreadyResponded: alreadyResponded,
+            responding: _responding,
+            fromCustomerCard: widget.fromCustomerCard,
+            onRespond: () => _onRespondTap(order),
+          );
+        },
       ),
     );
   }
 }
 
+class _OrderScreenData {
+  const _OrderScreenData({required this.order, required this.alreadyResponded});
+  final OrderDetail? order;
+  final bool alreadyResponded;
+}
+
+class _OrderDetailBody extends StatelessWidget {
+  const _OrderDetailBody({
+    required this.order,
+    required this.alreadyResponded,
+    required this.responding,
+    required this.fromCustomerCard,
+    required this.onRespond,
+  });
+
+  final OrderDetail order;
+  final bool alreadyResponded;
+  final bool responding;
+  final bool fromCustomerCard;
+  final VoidCallback onRespond;
+
+  @override
+  Widget build(BuildContext context) {
+    final String rentDate = formatRentDate(_asListItem(order));
+    final String publishedAgo = formatPublishedAgo(order.publishedAt);
+    return Column(
+      children: <Widget>[
+        Expanded(
+          child: SingleChildScrollView(
+            padding: EdgeInsets.fromLTRB(16.w, 16.h, 16.w, 24.h),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                CustomerHeader(
+                  name: order.customer.name,
+                  avatarUrl: order.customer.avatarUrl,
+                  rating: order.customer.ratingAsCustomer,
+                  reviews: order.customer.reviewCountAsCustomer,
+                  onTap: fromCustomerCard
+                      ? () => Navigator.of(context).maybePop()
+                      : () => Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => CustomerCardScreen(
+                                customerId: order.customer.id,
+                              ),
+                            ),
+                          ),
+                  onReviewsTap: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => ReviewsScreen(
+                        subject: ReviewSubject.customer,
+                        initialRating: order.customer.ratingAsCustomer,
+                        initialCount: order.customer.reviewCountAsCustomer,
+                      ),
+                    ),
+                  ),
+                ),
+                SizedBox(height: 10.h),
+                Text('№${order.displayNumber.toString().padLeft(6, '0')}',
+                    style: AppTextStyles.caption
+                        .copyWith(color: AppColors.textTertiary)),
+                SizedBox(height: 4.h),
+                Text(order.title,
+                    style: AppTextStyles.titleL.copyWith(height: 1.2)),
+                SizedBox(height: 7.h),
+                Text(publishedAgo,
+                    style: AppTextStyles.caption
+                        .copyWith(color: AppColors.textTertiary)),
+                SizedBox(height: 11.h),
+                LabeledSection(
+                  title: 'Дата и время аренды',
+                  child: Text(rentDate,
+                      style: AppTextStyles.subBody
+                          .copyWith(fontWeight: FontWeight.w400)),
+                ),
+                LabeledSection(
+                  title: 'Адрес',
+                  child: ClickableAddress(
+                    order.address,
+                    baseStyle: AppTextStyles.subBody
+                        .copyWith(fontWeight: FontWeight.w400),
+                  ),
+                ),
+                LabeledSection(
+                  title: 'Требуемая спецтехника',
+                  child: Wrap(
+                    spacing: 8.w,
+                    runSpacing: 8.h,
+                    children: order.machineryTitles
+                        .map((String e) => _OutlinedChip(label: e))
+                        .toList(),
+                  ),
+                ),
+                if (order.categoryTitles.isNotEmpty)
+                  LabeledSection(
+                    title: 'Категория работ',
+                    child: Wrap(
+                      spacing: 8.w,
+                      runSpacing: 8.h,
+                      children: order.categoryTitles
+                          .map((String c) => _OutlinedChip(label: c))
+                          .toList(),
+                    ),
+                  ),
+                if (order.works.isNotEmpty)
+                  LabeledSection(
+                    title: 'Характер работ',
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: order.works
+                          .map((WorkItem w) => Text(
+                                _formatWorkItem(w),
+                                style: AppTextStyles.subBody
+                                    .copyWith(fontWeight: FontWeight.w400),
+                              ))
+                          .toList(),
+                    ),
+                  ),
+                if (order.description != null &&
+                    order.description!.trim().isNotEmpty)
+                  LabeledSection(
+                    title: 'Комментарий',
+                    child: Text(order.description!,
+                        style: AppTextStyles.subBody
+                            .copyWith(fontWeight: FontWeight.w400)),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        Container(
+          decoration: BoxDecoration(
+            color: AppColors.background,
+            boxShadow: <BoxShadow>[
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.08),
+                blurRadius: 8,
+                offset: const Offset(0, -2),
+              ),
+            ],
+          ),
+          padding: EdgeInsets.fromLTRB(
+              16.w,
+              12.h,
+              16.w,
+              16.h + MediaQuery.of(context).padding.bottom),
+          child: PrimaryButton(
+            label: alreadyResponded
+                ? 'Вы уже откликнулись'
+                : (responding ? 'Отправка...' : 'Откликнуться'),
+            enabled: !alreadyResponded && !responding,
+            onPressed: (alreadyResponded || responding) ? null : onRespond,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Переиспользование `formatRentDate` из `format.dart`, которая принимает
+  /// OrderListItem. Собираем лёгкий адаптер на полях OrderDetail.
+  OrderListItem _asListItem(OrderDetail o) => OrderListItem(
+        id: o.id,
+        displayNumber: o.displayNumber,
+        title: o.title,
+        address: o.address,
+        dateFrom: o.dateFrom,
+        dateTo: o.dateTo,
+        timeFrom: o.timeFrom,
+        timeTo: o.timeTo,
+        exactDate: o.exactDate,
+        wholeDay: o.wholeDay,
+        machineryTitles: o.machineryTitles,
+        publishedAt: o.publishedAt,
+        customer: o.customer,
+      );
+
+  String _formatWorkItem(WorkItem w) {
+    if (w.volume == null) return w.name;
+    final String volumeText = _fmtVolume(w.volume!);
+    final String unit = _unitToUi(w.unit);
+    return unit.isEmpty
+        ? '${w.name} — $volumeText'
+        : '${w.name} — $volumeText $unit';
+  }
+
+  String _fmtVolume(double v) {
+    if (v == v.truncateToDouble()) return v.toInt().toString();
+    return v.toString();
+  }
+
+  String _unitToUi(String? code) {
+    switch (code) {
+      case 'm':
+        return 'м';
+      case 'm2':
+        return 'м²';
+      case 'm3':
+        return 'м³';
+      default:
+        return '';
+    }
+  }
+}
+
+class _OrderNotFound extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: EdgeInsets.all(16.w),
+        child: Text(
+          'Заказ не найден или снят с публикации',
+          style: AppTextStyles.bodyMRegular
+              .copyWith(color: AppColors.textTertiary),
+          textAlign: TextAlign.center,
+        ),
+      ),
+    );
+  }
+}
+
+class _DetailError extends StatelessWidget {
+  const _DetailError({required this.onRetry});
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: EdgeInsets.all(16.w),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Text(
+              'Не удалось загрузить заказ',
+              style: AppTextStyles.bodyMRegular
+                  .copyWith(color: AppColors.textPrimary),
+            ),
+            SizedBox(height: 12.h),
+            TextButton(onPressed: onRetry, child: const Text('Повторить')),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 class _OutlinedChip extends StatelessWidget {
   const _OutlinedChip({required this.label});
@@ -443,9 +512,8 @@ class _OutlinedChip extends StatelessWidget {
 }
 
 /// Шторка выбора спецтехники. Возвращает `List<String>` с отмеченными
-/// позициями через `Navigator.pop`. Используется и при отклике из
-/// каталога (кнопка «Откликнуться»), и при подтверждении заказа из
-/// «Мои заказы» (кнопка «Подтвердить»).
+/// позициями через `Navigator.pop`. Используется при отклике из каталога
+/// и при подтверждении заказа из «Мои заказы».
 class PickEquipmentSheet extends StatefulWidget {
   const PickEquipmentSheet({
     super.key,
@@ -496,22 +564,6 @@ class _PickEquipmentSheetState extends State<PickEquipmentSheet> {
               label: e,
               checked: _picked.contains(e),
               onTap: () {
-                final bool alreadyChecked = _picked.contains(e);
-                if (!alreadyChecked) {
-                  final bool hasService = ServiceData.services
-                      .any((ServiceMock s) => s.machinery.contains(e));
-                  if (!hasService) {
-                    showNoServiceForEquipmentDialog(
-                      context,
-                      equipment: e,
-                      onGoToServices: () {
-                        Navigator.of(context).pop();
-                        context.push('/services');
-                      },
-                    );
-                    return;
-                  }
-                }
                 setState(() {
                   if (!_picked.add(e)) _picked.remove(e);
                 });
@@ -574,8 +626,7 @@ class _CheckRow extends StatelessWidget {
 
 /// Диалог «Нет подходящей техники» — показывается когда исполнитель
 /// пытается откликнуться на заказ, но ни один из требуемых видов
-/// спецтехники не заведён у него в услугах. Кнопка ведёт в «Мои услуги»,
-/// чтобы создать недостающую услугу.
+/// спецтехники не заведён у него в услугах. Кнопка ведёт в «Мои услуги».
 class _NoMatchingMachineryDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
@@ -636,108 +687,6 @@ class _NoMatchingMachineryDialog extends StatelessWidget {
               ),
             ),
             SizedBox(height: 8.h),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _InProgressDialog extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Dialog(
-      insetPadding: EdgeInsets.symmetric(horizontal: 16.w),
-      backgroundColor: Colors.transparent,
-      child: Container(
-        padding: EdgeInsets.fromLTRB(16.r, 14.r, 16.r, 22.r),
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(20.r),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Align(
-              alignment: Alignment.centerRight,
-              child: GestureDetector(
-                onTap: () => Navigator.of(context).pop(),
-                child: Icon(Icons.close_rounded,
-                    size: 22.r, color: AppColors.textTertiary),
-              ),
-            ),
-            SizedBox(height: 20.h),
-            Text(
-              'Ваши документы ещё\nна проверке',
-              textAlign: TextAlign.center,
-              style: AppTextStyles.titleL.copyWith(fontWeight: FontWeight.w700),
-            ),
-            SizedBox(height: 8.h),
-            Text(
-              'Вы получите уведомление, когда проверка завершится',
-              textAlign: TextAlign.center,
-              style: AppTextStyles.bodyMRegular
-                  .copyWith(color: AppColors.textSecondary),
-            ),
-            SizedBox(height: 18.h),
-            PrimaryButton(
-              label: 'Ок',
-              onPressed: () => Navigator.of(context).pop(),
-            ),
-            SizedBox(height: 12.h),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// Диалог «Ваш профиль заблокирован на 30 дней» — показывается, если
-/// исполнитель пытается откликнуться при активной блокировке.
-class _BlockedDialog extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Dialog(
-      insetPadding: EdgeInsets.symmetric(horizontal: 16.w),
-      backgroundColor: Colors.transparent,
-      child: Container(
-        padding: EdgeInsets.fromLTRB(16.r, 14.r, 16.r, 22.r),
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(20.r),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            Align(
-              alignment: Alignment.centerRight,
-              child: GestureDetector(
-                onTap: () => Navigator.of(context).pop(),
-                child: Icon(Icons.close_rounded,
-                    size: 22.r, color: AppColors.textTertiary),
-              ),
-            ),
-            SizedBox(height: 20.h),
-            Text(
-              'Ваш профиль заблокирован\nна 30 дней',
-              textAlign: TextAlign.center,
-              style: AppTextStyles.titleL.copyWith(fontWeight: FontWeight.w700),
-            ),
-            SizedBox(height: 8.h),
-            Text(
-              'Во избежание дальнейших блокировок избегайте отзывов с низкой оценкой',
-              textAlign: TextAlign.center,
-              style: AppTextStyles.bodyMRegular
-                  .copyWith(color: AppColors.textSecondary),
-            ),
-            SizedBox(height: 18.h),
-            PrimaryButton(
-              label: 'Ок',
-              onPressed: () => Navigator.of(context).pop(),
-            ),
-            SizedBox(height: 12.h),
           ],
         ),
       ),

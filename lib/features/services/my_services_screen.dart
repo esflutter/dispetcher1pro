@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:dispatcher_1/core/my_services/models.dart';
+import 'package:dispatcher_1/core/my_services/my_services_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
+import 'package:dispatcher_1/core/theme/app_text_styles.dart';
 import 'package:dispatcher_1/core/widgets/dark_sub_app_bar.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
 import 'package:dispatcher_1/features/catalog/widgets/catalog_search_bar.dart';
@@ -10,48 +13,80 @@ import 'package:dispatcher_1/features/catalog/widgets/catalog_search_bar.dart';
 import 'widgets/service_card.dart';
 import 'widgets/service_paywall.dart';
 
-/// Статические данные моковых услуг (для доступа из других экранов).
+/// Тонкий кэш-адаптер над [MyServicesService] для кода, который ещё
+/// не переписан напрямую на сервис (карточка исполнителя, детали заказа
+/// в "Моих заказах", логика цен в мэтче). После переноса этих экранов
+/// на БД адаптер можно удалить.
 class ServiceData {
   ServiceData._();
 
   static const int maxServices = 30;
 
-  static final List<ServiceMock> services = [];
+  /// Закэшированный список услуг из БД (обновляется [refresh]).
+  /// Сохраняет сигнатуру старого [ServiceMock], чтобы не ломать
+  /// вызовы из экранов, которые пока на моках.
+  static final List<ServiceMock> services = <ServiceMock>[];
+
+  /// Слушатель — для `ListenableBuilder`-ов, которые хотят перерисоваться
+  /// после refresh.
+  static final ValueNotifier<int> revision = ValueNotifier<int>(0);
 
   /// Оплаченный, но ещё не израсходованный слот для создания услуги.
-  /// Появляется после успешной оплаты в `ServicePaywall`, расходуется
-  /// при сохранении новой услуги. Если пользователь вышел из формы
-  /// создания не сохранив — слот остаётся, и следующий вход сразу
-  /// открывает форму без повторной оплаты.
+  /// В dev-режиме без реальной оплаты paywall ставит флаг в true мгновенно;
+  /// после успешного INSERT в БД — снимаем.
   static bool hasUnusedPaidSlot = false;
 
-  /// Полный сброс списка услуг — для logout. У следующего пользователя
-  /// на этом устройстве не должно быть услуг предыдущего.
+  /// Полная перезагрузка из БД. Вызывается при открытии "Моих услуг",
+  /// после create/update/archive, а также из мест, где старый код
+  /// ждёт актуальный snapshot перед чтением (например, вычисление
+  /// `ExecutorCardData.machinery`).
+  static Future<void> refresh() async {
+    final List<MyServiceSummary> rows =
+        await MyServicesService.instance.listMine();
+    services
+      ..clear()
+      ..addAll(rows.map(_toMock));
+    revision.value = revision.value + 1;
+  }
+
+  /// Сброс кэша при logout/deleteAccount. В БД данные остаются
+  /// (они собственность executor_id = auth.uid() прошлой сессии).
   static void clear() {
     services.clear();
     hasUnusedPaidSlot = false;
+    revision.value = revision.value + 1;
   }
 
-  /// Возвращает пару `[pricePerHour, pricePerDay]` для блока «Цена» в
-  /// деталях мэтчнутого заказа. Приоритет — собственные услуги
-  /// исполнителя из [services]. Если услуги нет — берём из [presets]
-  /// (ориентировочные ставки для случая, когда карточка ещё не
-  /// заполнена). Возвращает `null`, если техника не покрыта ни там,
-  /// ни там.
-  static List<String>? priceFor(String equipment) {
-    for (final ServiceMock s in services) {
-      if (s.machinery.isNotEmpty && s.machinery.first == equipment) {
-        return <String>[s.pricePerHour, s.pricePerDay];
-      }
+  static ServiceMock _toMock(MyServiceSummary s) => ServiceMock(
+        id: s.id,
+        title: s.title,
+        categories: s.categoryTitles,
+        machinery: s.machineryTitles,
+        pricePerHour: _formatPrice(s.pricePerHour),
+        pricePerDay: _formatPrice(s.pricePerDay),
+        minOrder: s.minHours?.toString() ?? '',
+        description: s.description ?? '',
+      );
+
+  static String _formatPrice(double? v) {
+    if (v == null) return '';
+    final int i = v.round();
+    final String s = i.toString();
+    // Простой пробельный разделитель тысяч: "14000" → "14 000".
+    final StringBuffer b = StringBuffer();
+    final int n = s.length;
+    for (int k = 0; k < n; k++) {
+      if (k > 0 && (n - k) % 3 == 0) b.write(' ');
+      b.write(s[k]);
     }
-    for (final ServiceMock p in presets) {
-      if (p.machinery.isNotEmpty && p.machinery.first == equipment) {
-        return <String>[p.pricePerHour, p.pricePerDay];
-      }
-    }
-    return null;
+    return b.toString();
   }
 
+  /// Пресеты с примерами техники/категорий для экрана «График». Цены
+  /// в них больше не используются — на экране деталей мэтча цена
+  /// берётся напрямую из `order_matches.agreed_*` (снапшот в момент
+  /// мэтча). Поля `pricePerHour`/`pricePerDay` оставлены, чтобы не
+  /// плодить параллельный тип ради одной ситуации.
   static const List<ServiceMock> presets = [
     ServiceMock(
       id: '1',
@@ -128,7 +163,18 @@ class MyServicesScreen extends StatefulWidget {
 }
 
 class _MyServicesScreenState extends State<MyServicesScreen> {
-  bool get _isEmpty => ServiceData.services.isEmpty;
+  late Future<void> _initial;
+
+  @override
+  void initState() {
+    super.initState();
+    _initial = ServiceData.refresh();
+  }
+
+  Future<void> _reload() async {
+    await ServiceData.refresh();
+    if (mounted) setState(() {});
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -141,60 +187,98 @@ class _MyServicesScreenState extends State<MyServicesScreen> {
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       body: SafeArea(
-        child: Column(
-          children: [
-            Expanded(
-              child: _isEmpty
-                  ? const _EmptyState()
-                  : _ServicesList(
-                      items: ServiceData.services,
-                      onRefresh: () => setState(() {}),
-                    ),
-            ),
-            Container(
-              decoration: BoxDecoration(
-                color: AppColors.background,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.06),
-                    offset: const Offset(0, -1),
-                    blurRadius: 8,
-                  ),
-                ],
-              ),
-              padding: EdgeInsets.fromLTRB(16.w, 12.h, 16.w, 16.h),
-              child: PrimaryButton(
-                label: 'Создать услугу',
-                onPressed: () async {
-                  if (ServiceData.services.length >= ServiceData.maxServices) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          'Достигнут лимит ${ServiceData.maxServices} услуг. '
-                          'Удалите ненужные, чтобы добавить новые.',
+        child: FutureBuilder<void>(
+          future: _initial,
+          builder: (BuildContext context, AsyncSnapshot<void> snap) {
+            if (snap.connectionState != ConnectionState.done) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (snap.hasError) {
+              return _ServicesError(onRetry: () => setState(() {
+                    _initial = ServiceData.refresh();
+                  }));
+            }
+            return Column(
+              children: <Widget>[
+                Expanded(
+                  child: ServiceData.services.isEmpty
+                      ? const _EmptyState()
+                      : _ServicesList(
+                          items: ServiceData.services,
+                          onRefresh: _reload,
                         ),
+                ),
+                Container(
+                  decoration: BoxDecoration(
+                    color: AppColors.background,
+                    boxShadow: <BoxShadow>[
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.06),
+                        offset: const Offset(0, -1),
+                        blurRadius: 8,
                       ),
-                    );
-                    return;
-                  }
-                  // Если есть ранее оплаченный, но неизрасходованный слот
-                  // (пользователь оплатил и вышел, не сохранив услугу) —
-                  // сразу открываем форму, без повторного paywall.
-                  if (!ServiceData.hasUnusedPaidSlot) {
-                    final bool? paid = await Navigator.of(context).push<bool>(
-                      MaterialPageRoute<bool>(
-                        fullscreenDialog: true,
-                        builder: (_) => const ServicePaywall(),
-                      ),
-                    );
-                    if (paid != true || !context.mounted) return;
-                    ServiceData.hasUnusedPaidSlot = true;
-                  }
-                  await context.push('/services/create');
-                  if (mounted) setState(() {});
-                },
-              ),
+                    ],
+                  ),
+                  padding: EdgeInsets.fromLTRB(16.w, 12.h, 16.w, 16.h),
+                  child: PrimaryButton(
+                    label: 'Создать услугу',
+                    onPressed: () async {
+                      if (ServiceData.services.length >=
+                          ServiceData.maxServices) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              'Достигнут лимит ${ServiceData.maxServices} услуг. '
+                              'Удалите ненужные, чтобы добавить новые.',
+                            ),
+                          ),
+                        );
+                        return;
+                      }
+                      if (!ServiceData.hasUnusedPaidSlot) {
+                        final bool? paid = await Navigator.of(context)
+                            .push<bool>(
+                          MaterialPageRoute<bool>(
+                            fullscreenDialog: true,
+                            builder: (_) => const ServicePaywall(),
+                          ),
+                        );
+                        if (paid != true || !context.mounted) return;
+                        ServiceData.hasUnusedPaidSlot = true;
+                      }
+                      await context.push('/services/create');
+                      if (mounted) await _reload();
+                    },
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _ServicesError extends StatelessWidget {
+  const _ServicesError({required this.onRetry});
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: EdgeInsets.all(16.w),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Text(
+              'Не удалось загрузить услуги',
+              style: AppTextStyles.bodyMRegular
+                  .copyWith(color: AppColors.textPrimary),
             ),
+            SizedBox(height: 12.h),
+            TextButton(onPressed: onRetry, child: const Text('Повторить')),
           ],
         ),
       ),

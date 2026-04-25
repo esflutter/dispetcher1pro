@@ -4,8 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 import 'package:pinput/pinput.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
-import 'package:dispatcher_1/core/auth/session_cache.dart';
+import 'package:dispatcher_1/core/auth/auth_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
@@ -29,6 +30,7 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
 
   bool _hasError = false;
   bool _codeResent = false;
+  bool _verifying = false;
   int _secondsLeft = 0;
   Timer? _timer;
 
@@ -80,10 +82,36 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
     setState(() {});
   }
 
-  void _submit() {
-    final code = _pinController.text;
-    if (code == '000000') {
-      setState(() => _hasError = true);
+  Future<void> _submit() async {
+    if (_verifying) return;
+    final String e164 = CropResult.userPhoneE164;
+    if (e164.isEmpty) {
+      // Ошибка контракта: мы сюда попали в обход phone_input_screen.
+      context.go('/auth/phone');
+      return;
+    }
+
+    setState(() => _verifying = true);
+    try {
+      final VerifyResult result = await AuthService.instance.verify(
+        e164: e164,
+        code: _pinController.text,
+      );
+      if (!mounted) return;
+      if (result.needsRegistration) {
+        context.go('/auth/registration');
+      } else {
+        if (result.name != null && result.name!.trim().isNotEmpty) {
+          CropResult.userName = result.name!;
+        }
+        context.go('/shell');
+      }
+    } on AuthException {
+      if (!mounted) return;
+      setState(() {
+        _hasError = true;
+        _verifying = false;
+      });
       Future.delayed(const Duration(milliseconds: 1200), () {
         if (mounted && _hasError) {
           _pinController.clear();
@@ -93,17 +121,12 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
           });
         }
       });
-    } else {
-      // Если для этого номера уже есть сохранённая сессия —
-      // восстанавливаем данные и пропускаем регистрацию, ведём сразу
-      // в каталог. Иначе открываем экран регистрации.
-      final String phone = CropResult.userPhone;
-      if (SessionCache.has(phone)) {
-        SessionCache.restore(phone);
-        context.go('/shell');
-      } else {
-        context.go('/auth/registration');
-      }
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _verifying = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Не удалось проверить код. Попробуйте ещё раз.')),
+      );
     }
   }
 
@@ -229,7 +252,7 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
                             ),
                           )
                         : GestureDetector(
-                            onTap: () {
+                            onTap: () async {
                               _pinController.clear();
                               setState(() {
                                 _hasError = false;
@@ -240,6 +263,12 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
                                   .addPostFrameCallback((_) {
                                 if (mounted) _pinFocusNode.requestFocus();
                               });
+                              final String e164 = CropResult.userPhoneE164;
+                              if (e164.isNotEmpty) {
+                                try {
+                                  await AuthService.instance.sendOtp(e164);
+                                } catch (_) {/* swallow — повторная отправка best-effort */}
+                              }
                             },
                             child: RichText(
                               text: TextSpan(
@@ -290,8 +319,9 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
                 listenable: _pinController,
                 builder: (_, _) => PrimaryButton(
                   label: 'Далее',
-                  enabled:
-                      _pinController.text.length == _otpLength && !_hasError,
+                  enabled: _pinController.text.length == _otpLength &&
+                      !_hasError &&
+                      !_verifying,
                   onPressed: _submit,
                 ),
               ),

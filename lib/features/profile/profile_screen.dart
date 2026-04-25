@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:dispatcher_1/core/profile/profile_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_spacing.dart';
 import 'package:dispatcher_1/core/utils/plural.dart';
@@ -18,7 +19,7 @@ class ProfileScreen extends StatefulWidget {
   const ProfileScreen({
     super.key,
     this.status = VerificationStatus.notVerified,
-    this.fullName = 'Александр Иванов',
+    this.fullName = '',
     this.photoUrl,
   });
 
@@ -36,13 +37,55 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   bool get _isBlocked => AccountBlock.isBlocked;
 
+  // Значения с БД — перекрывают мок-сторы (ReviewsData) когда загрузка
+  // прошла успешно. До загрузки показываются старые мок-значения, чтобы
+  // не моргать пустыми звёздами/нулями.
+  double? _dbRating;
+  int? _dbReviewCount;
+
   @override
   void initState() {
     super.initState();
     VerificationStatus.notifier.addListener(_refresh);
     AccountBlock.notifier.addListener(_refresh);
     ReviewsData.revision.addListener(_refresh);
+    _loadFromDb();
   }
+
+  Future<void> _loadFromDb() async {
+    try {
+      final MyProfile? p = await ProfileService.instance.loadMine();
+      if (p == null || !mounted) return;
+      CropResult.userName = p.name;
+      // Синхронизируем мок-сторы с реальным состоянием в БД.
+      AccountBlock.setUntil(p.blockedUntil);
+      VerificationStatus.current = switch (p.verificationStatus) {
+        'approved' => VerificationStatus.verified,
+        'pending' => VerificationStatus.inProgress,
+        'rejected' => VerificationStatus.rejected,
+        _ => VerificationStatus.notVerified,
+      };
+      setState(() {
+        _dbRating = p.ratingAsExecutor;
+        _dbReviewCount = p.reviewCountAsExecutor;
+      });
+      // Подписка лежит в profiles_private, отдельный запрос.
+      final MyPrivate? priv = await ProfileService.instance.loadMyPrivate();
+      if (priv == null || !mounted) return;
+      // VerificationStatus.hasSubscription — мок, обновим из БД.
+      final DateTime? paid = priv.subscriptionPaidUntil;
+      VerificationStatus.hasSubscription =
+          paid != null && paid.isAfter(DateTime.now());
+      VerificationStatus.subscriptionPaidUntilText =
+          paid == null ? null : _fmtPaidUntil(paid);
+      if (mounted) setState(() {});
+    } catch (_) {
+      // Нет сети / ошибка БД — тихо, оставляем мок-значения.
+    }
+  }
+
+  String _fmtPaidUntil(DateTime d) =>
+      '${d.day.toString().padLeft(2, '0')}.${d.month.toString().padLeft(2, '0')}.${d.year}';
 
   @override
   void dispose() {
@@ -54,20 +97,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   void _refresh() {
     if (mounted) setState(() {});
-  }
-
-  // TODO: убрать перед релизом — временное переключение статуса верификации.
-  void _cycleStatus() {
-    const List<VerificationStatus> order = <VerificationStatus>[
-      VerificationStatus.notVerified,
-      VerificationStatus.inProgress,
-      VerificationStatus.verified,
-      VerificationStatus.rejected,
-    ];
-    final int next = (order.indexOf(_status) + 1) % order.length;
-    setState(() {
-      VerificationStatus.current = order[next];
-    });
   }
 
   Future<void> _openEdit() async {
@@ -94,8 +123,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget build(BuildContext context) {
     final VerificationStatus status = _status;
     final String fullName = CropResult.displayName;
-    final double rating = ReviewsData.aggregate;
-    final int reviewsCount = ReviewsData.count;
+    final double rating = _dbRating ?? ReviewsData.aggregate;
+    final int reviewsCount = _dbReviewCount ?? ReviewsData.count;
     final bool isBlocked = _isBlocked;
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -155,10 +184,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
               SizedBox(height: 16.h),
             ] else ...<Widget>[
-              GestureDetector(
-                onTap: _cycleStatus,
-                child: FullWidthVerificationPill(status: status),
-              ),
+              FullWidthVerificationPill(status: status),
               if (status == VerificationStatus.notVerified) ...<Widget>[
                 SizedBox(height: 8.h),
                 _PrimaryActionButton(

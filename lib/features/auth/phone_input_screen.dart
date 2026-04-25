@@ -3,7 +3,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 import 'package:mask_text_input_formatter/mask_text_input_formatter.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:dispatcher_1/core/auth/auth_service.dart';
+import 'package:dispatcher_1/core/auth/phone_format.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
@@ -24,6 +27,7 @@ class _PhoneInputScreenState extends State<PhoneInputScreen> {
   );
   final TextEditingController _controller = TextEditingController();
   bool _isComplete = false;
+  bool _sending = false;
 
   @override
   void initState() {
@@ -40,6 +44,37 @@ class _PhoneInputScreenState extends State<PhoneInputScreen> {
   void dispose() {
     _controller.dispose();
     super.dispose();
+  }
+
+  Future<void> _onNext() async {
+    final String e164;
+    try {
+      e164 = PhoneFormat.toE164(_maskFormatter.getUnmaskedText());
+    } on FormatException catch (e) {
+      _showError(e.message);
+      return;
+    }
+
+    setState(() => _sending = true);
+    try {
+      await AuthService.instance.sendOtp(e164);
+      if (!mounted) return;
+      CropResult.userPhoneE164 = e164;
+      CropResult.userPhone = PhoneFormat.toPretty(e164);
+      context.go('/auth/otp');
+    } on AuthException catch (e) {
+      if (mounted) _showError(e.message);
+    } catch (_) {
+      if (mounted) _showError('Не удалось отправить код. Проверьте соединение.');
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
   }
 
   @override
@@ -88,15 +123,8 @@ class _PhoneInputScreenState extends State<PhoneInputScreen> {
               ),
               child: PrimaryButton(
                 label: 'Далее',
-                enabled: _isComplete,
-                onPressed: _isComplete
-                    ? () {
-                        final d = _maskFormatter.getUnmaskedText();
-                        CropResult.userPhone =
-                            '+7 ${d.substring(0, 3)} ${d.substring(3, 6)}-${d.substring(6, 8)}-${d.substring(8, 10)}';
-                        context.go('/auth/otp');
-                      }
-                    : null,
+                enabled: _isComplete && !_sending,
+                onPressed: (_isComplete && !_sending) ? _onNext : null,
               ),
             ),
           ],

@@ -1,9 +1,14 @@
+import 'dart:io';
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:dispatcher_1/core/auth/auth_service.dart';
+import 'package:dispatcher_1/core/storage/storage_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
 import 'package:dispatcher_1/core/utils/photo_source.dart';
@@ -21,6 +26,7 @@ class RegistrationScreen extends StatefulWidget {
 class _RegistrationScreenState extends State<RegistrationScreen> {
   final TextEditingController _firstNameController = TextEditingController();
   bool _agreed = false;
+  bool _submitting = false;
   CropResult? _cropResult;
 
   @override
@@ -29,7 +35,50 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     super.dispose();
   }
 
-  bool get _isValid => _firstNameController.text.trim().isNotEmpty && _agreed;
+  bool get _isValid =>
+      _firstNameController.text.trim().isNotEmpty && _agreed && !_submitting;
+
+  Future<void> _onDone() async {
+    if (!_isValid) return;
+    final String name = _firstNameController.text.trim();
+    setState(() => _submitting = true);
+    try {
+      // Грузим аватар в Storage ДО вызова completeRegistration, чтобы
+      // avatar_url сразу попал в UPDATE profiles одним запросом.
+      String? avatarUrl;
+      final String? avatarPath = _cropResult?.imagePath;
+      if (avatarPath != null && !avatarPath.startsWith('assets/')) {
+        try {
+          avatarUrl = await StorageService.instance
+              .uploadAvatar(File(avatarPath));
+        } catch (_) {/* пропускаем неудачную загрузку */}
+      }
+      await AuthService.instance
+          .completeRegistration(name: name, avatarUrl: avatarUrl);
+      if (!mounted) return;
+      CropResult.saved = _cropResult;
+      CropResult.userName = name;
+      context.go('/assistant');
+    } on PostgrestException catch (e) {
+      if (!mounted) return;
+      setState(() => _submitting = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Ошибка сохранения: ${e.message}')),
+      );
+    } on AuthException catch (e) {
+      if (!mounted) return;
+      setState(() => _submitting = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message)),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _submitting = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Не удалось сохранить профиль.')),
+      );
+    }
+  }
 
   Future<void> _openPhotoSheet() async {
     final String? imagePath = await pickImageFromGallery(context: context);
@@ -104,14 +153,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                 builder: (_, _) => PrimaryButton(
                   label: 'Готово',
                   enabled: _isValid,
-                  onPressed: _isValid
-                      ? () {
-                          CropResult.saved = _cropResult;
-                          CropResult.userName =
-                              _firstNameController.text.trim();
-                          context.go('/assistant');
-                        }
-                      : () {},
+                  onPressed: _isValid ? _onDone : () {},
                 ),
               ),
             ),

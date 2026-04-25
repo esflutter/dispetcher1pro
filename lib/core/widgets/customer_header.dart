@@ -19,12 +19,14 @@ class CustomerHeader extends StatelessWidget {
     required this.onTap,
     this.onReviewsTap,
     this.onCall,
+    this.avatarUrl,
   });
 
   final String name;
   final double rating;
   final int reviews;
   final VoidCallback onTap;
+  final String? avatarUrl;
 
   /// Отдельный колбэк на «N отзывов». Если задан — тап по подчёркнутому
   /// тексту открывает экран отзывов, не триггеря [onTap].
@@ -47,8 +49,11 @@ class CustomerHeader extends StatelessWidget {
                 CircleAvatar(
                   radius: 28.r,
                   backgroundColor: AppColors.primaryTint,
-                  backgroundImage: const AssetImage(
-                      'assets/images/catalog/avatar_placeholder.webp'),
+                  backgroundImage: (avatarUrl != null &&
+                          avatarUrl!.trim().isNotEmpty)
+                      ? NetworkImage(avatarUrl!) as ImageProvider
+                      : const AssetImage(
+                          'assets/images/catalog/avatar_placeholder.webp'),
                 ),
                 SizedBox(width: 10.w),
                 Expanded(

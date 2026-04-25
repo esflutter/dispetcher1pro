@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:dispatcher_1/core/settings/settings_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_spacing.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
@@ -67,9 +68,17 @@ enum TariffsVariant {
   executorCard,
 }
 
-class _TariffsSheet extends StatelessWidget {
+class _TariffsSheet extends StatefulWidget {
   const _TariffsSheet({required this.variant});
   final TariffsVariant variant;
+
+  @override
+  State<_TariffsSheet> createState() => _TariffsSheetState();
+}
+
+class _TariffsSheetState extends State<_TariffsSheet> {
+  int? _subscriptionPrice;
+  int? _slotPrice;
 
   static const _ordersBullets = [
     'Откликайтесь на заказы',
@@ -78,29 +87,61 @@ class _TariffsSheet extends StatelessWidget {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    _loadPrices();
+  }
+
+  Future<void> _loadPrices() async {
+    try {
+      final int sub = await SettingsService.instance.subscriptionMonthlyPriceRub();
+      final int slot = await SettingsService.instance.serviceSlotPriceRub();
+      if (!mounted) return;
+      setState(() {
+        _subscriptionPrice = sub;
+        _slotPrice = slot;
+      });
+    } catch (_) {/* fallback на placeholder N ₽ */}
+  }
+
+  String _fmtPrice(int? v) {
+    if (v == null) return 'N';
+    final String s = v.toString();
+    final StringBuffer b = StringBuffer();
+    for (int k = 0; k < s.length; k++) {
+      if (k > 0 && (s.length - k) % 3 == 0) b.write(' ');
+      b.write(s[k]);
+    }
+    return b.toString();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final String title;
     final String description;
     final String priceLabel;
     final List<String>? bullets;
+    final TariffsVariant variant = widget.variant;
 
     switch (variant) {
       case TariffsVariant.orders:
         title = 'Получите доступ к\nзаказам';
         description = '';
-        priceLabel = 'N дней бесплатно, затем N ₽/месяц';
+        priceLabel =
+            '${_fmtPrice(_subscriptionPrice)} ₽/месяц';
         bullets = _ordersBullets;
       case TariffsVariant.service:
         title = 'Оплатите размещение\nуслуги';
         description =
             'После оплаты ваша услуга появится в\nкаталоге, и заказчики смогут выбрать вас';
-        priceLabel = 'N ₽ за услугу';
+        priceLabel = '${_fmtPrice(_slotPrice)} ₽ за услугу';
         bullets = null;
       case TariffsVariant.executorCard:
         title = 'Оплатите размещение\nкарточки исполнителя';
         description =
             'После оплаты ваша карточка появится в\nкаталоге, и заказчики смогут выбрать вас';
-        priceLabel = 'N дней бесплатно, затем N ₽/месяц';
+        priceLabel =
+            '${_fmtPrice(_subscriptionPrice)} ₽/месяц';
         bullets = null;
     }
 

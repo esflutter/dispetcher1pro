@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_spacing.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
+import 'package:dispatcher_1/core/widgets/clickable_address.dart';
 import 'package:dispatcher_1/core/widgets/dark_sub_app_bar.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
 import 'package:dispatcher_1/features/catalog/widgets/catalog_search_bar.dart';
@@ -357,7 +358,12 @@ class _FilledCard extends StatelessWidget {
           SizedBox(height: 16.h),
           _SectionTitle('Местоположение'),
           SizedBox(height: 4.h),
-          Text(_val(ExecutorCardData.location), style: AppTextStyles.body),
+          (ExecutorCardData.location != null &&
+                  ExecutorCardData.location!.trim().isNotEmpty)
+              ? ClickableAddress(ExecutorCardData.location!,
+                  baseStyle: AppTextStyles.body)
+              : Text(_val(ExecutorCardData.location),
+                  style: AppTextStyles.body),
           if (ExecutorCardData.radius != null && ExecutorCardData.radius!.isNotEmpty) ...[
             SizedBox(height: 2.h),
             Text(ExecutorCardData.radius!,
@@ -374,7 +380,48 @@ class _FilledCard extends StatelessWidget {
           StatefulBuilder(
             builder: (BuildContext ctx, StateSetter setInner) {
               final List<String> items = ExecutorCardData.machinery;
-              if (items.isNotEmpty) return _ChipWrap(items: items);
+              if (items.isNotEmpty) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _ChipWrap(items: items),
+                    SizedBox(height: 8.h),
+                    Text.rich(
+                      TextSpan(
+                        style: TextStyle(
+                          fontFamily: 'Roboto',
+                          fontSize: 14.sp,
+                          color: AppColors.textTertiary,
+                        ),
+                        children: [
+                          const TextSpan(text: 'Добавьте '),
+                          WidgetSpan(
+                            baseline: TextBaseline.alphabetic,
+                            alignment: PlaceholderAlignment.baseline,
+                            child: GestureDetector(
+                              onTap: () async {
+                                await ctx.push('/services');
+                                if (ctx.mounted) setInner(() {});
+                              },
+                              child: Text(
+                                'новую услугу',
+                                style: TextStyle(
+                                  fontFamily: 'Roboto',
+                                  fontSize: 14.sp,
+                                  color: AppColors.textTertiary,
+                                  decoration: TextDecoration.underline,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const TextSpan(
+                              text: ', чтобы расширить список спецтехники.'),
+                        ],
+                      ),
+                    ),
+                  ],
+                );
+              }
               return _EmptyMachineryCta(
                 hint: 'Создайте первую услугу — и здесь появятся '
                     'виды вашей спецтехники.',

@@ -1,7 +1,9 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import 'package:dispatcher_1/core/theme/app_colors.dart';
+import 'package:dispatcher_1/core/utils/yandex_maps.dart';
 import 'package:dispatcher_1/features/auth/photo_crop_screen.dart';
 import 'package:dispatcher_1/features/orders/widgets/order_status_pill.dart';
 
@@ -96,6 +98,7 @@ class MyOrderCard extends StatelessWidget {
               label: 'Адрес:',
               value: address,
               valueUnderlined: true,
+              isAddress: true,
             ),
             if (_showCustomerRow) ...<Widget>[
               SizedBox(height: 12.h),
@@ -122,11 +125,13 @@ class _LabelLine extends StatelessWidget {
     required this.label,
     required this.value,
     this.valueUnderlined = false,
+    this.isAddress = false,
   });
 
   final String label;
   final String value;
   final bool valueUnderlined;
+  final bool isAddress;
 
   @override
   Widget build(BuildContext context) {
@@ -154,6 +159,11 @@ class _LabelLine extends StatelessWidget {
                   ? TextDecoration.underline
                   : TextDecoration.none,
             ),
+            recognizer: isAddress
+                ? (TapGestureRecognizer()
+                  ..onTap =
+                      () => openAddressInYandexMaps(context, value))
+                : null,
           ),
         ],
       ),
