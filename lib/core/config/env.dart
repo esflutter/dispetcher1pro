@@ -13,7 +13,7 @@
 class Env {
   const Env._();
 
-  /// URL self-hosted Supabase (например, https://jokaynapesbem.beget.app).
+  /// URL self-hosted Supabase (например, https://your-subdomain.beget.app).
   static const String supabaseUrl =
       String.fromEnvironment('SUPABASE_URL');
 
