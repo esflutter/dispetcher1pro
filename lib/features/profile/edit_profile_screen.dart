@@ -11,6 +11,7 @@ import 'package:dispatcher_1/core/storage/storage_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_spacing.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
+import 'package:dispatcher_1/core/utils/email_validation.dart';
 import 'package:dispatcher_1/core/utils/photo_source.dart';
 import 'package:dispatcher_1/core/widgets/avatar_circle.dart';
 import 'package:dispatcher_1/core/widgets/cropped_avatar.dart';
@@ -28,11 +29,6 @@ class EditProfileScreen extends StatefulWidget {
 class _EditProfileScreenState extends State<EditProfileScreen> {
   static const int _nameMaxLen = 60;
   static const int _emailMaxLen = 50;
-
-  /// Базовая проверка формата email: что-то@что-то.tld, без пробелов.
-  static final RegExp _emailRegex = RegExp(
-    r'^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$',
-  );
 
   late final TextEditingController _nameCtrl =
       TextEditingController(text: CropResult.userName);
@@ -77,7 +73,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         }
       } else {
         final String value = _emailCtrl.text.trim();
-        final bool valid = value.isEmpty || _emailRegex.hasMatch(value);
+        final bool valid = isValidEmail(value);
         if (valid) {
           if (value != CropResult.userEmail) {
             CropResult.userEmail = value;
@@ -102,7 +98,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     final String name = _nameCtrl.text.trim();
     if (name.isNotEmpty) CropResult.userName = name;
     final String email = _emailCtrl.text.trim();
-    if (email.isEmpty || _emailRegex.hasMatch(email)) {
+    if (isValidEmail(email)) {
       CropResult.userEmail = email;
     }
     _nameCtrl.dispose();

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Утилиты для работы с фото: пикер с устройства и универсальный
 /// [ImageProvider] для путей, которые могут быть либо ассетом
@@ -109,6 +110,18 @@ bool isAssetPath(String path) => path.startsWith('assets/');
 bool isNetworkPath(String path) =>
     path.startsWith('http://') || path.startsWith('https://');
 
+/// True, если строка похожа на путь в приватном бакете `order-photos`
+/// (`<user_id>/<order_id>/<file>.webp`). Локальные пути — абсолютные
+/// (`/data/user/...`, `C:\...`); пути storage относительные и не имеют
+/// схемы. Эту эвристику используем, чтобы при отображении превратить
+/// относительный путь в signed URL вместо попытки открыть его как файл.
+bool isStoragePath(String path) {
+  if (isAssetPath(path) || isNetworkPath(path)) return false;
+  if (path.startsWith('/') || path.startsWith(r'\')) return false;
+  if (path.length >= 3 && path[1] == ':') return false; // C:\... на Windows
+  return path.contains('/');
+}
+
 /// Отдаёт нужный [ImageProvider] для картинки в зависимости от
 /// источника:
 /// - `assets/...`           → [AssetImage]
@@ -127,6 +140,10 @@ ImageProvider photoProvider(String path) {
 /// этого виджеты с фото услуг (где путь может быть и локальным файлом
 /// при свежем выборе, и https URL после загрузки в storage) ловили
 /// FileSystemException на `Image.file(File('https://...'))`.
+///
+/// Для путей приватного бакета (`<uid>/<order>/<file>.webp`) используйте
+/// [SignedStorageImage] — `imageFromPath` подсунет такому пути
+/// `Image.file`, что упадёт.
 Widget imageFromPath(
   String path, {
   BoxFit? fit,
@@ -138,6 +155,115 @@ Widget imageFromPath(
   }
   if (isNetworkPath(path)) {
     return Image.network(path, fit: fit, width: width, height: height);
+  }
+  return Image.file(File(path), fit: fit, width: width, height: height);
+}
+
+/// Кэш signed-URL для путей в приватных бакетах. Подпись живёт 1 час,
+/// храним 50 минут (с запасом), чтобы не пересоздавать URL при каждом
+/// rebuild и не словить «истёкший токен» прямо во время отображения.
+class _SignedUrlCache {
+  static final Map<String, _Entry> _entries = <String, _Entry>{};
+
+  static Future<String?> resolve(String bucket, String path) async {
+    final String key = '$bucket/$path';
+    final _Entry? cached = _entries[key];
+    if (cached != null && cached.expiresAt.isAfter(DateTime.now())) {
+      return cached.url;
+    }
+    try {
+      final String url = await Supabase.instance.client.storage
+          .from(bucket)
+          .createSignedUrl(path, 3600);
+      _entries[key] =
+          _Entry(url, DateTime.now().add(const Duration(minutes: 50)));
+      return url;
+    } catch (_) {
+      return null;
+    }
+  }
+}
+
+class _Entry {
+  _Entry(this.url, this.expiresAt);
+  final String url;
+  final DateTime expiresAt;
+}
+
+/// Отображает изображение из приватного бакета Supabase Storage по
+/// относительному пути. Сам запрашивает signed URL, кэширует его и
+/// рендерит через [Image.network]. Пока URL не получен — серый
+/// плейсхолдер, при ошибке — иконка.
+class SignedStorageImage extends StatelessWidget {
+  const SignedStorageImage({
+    super.key,
+    required this.bucket,
+    required this.path,
+    this.fit,
+    this.width,
+    this.height,
+  });
+
+  final String bucket;
+  final String path;
+  final BoxFit? fit;
+  final double? width;
+  final double? height;
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<String?>(
+      future: _SignedUrlCache.resolve(bucket, path),
+      builder: (BuildContext ctx, AsyncSnapshot<String?> snap) {
+        if (snap.connectionState != ConnectionState.done) {
+          return Container(
+            width: width,
+            height: height,
+            color: const Color(0xFFEDEDED),
+          );
+        }
+        final String? url = snap.data;
+        if (url == null) {
+          return Container(
+            width: width,
+            height: height,
+            color: const Color(0xFFEDEDED),
+            alignment: Alignment.center,
+            child: const Icon(Icons.broken_image_outlined,
+                color: Color(0xFFB0B0B0)),
+          );
+        }
+        return Image.network(url, fit: fit, width: width, height: height);
+      },
+    );
+  }
+}
+
+/// Универсальная картинка для путей всех типов: asset / http / local file /
+/// storage path в приватном бакете. Если путь похож на storage-путь, идёт
+/// через [SignedStorageImage] и `bucket` обязателен — иначе
+/// в худшем случае молча упадёт `Image.file` на относительный путь.
+Widget photoSmartImage(
+  String path, {
+  String? bucket,
+  BoxFit? fit,
+  double? width,
+  double? height,
+}) {
+  if (isAssetPath(path)) {
+    return Image.asset(path, fit: fit, width: width, height: height);
+  }
+  if (isNetworkPath(path)) {
+    return Image.network(path, fit: fit, width: width, height: height);
+  }
+  if (bucket != null && isStoragePath(path)) {
+    return SignedStorageImage(
+      bucket: bucket,
+      path: path,
+      fit: fit,
+      width: width,
+      height: height,
+    );
   }
   return Image.file(File(path), fit: fit, width: width, height: height);
 }

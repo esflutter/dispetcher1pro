@@ -331,6 +331,7 @@ class _OrderTile extends StatelessWidget {
           MaterialPageRoute<void>(
             builder: (_) => OrderDetailScreen(
               orderId: order.id,
+              initialTitle: order.title,
               multipleEquipment: order.machineryTitles.length > 1,
               fromCustomerCard: true,
             ),

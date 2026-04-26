@@ -220,6 +220,7 @@ class _CatalogCategoriesScreenState extends State<CatalogCategoriesScreen> {
             MaterialPageRoute<void>(
               builder: (_) => OrderDetailScreen(
                 orderId: o.id,
+                initialTitle: o.title,
                 multipleEquipment: o.equipment.length > 1,
               ),
             ),

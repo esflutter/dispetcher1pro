@@ -301,8 +301,9 @@ class CatalogService {
         .select(
           'user_id, location_address, radius_km, '
           'profile:profiles!executor_cards_user_id_fkey('
-          'id, name, avatar_url, legal_status, experience_years, '
-          'rating_as_executor, review_count_as_executor)',
+          'id, name, avatar_url, legal_status, experience_years, about, '
+          'rating_as_executor, review_count_as_executor, '
+          'verification_status, blocked_until)',
         )
         .eq('is_published', true);
 
@@ -313,8 +314,26 @@ class CatalogService {
       q = q.ilike('profile.name', '%$esc%');
     }
 
-    final List<Map<String, dynamic>> cards =
+    List<Map<String, dynamic>> cards =
         await q.order('updated_at', ascending: false).limit(limit);
+
+    // В каталоге показываем только верифицированных и не заблокированных
+    // исполнителей. PostgREST не умеет фильтровать по полям embedded
+    // ресурса в одном запросе так же, как по основному, — фильтруем
+    // на клиенте.
+    final DateTime now = DateTime.now().toUtc();
+    cards = cards.where((Map<String, dynamic> c) {
+      final Map<String, dynamic>? p =
+          c['profile'] as Map<String, dynamic>?;
+      if (p == null) return false;
+      if ((p['verification_status'] as String?) != 'approved') return false;
+      final String? blockedRaw = p['blocked_until'] as String?;
+      if (blockedRaw != null) {
+        final DateTime? until = DateTime.tryParse(blockedRaw);
+        if (until != null && until.isAfter(now)) return false;
+      }
+      return true;
+    }).toList();
 
     if (cards.isEmpty) return <ExecutorCardListItem>[];
 
@@ -369,6 +388,7 @@ class CatalogService {
             (p['review_count_as_executor'] as int?) ?? 0,
         legalStatus: p['legal_status'] as String?,
         experienceYears: p['experience_years'] as int?,
+        about: p['about'] as String?,
         locationAddress: c['location_address'] as String?,
         radiusKm: c['radius_km'] as int?,
         machineryTitles: agg.machineryIds
@@ -386,13 +406,73 @@ class CatalogService {
     return out;
   }
 
+  /// Прямой SELECT по `user_id` (а не линейный поиск в топ-100). Если
+  /// карточка не опубликована или исполнитель не существует — `null`.
   Future<ExecutorCardListItem?> getExecutorById(String userId) async {
-    final List<ExecutorCardListItem> all =
-        await listPublishedExecutors(limit: 100);
-    for (final ExecutorCardListItem e in all) {
-      if (e.userId == userId) return e;
+    final Map<String, dynamic>? card = await _client
+        .from('executor_cards')
+        .select(
+          'user_id, location_address, radius_km, '
+          'profile:profiles!executor_cards_user_id_fkey('
+          'id, name, avatar_url, legal_status, experience_years, about, '
+          'rating_as_executor, review_count_as_executor, '
+          'verification_status, blocked_until)',
+        )
+        .eq('user_id', userId)
+        .eq('is_published', true)
+        .maybeSingle();
+    if (card == null) return null;
+    final Map<String, dynamic>? prof =
+        card['profile'] as Map<String, dynamic>?;
+    if (prof == null) return null;
+    if ((prof['verification_status'] as String?) != 'approved') return null;
+    final String? blockedRaw = prof['blocked_until'] as String?;
+    if (blockedRaw != null) {
+      final DateTime? until = DateTime.tryParse(blockedRaw);
+      if (until != null && until.isAfter(DateTime.now().toUtc())) return null;
     }
-    return null;
+
+    final List<Map<String, dynamic>> services = await _client
+        .from('services')
+        .select(
+          'machinery_ids, category_ids, price_per_hour, price_per_day',
+        )
+        .eq('executor_id', userId)
+        .eq('is_paid', true)
+        .eq('is_archived', false);
+
+    final _ExecAggregate agg = _ExecAggregate();
+    for (final Map<String, dynamic> s in services) {
+      agg.addMachinery(List<int>.from(s['machinery_ids'] as List));
+      agg.addCategory(List<int>.from(s['category_ids'] as List));
+      agg.minPriceHour = _min(agg.minPriceHour, _toDouble(s['price_per_hour']));
+      agg.minPriceDay = _min(agg.minPriceDay, _toDouble(s['price_per_day']));
+    }
+
+    final Map<String, dynamic> p =
+        card['profile'] as Map<String, dynamic>;
+    return ExecutorCardListItem(
+      userId: userId,
+      name: (p['name'] as String?) ?? 'Пользователь',
+      avatarUrl: p['avatar_url'] as String?,
+      ratingAsExecutor: _toDouble(p['rating_as_executor']) ?? 0,
+      reviewCountAsExecutor: (p['review_count_as_executor'] as int?) ?? 0,
+      legalStatus: p['legal_status'] as String?,
+      experienceYears: p['experience_years'] as int?,
+      about: p['about'] as String?,
+      locationAddress: card['location_address'] as String?,
+      radiusKm: card['radius_km'] as int?,
+      machineryTitles: agg.machineryIds
+          .map((int id) => _machineryIdToTitle[id] ?? '')
+          .where((String t) => t.isNotEmpty)
+          .toList(),
+      categoryTitles: agg.categoryIds
+          .map((int id) => _categoryIdToTitle[id] ?? '')
+          .where((String t) => t.isNotEmpty)
+          .toList(),
+      minPricePerHour: agg.minPriceHour,
+      minPricePerDay: agg.minPriceDay,
+    );
   }
 
   double? _toDouble(Object? v) {

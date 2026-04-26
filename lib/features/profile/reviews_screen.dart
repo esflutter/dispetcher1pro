@@ -55,10 +55,21 @@ class ReviewsScreen extends StatefulWidget {
   State<ReviewsScreen> createState() => _ReviewsScreenState();
 }
 
+class _ReviewsBundle {
+  const _ReviewsBundle({
+    required this.reviews,
+    required this.aggregate,
+    required this.totalCount,
+  });
+  final List<Review> reviews;
+  final double? aggregate;
+  final int? totalCount;
+}
+
 class _ReviewsScreenState extends State<ReviewsScreen> {
   bool get _isCustomer => widget.subject == ReviewSubject.customer;
 
-  late Future<List<Review>?> _futureDb;
+  late Future<_ReviewsBundle?> _futureDb;
 
   @override
   void initState() {
@@ -81,7 +92,7 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
     if (mounted) setState(() {});
   }
 
-  Future<List<Review>?> _loadFromDb() async {
+  Future<_ReviewsBundle?> _loadFromDb() async {
     final SupabaseClient client = Supabase.instance.client;
     final User? me = client.auth.currentUser;
     String? targetId = widget.targetUserId;
@@ -90,6 +101,9 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
     }
     if (targetId == null) return null;
     try {
+      // Тянем выборку отзывов и агрегат одним «букетом», чтобы при
+      // отсутствии переданных initialRating/Count показать корректный
+      // средний рейтинг по всему числу отзывов, а не по LIMIT 50.
       final List<Map<String, dynamic>> rows = await client
           .from('reviews')
           .select(
@@ -101,7 +115,33 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
           .eq('is_hidden', false)
           .order('created_at', ascending: false)
           .limit(50);
-      return rows.map(_dbToReview).toList();
+      double? aggregate;
+      int? totalCount;
+      try {
+        final String ratingCol =
+            _isCustomer ? 'rating_as_customer' : 'rating_as_executor';
+        final String countCol =
+            _isCustomer ? 'review_count_as_customer' : 'review_count_as_executor';
+        final Map<String, dynamic>? p = await client
+            .from('profiles')
+            .select('$ratingCol, $countCol')
+            .eq('id', targetId)
+            .maybeSingle();
+        if (p != null) {
+          final dynamic r = p[ratingCol];
+          aggregate = r is num
+              ? r.toDouble()
+              : (r == null ? null : double.tryParse(r.toString()));
+          totalCount = p[countCol] as int?;
+        }
+      } catch (_) {
+        // При недоступном агрегате ниже считаем по выборке.
+      }
+      return _ReviewsBundle(
+        reviews: rows.map(_dbToReview).toList(),
+        aggregate: aggregate,
+        totalCount: totalCount,
+      );
     } catch (_) {
       return null;
     }
@@ -133,22 +173,24 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
       backgroundColor: AppColors.background,
       appBar: const DarkSubAppBar(title: 'Отзывы'),
       body: SafeArea(
-        child: FutureBuilder<List<Review>?>(
+        child: FutureBuilder<_ReviewsBundle?>(
           future: _futureDb,
-          builder: (BuildContext context, AsyncSnapshot<List<Review>?> snap) {
+          builder: (BuildContext context, AsyncSnapshot<_ReviewsBundle?> snap) {
             if (snap.connectionState != ConnectionState.done) {
               return const Center(child: CircularProgressIndicator());
             }
+            final _ReviewsBundle? bundle = snap.data;
             final List<Review> reviews =
-                snap.data ?? const <Review>[];
-            // Источник правды для агрегата — `profiles.rating_as_*` /
-            // `review_count_as_*` из карточки заказа/исполнителя. На
-            // экране показываем `LIMIT 50` отзывов, поэтому считать
-            // по выборке = расходиться с цифрой в карточке. Если
-            // initialRating/initialCount не переданы (пустой push без
-            // контекста) — fallback на подсчёт по выборке.
-            final int count = widget.initialCount ?? reviews.length;
+                bundle?.reviews ?? const <Review>[];
+            // Источник правды — БД-агрегат (`profiles.rating_as_*` /
+            // `review_count_as_*`). Берём в порядке: переданный из
+            // карточки → загруженный нами по targetId → фолбэк по
+            // выборке (расходится при >50 отзывах, но лучше показать
+            // что-то, чем 0).
+            final int count =
+                widget.initialCount ?? bundle?.totalCount ?? reviews.length;
             final double aggregate = widget.initialRating ??
+                bundle?.aggregate ??
                 (reviews.isEmpty
                     ? 0
                     : reviews.fold<int>(0, (int s, Review r) => s + r.rating) /

@@ -291,6 +291,7 @@ class _OrdersMapFullScreenState extends State<OrdersMapFullScreen> {
                         MaterialPageRoute<void>(
                           builder: (_) => OrderDetailScreen(
                             orderId: o.id,
+                            initialTitle: o.title,
                           ),
                         ),
                       );

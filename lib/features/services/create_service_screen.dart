@@ -245,14 +245,19 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
         uploadedUrls.add(url);
       } catch (_) {/* пропускаем неудачную загрузку */}
     }
+    final double? priceHour = _parsePrice(_priceHourCtrl.text);
+    final double? priceDay = _parsePrice(_priceDayCtrl.text);
+    final int? minHours = int.tryParse(_minHoursCtrl.text.trim());
     return ServiceDraft(
       title: _titleCtrl.text.isEmpty ? 'Новая услуга' : _titleCtrl.text,
       description: _descCtrl.text.trim().isEmpty ? null : _descCtrl.text,
       machineryTitles: _selMach.toList(),
       categoryTitles: _selCat.toList(),
-      pricePerHour: _parsePrice(_priceHourCtrl.text),
-      pricePerDay: _parsePrice(_priceDayCtrl.text),
-      minHours: int.tryParse(_minHoursCtrl.text),
+      // ≤ 0 не пропускаем — UI блокирует кнопку «Создать», но и здесь
+      // подстраховываемся, чтобы случайно не записать 0₽.
+      pricePerHour: (priceHour != null && priceHour > 0) ? priceHour : null,
+      pricePerDay: (priceDay != null && priceDay > 0) ? priceDay : null,
+      minHours: (minHours != null && minHours > 0) ? minHours : null,
       photos: uploadedUrls,
       locationAddress: _address,
       radiusKm: radiusKm,
@@ -531,14 +536,28 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
     );
   }
 
+  /// Хотя бы одно поле цены заполнено и парсится в число > 0. Цены 0/-N
+  /// БД не отвергает (CHECK на >0 нет), но услуга бесплатной быть не
+  /// может — отсекаем на UI.
+  bool get _hasValidPrice {
+    final double? hour = _parsePrice(_priceHourCtrl.text);
+    final double? day = _parsePrice(_priceDayCtrl.text);
+    return (hour != null && hour > 0) || (day != null && day > 0);
+  }
+
+  /// Минимальное количество часов — целое число строго больше 0.
+  bool get _hasValidMinHours {
+    final int? n = int.tryParse(_minHoursCtrl.text.trim());
+    return n != null && n > 0;
+  }
+
   bool get _canCreate =>
       _selCat.isNotEmpty &&
       _selMach.isNotEmpty &&
       _titleCtrl.text.trim().isNotEmpty &&
       _descCtrl.text.trim().isNotEmpty &&
-      (_priceHourCtrl.text.trim().isNotEmpty ||
-          _priceDayCtrl.text.trim().isNotEmpty) &&
-      _minHoursCtrl.text.trim().isNotEmpty &&
+      _hasValidPrice &&
+      _hasValidMinHours &&
       _address != null &&
       _radiusIndex >= 0;
 

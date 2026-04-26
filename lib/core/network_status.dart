@@ -18,9 +18,12 @@ class NetworkStatus extends ChangeNotifier {
 
   static final NetworkStatus instance = NetworkStatus._();
 
-  // TODO: включить проверку сети при подключении бэкенда
   bool _online = true;
-  static const bool _checkEnabled = false;
+  // Бэкенд (Supabase) подключён — проверка реального выхода в сеть
+  // включена. На onConnectivityChanged делаем DNS-lookup, чтобы Wi-Fi
+  // без интернета не считался «онлайном» — иначе все запросы к БД
+  // молча уходили бы в таймаут вместо явной плашки «нет сети».
+  static const bool _checkEnabled = true;
   StreamSubscription<List<ConnectivityResult>>? _sub;
 
   bool get isOffline => !_online;

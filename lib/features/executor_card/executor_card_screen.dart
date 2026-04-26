@@ -102,25 +102,40 @@ class _ExecutorCardScreenState extends State<ExecutorCardScreen> {
   /// Тянет карточку из БД и заполняет [ExecutorCardData] + флаг
   /// `cardCreated`. Без этой загрузки экран после свежего логина
   /// показывал «Создайте карточку», даже если в БД она уже есть.
+  ///
+  /// При сетевом сбое отдаём snackbar — раньше ловили `catch (_) { }`
+  /// и пользователь видел пустой экран, не понимая, что данные
+  /// просто не подгрузились.
   Future<void> _loadFromDb() async {
     try {
       final MyExecutorCard? c = await ExecutorCardService.instance.loadMine();
-      if (c == null || !mounted) return;
-      ExecutorCardData.location = c.locationAddress;
-      ExecutorCardData.radius =
-          c.radiusKm != null ? 'В радиусе ${c.radiusKm} км' : null;
-      ExecutorCardData.about = c.about;
-      ExecutorCardData.experience = c.experienceYears?.toString();
-      ExecutorCardData.status = _legalStatusLabel(c.legalStatus);
-      ExecutorCardScreen.cardCreated = c.isPublished;
+      if (!mounted) return;
+      if (c != null) {
+        ExecutorCardData.location = c.locationAddress;
+        ExecutorCardData.radius =
+            c.radiusKm != null ? 'В радиусе ${c.radiusKm} км' : null;
+        ExecutorCardData.about = c.about;
+        ExecutorCardData.experience = c.experienceYears?.toString();
+        ExecutorCardData.status = _legalStatusLabel(c.legalStatus);
+        ExecutorCardScreen.cardCreated = c.isPublished;
+      }
       // Параллельно тянем причину отказа модерации (если есть). Поле
       // живёт в profiles_private — RLS пропустит только владельца.
       final MyPrivate? priv = await ProfileService.instance.loadMyPrivate();
-      if (mounted && priv != null) {
+      if (!mounted) return;
+      if (priv != null) {
         _verificationRejectReason = priv.verificationRejectReason;
       }
-      if (mounted) setState(() {});
-    } catch (_) {/* silent */}
+      setState(() {});
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Не удалось загрузить карточку: $e'),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
   }
 
   String? _legalStatusLabel(String? code) {

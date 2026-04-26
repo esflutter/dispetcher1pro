@@ -269,6 +269,7 @@ class _OrderList extends StatelessWidget {
                 MaterialPageRoute<void>(
                   builder: (_) => OrderDetailScreen(
                     orderId: o.id,
+                    initialTitle: o.title,
                     multipleEquipment: o.machineryTitles.length > 1,
                   ),
                 ),
@@ -426,6 +427,7 @@ class _OrdersMapWithCardState extends State<_OrdersMapWithCard> {
               MaterialPageRoute<void>(
                 builder: (_) => OrderDetailScreen(
                   orderId: o.id,
+                  initialTitle: o.title,
                   multipleEquipment: o.machineryTitles.length > 1,
                 ),
               ),

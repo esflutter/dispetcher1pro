@@ -32,6 +32,7 @@ class OrderDetailScreen extends StatefulWidget {
     required this.orderId,
     this.multipleEquipment = false,
     this.fromCustomerCard = false,
+    this.initialTitle,
   });
 
   final String orderId;
@@ -42,6 +43,12 @@ class OrderDetailScreen extends StatefulWidget {
   /// а на pop обратно — чтобы избежать бесконечной цепочки «заказ →
   /// заказчик → заказ → заказчик → ...» в стеке навигации.
   final bool fromCustomerCard;
+
+  /// Название заказа из ленты — показываем сразу в AppBar, чтобы
+  /// заголовок не моргал «Заказ → реальное название» во время
+  /// загрузки `_load()`. Если детали из БД отдадут другое значение,
+  /// AppBar обновится после получения.
+  final String? initialTitle;
 
   @override
   State<OrderDetailScreen> createState() => _OrderDetailScreenState();
@@ -254,7 +261,9 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
             future: _future,
             builder: (BuildContext context,
                 AsyncSnapshot<_OrderScreenData> snap) {
-              final String title = snap.data?.order?.title ?? 'Заказ';
+              final String title = snap.data?.order?.title ??
+                  widget.initialTitle ??
+                  'Заказ';
               return Text(
                 title,
                 style: AppTextStyles.titleS.copyWith(color: Colors.white),
@@ -612,6 +621,23 @@ class _PickServiceSheetState extends State<PickServiceSheet> {
       parts.add('${s.pricePerDay!.toStringAsFixed(0)} ₽/день');
     }
     if (s.minHours != null) parts.add('от ${s.minHours} ч');
+    if (parts.isEmpty) return 'цена по запросу';
+    return parts.join(' · ');
+  }
+
+  /// Собирает строку для одной услуги: «<техника> · <название> · <цена>».
+  /// Любое из полей может быть пустым — фоллбэками гарантируем, что
+  /// строка не схлопнется до одной точки.
+  String _serviceLabel(MyActiveService s) {
+    final String machinery =
+        s.machineryTitle.isEmpty ? 'Услуга' : s.machineryTitle;
+    final String title = s.title.trim();
+    final String price = _priceLine(s);
+    final List<String> parts = <String>[
+      machinery,
+      if (title.isNotEmpty) title,
+      price,
+    ];
     return parts.join(' · ');
   }
 
@@ -646,10 +672,7 @@ class _PickServiceSheetState extends State<PickServiceSheet> {
           SizedBox(height: 16.h),
           for (final MyActiveService s in widget.options)
             _CheckRow(
-              label: s.title.isEmpty
-                  ? '${s.machineryTitle} · ${_priceLine(s)}'
-                  : '${s.machineryTitle} · ${s.title}'
-                      '${_priceLine(s).isEmpty ? '' : ' · ${_priceLine(s)}'}',
+              label: _serviceLabel(s),
               checked: _picked == s.id,
               onTap: () {
                 setState(() => _picked = s.id);

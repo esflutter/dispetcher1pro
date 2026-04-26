@@ -249,7 +249,16 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
     );
   }
 
+  /// Защищает от двойного клика на «Принять/Отказаться/Отозвать»: пока
+  /// идёт первый запрос, повторные нажатия игнорируются. Без флага
+  /// одновременно уходило два UPDATE — первый успешный, второй ловил
+  /// 23505 и показывал «уже выбрали другого», хотя с точки зрения
+  /// пользователя он ничего лишнего не делал.
+  bool _busy = false;
+
   Future<void> _doAction(Future<void> Function() op) async {
+    if (_busy) return;
+    _busy = true;
     try {
       await op();
     } on MatchAlreadyTakenException {
@@ -267,6 +276,8 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
         SnackBar(content: Text('Не удалось обновить статус: $e')),
       );
       return;
+    } finally {
+      _busy = false;
     }
     _refresh();
   }

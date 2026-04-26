@@ -207,6 +207,7 @@ class ExecutorCardListItem {
     required this.reviewCountAsExecutor,
     required this.legalStatus,
     required this.experienceYears,
+    required this.about,
     required this.locationAddress,
     required this.radiusKm,
     required this.machineryTitles,
@@ -222,6 +223,10 @@ class ExecutorCardListItem {
   final int reviewCountAsExecutor;
   final String? legalStatus;
   final int? experienceYears;
+  /// `profiles.about` исполнителя — короткий рассказ о себе для карточки
+  /// в каталоге. У dispetcher это поле уже было; в claude его не было,
+  /// и при попытке отобразить «о себе» получали пусто.
+  final String? about;
   final String? locationAddress;
   final int? radiusKm;
   final List<String> machineryTitles;

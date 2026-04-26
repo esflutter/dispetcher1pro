@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:dispatcher_1/core/catalog/catalog_service.dart';
@@ -109,14 +110,29 @@ class ScheduleService {
     final Map<String, int> categoryByTitle = <String, int>{
       for (final CategoryRef c in categories) c.title: c.id,
     };
-    final List<int> machineryIds = machineryTitles
-        .map((String t) => machineryByTitle[t])
-        .whereType<int>()
-        .toList();
-    final List<int> categoryIds = categoryTitles
-        .map((String t) => categoryByTitle[t])
-        .whereType<int>()
-        .toList();
+    final List<int> machineryIds = <int>[];
+    for (final String t in machineryTitles) {
+      final int? id = machineryByTitle[t];
+      if (id == null) {
+        // Справочник техники изменился (переименовали/удалили) — title
+        // больше не резолвится в id. Молча отфильтровывали — у пользователя
+        // часть техники пропадала из override'а без объяснения. Логируем,
+        // чтобы это всплыло в отладке/телеметрии.
+        debugPrint(
+            '[ScheduleService] machinery title not in catalog: "$t"');
+        continue;
+      }
+      machineryIds.add(id);
+    }
+    final List<int> categoryIds = <int>[];
+    for (final String t in categoryTitles) {
+      final int? id = categoryByTitle[t];
+      if (id == null) {
+        debugPrint('[ScheduleService] category title not in catalog: "$t"');
+        continue;
+      }
+      categoryIds.add(id);
+    }
 
     await _client.from('schedule_day_overrides').upsert(<String, dynamic>{
       'user_id': user.id,

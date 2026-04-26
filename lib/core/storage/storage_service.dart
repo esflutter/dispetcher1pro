@@ -8,8 +8,11 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 /// - `service-photos` (public) — фото услуг исполнителя
 /// - `order-photos` (private, под RLS) — фото заказа (видят только стороны)
 ///
-/// Все пути формируются по шаблону `<bucket>/<user_id>/<uuid>.<ext>`,
-/// что соответствует RLS-политике `(storage.foldername(name))[1] = auth.uid()`.
+/// Public-бакеты: путь `<user_id>/<uuid>.webp` — RLS проверяет
+/// `(storage.foldername(name))[1] = auth.uid()`.
+/// `order-photos`: путь `<user_id>/<order_id>/<uuid>.webp` — RLS на SELECT
+/// для исполнителя проверяет `foldername[2] = order_id`, чтобы исполнитель
+/// с accepted-мэтчем по конкретному заказу видел только его фото.
 class StorageService {
   StorageService._();
   static final StorageService instance = StorageService._();
@@ -26,18 +29,18 @@ class StorageService {
       _uploadToPublicBucket('service-photos', file);
 
   /// Загружает фото заказа. Бакет приватный — URL вернёт signed URL на
-  /// 24 часа; клиент пересохраняет в `orders.photos` этот URL (или path
-  /// для повторной подписи на чтении).
-  Future<String> uploadOrderPhoto(File file) async {
+  /// 1 час; клиент пересохраняет в `orders.photos` сам путь.
+  /// Требует уже созданный `orderId`: RLS на чтение для исполнителя
+  /// проверяет `foldername[2] = order_id`.
+  Future<String> uploadOrderPhoto(File file, {required String orderId}) async {
     final User? user = _client.auth.currentUser;
     if (user == null) {
       throw const AuthException('Нет активной сессии');
     }
     final File compressed = await _compress(file);
     final String fileName = '${DateTime.now().microsecondsSinceEpoch}.webp';
-    final String path = '${user.id}/$fileName';
+    final String path = '${user.id}/$orderId/$fileName';
     await _client.storage.from('order-photos').upload(path, compressed);
-    // Возвращаем сам путь — клиент при отображении запрашивает signed URL.
     return path;
   }
 
