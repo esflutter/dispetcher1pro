@@ -2,6 +2,26 @@
 // колонками PostgreSQL, преобразование из `Map<String, dynamic>` живёт в
 // фабриках `fromRow`.
 
+/// Сводка моей активной услуги для отклика на заказ. У одного исполнителя
+/// может быть несколько услуг с одной и той же техникой (разные тарифы),
+/// поэтому отклик — по конкретной услуге, а не по технике.
+class MyActiveService {
+  const MyActiveService({
+    required this.id,
+    required this.title,
+    required this.machineryTitle,
+    required this.pricePerHour,
+    required this.pricePerDay,
+    required this.minHours,
+  });
+  final String id;
+  final String title;
+  final String machineryTitle;
+  final double? pricePerHour;
+  final double? pricePerDay;
+  final int? minHours;
+}
+
 class MachineryRef {
   const MachineryRef({required this.id, required this.title});
   final int id;

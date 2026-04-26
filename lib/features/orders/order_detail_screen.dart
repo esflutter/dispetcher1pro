@@ -15,12 +15,11 @@ import 'package:dispatcher_1/core/widgets/labeled_section.dart';
 import 'package:dispatcher_1/core/widgets/photo_gallery_screen.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
 import 'package:dispatcher_1/features/catalog/customer_card_screen.dart';
-import 'package:dispatcher_1/features/catalog/order_detail_screen.dart'
-    show PickEquipmentSheet;
 import 'package:dispatcher_1/features/catalog/widgets/catalog_search_bar.dart';
 import 'package:dispatcher_1/features/orders/review_screen.dart';
 import 'package:dispatcher_1/features/orders/widgets/order_alerts.dart';
 import 'package:dispatcher_1/features/orders/widgets/order_status_pill.dart';
+import 'package:dispatcher_1/features/orders/widgets/pick_equipment_sheet.dart';
 import 'package:dispatcher_1/features/profile/reviews_screen.dart';
 import 'package:dispatcher_1/features/profile/widgets/verification_badge.dart';
 
@@ -50,32 +49,20 @@ class MyOrderDetailScreen extends StatefulWidget {
   const MyOrderDetailScreen({
     super.key,
     required this.state,
-    this.title = 'Нужен экскаватор для копки траншеи',
-    this.equipment = const <String>[
-      'Экскаватор',
-      'Автокран',
-      'Манипулятор',
-      'Погрузчик',
-      'Автовышка',
-    ],
-    this.workCategories = const <String>[
-      'Земляные работы',
-      'Погрузочно-разгрузочные работы',
-    ],
-    this.rentDate = '15 июня · 09:00–18:00',
-    this.address = 'Московская область, Москва, Улица1, д 144',
+    this.title = '',
+    this.equipment = const <String>[],
+    this.workCategories = const <String>[],
+    this.rentDate = '',
+    this.address = '',
     this.customerId,
     this.customerName = '',
     this.customerPhone = '',
     this.customerEmail,
-    this.customerRating = 4.6,
-    this.customerReviews = 10,
-    this.publishedAgo = 'Вчера в 14:30',
-    this.orderNumber = '№123456',
-    this.workDescription = const <String>[
-      'Разработка грунта — 40 м³',
-      'Планировка участка — 2 × 12 × 15 м',
-    ],
+    this.customerRating = 0,
+    this.customerReviews = 0,
+    this.publishedAgo = '',
+    this.orderNumber = '',
+    this.workDescription = const <String>[],
     this.description = '',
     this.photos = const <String>[],
     this.rejectedStatus = MyOrderStatus.rejectedOther,
@@ -339,6 +326,7 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
                       MaterialPageRoute<void>(
                         builder: (_) => ReviewsScreen(
                           subject: ReviewSubject.customer,
+                          targetUserId: widget.customerId,
                           initialRating: widget.customerRating,
                           initialCount: widget.customerReviews,
                         ),
@@ -551,9 +539,13 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
                   if (go == true && mounted) context.push('/subscription');
                   return;
                 }
-                // Шторка выбора техники нужна только когда в заказе
-                // больше одного вида — есть из чего выбирать. При
-                // единственной технике подтверждаем сразу без шторки.
+                // На `waiting_executor` → `accepted` уже зафиксирована
+                // конкретная услуга (`order_matches.service_id`), её
+                // менять нельзя. Шторка-чеклист «по каким техникам
+                // готов выполнить» — это UX-подтверждение для
+                // исполнителя, чтобы при заказе с 2+ техниками он
+                // явно отметил, что согласен. Реальный service_id
+                // в БД остаётся прежним.
                 if (widget.equipment.length > 1) {
                   final List<String>? picked =
                       await showModalBottomSheet<List<String>>(

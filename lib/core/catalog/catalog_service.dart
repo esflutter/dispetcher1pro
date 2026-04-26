@@ -80,6 +80,12 @@ class CatalogService {
     ]);
   }
 
+  /// Прогревает in-memory кэш справочников. Вызывается один раз на
+  /// старте приложения после `Supabase.initialize`, чтобы экраны
+  /// (каталог, фильтр, создание услуги/заказа) получали списки
+  /// техники и категорий из памяти с первого кадра.
+  Future<void> warmup() => _primeDirectories();
+
   // ---------------------------------------------------------------
   // Лента заказов
   // ---------------------------------------------------------------
@@ -91,6 +97,9 @@ class CatalogService {
     DateTime? dateFrom,
     DateTime? dateTo,
     String? addressContains,
+    String? timeFrom,
+    String? timeTo,
+    bool? wholeDay,
     int limit = 50,
   }) async {
     await _primeDirectories();
@@ -139,6 +148,15 @@ class CatalogService {
     if (addressContains != null && addressContains.trim().isNotEmpty) {
       final String esc = addressContains.trim().replaceAll(',', ' ');
       q = q.ilike('address', '%$esc%');
+    }
+    if (wholeDay == true) {
+      q = q.eq('whole_day', true);
+    }
+    if (timeFrom != null && timeFrom.isNotEmpty) {
+      q = q.gte('time_from', '$timeFrom:00');
+    }
+    if (timeTo != null && timeTo.isNotEmpty) {
+      q = q.lte('time_to', '$timeTo:00');
     }
 
     final List<Map<String, dynamic>> rows =
@@ -448,25 +466,35 @@ class CatalogService {
   // Отклик на заказ
   // ---------------------------------------------------------------
 
-  /// Мои активные (`is_archived=false`, `is_paid=true`) услуги — маппинг
-  /// названия техники → id услуги. Нужно для отклика: по выбранной технике
-  /// находим service_id, который уйдёт в `order_matches`.
-  Future<Map<String, String>> listMyActiveServicesByMachinery() async {
+  /// Все мои активные услуги. У одной техники может быть несколько услуг
+  /// (разные тарифы) — отклик подаётся по конкретной услуге, а не по
+  /// технике, поэтому возвращаем плоский список с id+title+ценой.
+  Future<List<MyActiveService>> listMyActiveServices() async {
     await _primeDirectories();
     final User? user = _client.auth.currentUser;
-    if (user == null) return <String, String>{};
+    if (user == null) return const <MyActiveService>[];
     final List<Map<String, dynamic>> rows = await _client
         .from('services')
-        .select('id, machinery_ids')
+        .select(
+          'id, title, machinery_ids, price_per_hour, price_per_day, min_hours',
+        )
         .eq('executor_id', user.id)
         .eq('is_archived', false)
         .eq('is_paid', true);
-    final Map<String, String> out = <String, String>{};
+    final List<MyActiveService> out = <MyActiveService>[];
     for (final Map<String, dynamic> r in rows) {
       final List<int> ids = List<int>.from(r['machinery_ids'] as List);
       if (ids.isEmpty) continue;
       final String? title = _machineryIdToTitle[ids.first];
-      if (title != null) out[title] = r['id'] as String;
+      if (title == null) continue;
+      out.add(MyActiveService(
+        id: r['id'] as String,
+        title: (r['title'] as String?) ?? '',
+        machineryTitle: title,
+        pricePerHour: _toDouble(r['price_per_hour']),
+        pricePerDay: _toDouble(r['price_per_day']),
+        minHours: r['min_hours'] as int?,
+      ));
     }
     return out;
   }

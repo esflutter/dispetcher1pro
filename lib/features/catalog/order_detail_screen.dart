@@ -15,7 +15,12 @@ import 'package:dispatcher_1/core/widgets/primary_button.dart';
 import 'package:dispatcher_1/features/catalog/customer_card_screen.dart';
 import 'package:dispatcher_1/features/catalog/widgets/catalog_search_bar.dart';
 import 'package:dispatcher_1/features/catalog/widgets/respond_bottom_sheet.dart';
+import 'package:dispatcher_1/features/catalog/widgets/subscription_paywall.dart';
+import 'package:dispatcher_1/features/executor_card/executor_card_screen.dart';
+import 'package:dispatcher_1/features/orders/widgets/order_alerts.dart';
+import 'package:dispatcher_1/features/profile/account_block.dart';
 import 'package:dispatcher_1/features/profile/reviews_screen.dart';
+import 'package:dispatcher_1/features/profile/widgets/verification_badge.dart';
 
 /// Карточка заказа (детали). Данные — из `public.orders` через
 /// [CatalogService.getOrderDetail]. Состояние "уже откликнулся" —
@@ -54,6 +59,17 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
   void initState() {
     super.initState();
     _future = _load();
+    AccountBlock.notifier.addListener(_refresh);
+  }
+
+  @override
+  void dispose() {
+    AccountBlock.notifier.removeListener(_refresh);
+    super.dispose();
+  }
+
+  void _refresh() {
+    if (mounted) setState(() {});
   }
 
   Future<_OrderScreenData> _load() async {
@@ -69,16 +85,80 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
 
   Future<void> _onRespondTap(OrderDetail order) async {
     if (_responding) return;
+
+    // 1. Профиль заблокирован.
+    if (AccountBlock.isBlocked) {
+      await showDialog<void>(
+        context: context,
+        barrierColor: Colors.black.withValues(alpha: 0.35),
+        builder: (_) => _BlockedDialog(),
+      );
+      return;
+    }
+
+    // 2. Документы на проверке — отклик пока недоступен.
+    if (VerificationStatus.current == VerificationStatus.inProgress) {
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        barrierColor: Colors.black.withValues(alpha: 0.35),
+        builder: (_) => _InProgressDialog(),
+      );
+      return;
+    }
+
+    // 3. Верификация не пройдена — предлагаем отправить документы.
+    if (!VerificationStatus.current.isVerified) {
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        barrierColor: Colors.black.withValues(alpha: 0.35),
+        builder: (_) => RespondModalDialog(verified: false),
+      );
+      if (mounted) setState(() {});
+      return;
+    }
+
+    // 4. Подписка не активна — paywall либо «приостановлена» с возобновлением.
+    if (!VerificationStatus.hasSubscription) {
+      if (VerificationStatus.subscriptionPaidUntilText != null) {
+        final bool? go = await showSubscriptionPausedDialog(context);
+        if (go == true && mounted) context.push('/subscription');
+        return;
+      }
+      final bool? subscribed = await Navigator.of(context).push<bool>(
+        MaterialPageRoute<bool>(
+          fullscreenDialog: true,
+          builder: (_) => const SubscriptionPaywall(),
+        ),
+      );
+      if (subscribed != true || !mounted) return;
+      VerificationStatus.hasSubscription = true;
+    }
+
+    // 5. Карточка исполнителя должна быть создана.
+    if (!ExecutorCardScreen.cardCreated) {
+      final bool? go = await showExecutorCardRequiredDialog(context);
+      if (go == true && mounted) {
+        await context.push('/executor-card/edit');
+        if (mounted) setState(() {});
+      }
+      return;
+    }
+
     setState(() => _responding = true);
     try {
       final CatalogService svc = CatalogService.instance;
-      final Map<String, String> myServices =
-          await svc.listMyActiveServicesByMachinery();
-      // Пересечение техники заказа с моими услугами.
-      final List<String> availableEquipment = order.machineryTitles
-          .where((String t) => myServices.containsKey(t))
+      final List<MyActiveService> myServices =
+          await svc.listMyActiveServices();
+      // Пересечение моих услуг с техникой заказа: одна услуга = одна
+      // строка в шторке выбора, разные тарифы за один и тот же экскаватор
+      // не схлопываются.
+      final List<MyActiveService> matching = myServices
+          .where((MyActiveService s) =>
+              order.machineryTitles.contains(s.machineryTitle))
           .toList();
-      if (availableEquipment.isEmpty) {
+      if (matching.isEmpty) {
         if (!mounted) return;
         setState(() => _responding = false);
         await showDialog<void>(
@@ -89,35 +169,21 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
         return;
       }
 
-      String pickedMachinery;
-      if (availableEquipment.length == 1) {
-        pickedMachinery = availableEquipment.first;
+      String? serviceId;
+      if (matching.length == 1) {
+        serviceId = matching.first.id;
       } else {
         if (!mounted) return;
-        // Sheet поддерживает мультивыбор, но в БД один отклик = одна услуга.
-        // Берём первую выбранную технику.
-        final List<String>? picked =
-            await showModalBottomSheet<List<String>>(
+        serviceId = await showModalBottomSheet<String>(
           context: context,
           isScrollControlled: true,
           backgroundColor: Colors.transparent,
-          builder: (_) => PickEquipmentSheet(options: availableEquipment),
+          builder: (_) => PickServiceSheet(options: matching),
         );
-        if (picked == null || picked.isEmpty || !mounted) {
+        if (serviceId == null || !mounted) {
           setState(() => _responding = false);
           return;
         }
-        pickedMachinery = picked.first;
-      }
-
-      final String? serviceId = myServices[pickedMachinery];
-      if (serviceId == null) {
-        if (!mounted) return;
-        setState(() => _responding = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Не удалось найти услугу для выбранной техники.')),
-        );
-        return;
       }
 
       await svc.respondToOrder(orderId: widget.orderId, serviceId: serviceId);
@@ -290,6 +356,7 @@ class _OrderDetailBody extends StatelessWidget {
                     MaterialPageRoute<void>(
                       builder: (_) => ReviewsScreen(
                         subject: ReviewSubject.customer,
+                        targetUserId: order.customer.id,
                         initialRating: order.customer.ratingAsCustomer,
                         initialCount: order.customer.reviewCountAsCustomer,
                       ),
@@ -360,7 +427,7 @@ class _OrderDetailBody extends StatelessWidget {
                 if (order.description != null &&
                     order.description!.trim().isNotEmpty)
                   LabeledSection(
-                    title: 'Комментарий',
+                    title: 'Описание заказа',
                     child: Text(order.description!,
                         style: AppTextStyles.subBody
                             .copyWith(fontWeight: FontWeight.w400)),
@@ -389,8 +456,13 @@ class _OrderDetailBody extends StatelessWidget {
             label: alreadyResponded
                 ? 'Вы уже откликнулись'
                 : (responding ? 'Отправка...' : 'Откликнуться'),
-            enabled: !alreadyResponded && !responding,
-            onPressed: (alreadyResponded || responding) ? null : onRespond,
+            enabled: !alreadyResponded &&
+                !responding &&
+                !AccountBlock.isBlocked,
+            onPressed:
+                (alreadyResponded || responding || AccountBlock.isBlocked)
+                    ? null
+                    : onRespond,
           ),
         ),
       ],
@@ -511,24 +583,37 @@ class _OutlinedChip extends StatelessWidget {
   }
 }
 
-/// Шторка выбора спецтехники. Возвращает `List<String>` с отмеченными
-/// позициями через `Navigator.pop`. Используется при отклике из каталога
-/// и при подтверждении заказа из «Мои заказы».
-class PickEquipmentSheet extends StatefulWidget {
-  const PickEquipmentSheet({
+/// Шторка выбора конкретной услуги при отклике на заказ.
+/// Возвращает `id` выбранной услуги (или null при отмене). Подходит
+/// для случая, когда у исполнителя несколько услуг с одной техникой
+/// (разные тарифы) — каждая услуга = отдельная строка с ценой.
+class PickServiceSheet extends StatefulWidget {
+  const PickServiceSheet({
     super.key,
     required this.options,
     this.ctaLabel = 'Откликнуться',
   });
-  final List<String> options;
+  final List<MyActiveService> options;
   final String ctaLabel;
 
   @override
-  State<PickEquipmentSheet> createState() => _PickEquipmentSheetState();
+  State<PickServiceSheet> createState() => _PickServiceSheetState();
 }
 
-class _PickEquipmentSheetState extends State<PickEquipmentSheet> {
-  final Set<String> _picked = <String>{};
+class _PickServiceSheetState extends State<PickServiceSheet> {
+  String? _picked;
+
+  String _priceLine(MyActiveService s) {
+    final List<String> parts = <String>[];
+    if (s.pricePerHour != null) {
+      parts.add('${s.pricePerHour!.toStringAsFixed(0)} ₽/ч');
+    }
+    if (s.pricePerDay != null) {
+      parts.add('${s.pricePerDay!.toStringAsFixed(0)} ₽/день');
+    }
+    if (s.minHours != null) parts.add('от ${s.minHours} ч');
+    return parts.join(' · ');
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -549,7 +634,7 @@ class _PickEquipmentSheetState extends State<PickEquipmentSheet> {
         children: <Widget>[
           SizedBox(height: 16.h),
           Text(
-            'Выберите технику, на которой\nвы готовы выполнить работу',
+            'Выберите услугу, по которой\nготовы взяться за заказ',
             textAlign: TextAlign.center,
             style: TextStyle(
               fontFamily: 'Roboto',
@@ -559,24 +644,131 @@ class _PickEquipmentSheetState extends State<PickEquipmentSheet> {
             ),
           ),
           SizedBox(height: 16.h),
-          for (final String e in widget.options)
+          for (final MyActiveService s in widget.options)
             _CheckRow(
-              label: e,
-              checked: _picked.contains(e),
+              label: s.title.isEmpty
+                  ? '${s.machineryTitle} · ${_priceLine(s)}'
+                  : '${s.machineryTitle} · ${s.title}'
+                      '${_priceLine(s).isEmpty ? '' : ' · ${_priceLine(s)}'}',
+              checked: _picked == s.id,
               onTap: () {
-                setState(() {
-                  if (!_picked.add(e)) _picked.remove(e);
-                });
+                setState(() => _picked = s.id);
               },
             ),
           SizedBox(height: 16.h),
           PrimaryButton(
             label: widget.ctaLabel,
-            onPressed: _picked.isEmpty
+            onPressed: _picked == null
                 ? null
-                : () => Navigator.of(context).pop(_picked.toList()),
+                : () => Navigator.of(context).pop(_picked),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Диалог «Ваши документы ещё на проверке» — показывается при попытке
+/// откликнуться, пока верификация в статусе [VerificationStatus.inProgress].
+class _InProgressDialog extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      insetPadding: EdgeInsets.symmetric(horizontal: 16.w),
+      backgroundColor: Colors.transparent,
+      child: Container(
+        padding: EdgeInsets.fromLTRB(16.r, 14.r, 16.r, 22.r),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(20.r),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Align(
+              alignment: Alignment.centerRight,
+              child: GestureDetector(
+                onTap: () => Navigator.of(context).pop(),
+                child: Icon(Icons.close_rounded,
+                    size: 22.r, color: AppColors.textTertiary),
+              ),
+            ),
+            SizedBox(height: 20.h),
+            Text(
+              'Ваши документы ещё\nна проверке',
+              textAlign: TextAlign.center,
+              style:
+                  AppTextStyles.titleL.copyWith(fontWeight: FontWeight.w700),
+            ),
+            SizedBox(height: 8.h),
+            Text(
+              'Вы получите уведомление, когда проверка завершится',
+              textAlign: TextAlign.center,
+              style: AppTextStyles.bodyMRegular
+                  .copyWith(color: AppColors.textSecondary),
+            ),
+            SizedBox(height: 18.h),
+            PrimaryButton(
+              label: 'Ок',
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+            SizedBox(height: 12.h),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Диалог «Ваш профиль заблокирован на 30 дней» — показывается при попытке
+/// откликнуться при активной [AccountBlock].
+class _BlockedDialog extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      insetPadding: EdgeInsets.symmetric(horizontal: 16.w),
+      backgroundColor: Colors.transparent,
+      child: Container(
+        padding: EdgeInsets.fromLTRB(16.r, 14.r, 16.r, 22.r),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(20.r),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Align(
+              alignment: Alignment.centerRight,
+              child: GestureDetector(
+                onTap: () => Navigator.of(context).pop(),
+                child: Icon(Icons.close_rounded,
+                    size: 22.r, color: AppColors.textTertiary),
+              ),
+            ),
+            SizedBox(height: 20.h),
+            Text(
+              'Ваш профиль заблокирован\nна 30 дней',
+              textAlign: TextAlign.center,
+              style:
+                  AppTextStyles.titleL.copyWith(fontWeight: FontWeight.w700),
+            ),
+            SizedBox(height: 8.h),
+            Text(
+              'Во избежание дальнейших блокировок избегайте отзывов с низкой оценкой',
+              textAlign: TextAlign.center,
+              style: AppTextStyles.bodyMRegular
+                  .copyWith(color: AppColors.textSecondary),
+            ),
+            SizedBox(height: 18.h),
+            PrimaryButton(
+              label: 'Ок',
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+            SizedBox(height: 12.h),
+          ],
+        ),
       ),
     );
   }

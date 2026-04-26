@@ -1,6 +1,5 @@
 import 'dart:io';
 
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -275,22 +274,19 @@ class _PolicyCheckbox extends StatelessWidget {
                 ),
                 children: [
                   const TextSpan(text: 'Я прочитал(а) и согласен(а) с '),
-                  TextSpan(
+                  const TextSpan(
                     text: 'Правилами обработки персональных данных',
-                    style: const TextStyle(fontWeight: FontWeight.bold, decoration: TextDecoration.underline),
-                    recognizer: TapGestureRecognizer()..onTap = () {},
+                    style: TextStyle(fontWeight: FontWeight.bold, decoration: TextDecoration.underline),
                   ),
                   const TextSpan(text: ', '),
-                  TextSpan(
+                  const TextSpan(
                     text: 'Пользовательским соглашением',
-                    style: const TextStyle(fontWeight: FontWeight.bold, decoration: TextDecoration.underline),
-                    recognizer: TapGestureRecognizer()..onTap = () {},
+                    style: TextStyle(fontWeight: FontWeight.bold, decoration: TextDecoration.underline),
                   ),
                   const TextSpan(text: ' и '),
-                  TextSpan(
+                  const TextSpan(
                     text: 'Политикой конфиденциальности',
-                    style: const TextStyle(fontWeight: FontWeight.bold, decoration: TextDecoration.underline),
-                    recognizer: TapGestureRecognizer()..onTap = () {},
+                    style: TextStyle(fontWeight: FontWeight.bold, decoration: TextDecoration.underline),
                   ),
                 ],
               ),

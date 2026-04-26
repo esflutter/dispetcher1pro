@@ -11,9 +11,18 @@ import 'package:dispatcher_1/core/widgets/primary_button.dart';
 ///   verified == false → «Подтвердите свои данные»
 ///   verified == true  → «Ваш отклик отправлен!»
 class RespondModalDialog extends StatelessWidget {
-  const RespondModalDialog({super.key, required this.verified});
+  const RespondModalDialog({
+    super.key,
+    required this.verified,
+    this.rejectReason,
+  });
 
   final bool verified;
+
+  /// Текстовая причина отказа модерацией
+  /// (`profiles_private.verification_reject_reason`). Показывается ниже
+  /// заголовка только когда задана и `verified == false`.
+  final String? rejectReason;
 
   @override
   Widget build(BuildContext context) {
@@ -96,6 +105,14 @@ class RespondModalDialog extends StatelessWidget {
           style: AppTextStyles.body
               .copyWith(color: AppColors.textSecondary),
         ),
+        if (rejectReason != null && rejectReason!.trim().isNotEmpty) ...<Widget>[
+          SizedBox(height: 10.h),
+          Text(
+            'Причина отказа: ${rejectReason!.trim()}',
+            textAlign: TextAlign.center,
+            style: AppTextStyles.body.copyWith(color: AppColors.error),
+          ),
+        ],
         SizedBox(height: 18.h),
         PrimaryButton(
           label: 'Отправить документы',

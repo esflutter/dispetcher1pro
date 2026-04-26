@@ -1,77 +1,44 @@
 import 'package:flutter/foundation.dart';
 
-/// Одна запись отзыва, оставленного о пользователе.
-class ReviewRecord {
-  const ReviewRecord({required this.rating});
-
-  /// Оценка от 1 до 5.
-  final int rating;
-}
-
-/// Глобальное состояние отзывов о пользователе + производные значения
-/// (средний рейтинг, количество). При добавлении нового отзыва проверяет
-/// условия блокировки и при необходимости активирует `AccountBlock`.
+/// Текущий агрегированный рейтинг и количество отзывов о пользователе.
+/// Источник правды — БД (`profiles.rating_as_executor` /
+/// `review_count_as_executor`); этот класс просто кэширует последние
+/// прочитанные значения и оповещает UI об их обновлении.
+///
+/// Логика реальной блокировки (`profiles.blocked_until`) живёт в БД —
+/// триггер на отзыв сам выставит дату, клиент только читает её через
+/// `AccountBlock.setUntil`.
 class ReviewsData {
   ReviewsData._();
 
-  static final List<ReviewRecord> _reviews = <ReviewRecord>[
-    // Начальный набор: средний рейтинг 4,5 при 10 отзывах.
-    ReviewRecord(rating: 5),
-    ReviewRecord(rating: 5),
-    ReviewRecord(rating: 5),
-    ReviewRecord(rating: 5),
-    ReviewRecord(rating: 5),
-    ReviewRecord(rating: 5),
-    ReviewRecord(rating: 4),
-    ReviewRecord(rating: 4),
-    ReviewRecord(rating: 4),
-    ReviewRecord(rating: 3),
-  ];
+  static double _aggregate = 0;
+  static int _count = 0;
 
-  /// Любое изменение списка отзывов инкрементит revision —
-  /// UI-слой слушает и перерисовывается.
+  /// Любое обновление инкрементит revision — UI-слой слушает и
+  /// перерисовывается. Имя поля сохранено для обратной совместимости с
+  /// reviews_screen.
   static final ValueNotifier<int> revision = ValueNotifier<int>(0);
 
-  static List<ReviewRecord> get all => List<ReviewRecord>.unmodifiable(_reviews);
+  /// Средний рейтинг (0 = ещё нет отзывов).
+  static double get aggregate => _aggregate;
 
-  static int get count => _reviews.length;
+  /// Количество отзывов.
+  static int get count => _count;
 
-  static double get aggregate {
-    if (_reviews.isEmpty) return 0.0;
-    final int sum = _reviews.fold<int>(0, (int a, ReviewRecord r) => a + r.rating);
-    return sum / _reviews.length;
-  }
-
-  /// Пришёл новый отзыв. Добавляем в список и проверяем условия блокировки:
-  /// оба должны выполняться — (1) новый отзыв на 1★ и (2) совокупный
-  /// рейтинг стал меньше 2,0. При 0 отзывов (т.е. до первой оценки)
-  /// блокировка невозможна.
-  static void receive(int rating) {
-    assert(rating >= 1 && rating <= 5, 'rating must be 1..5');
-    _reviews.add(ReviewRecord(rating: rating));
+  /// Заполнить из БД (при загрузке профиля). Если значения изменились —
+  /// бампим revision, чтобы экраны, подписанные на отзывы, перерисовались.
+  static void setFromDb({required double rating, required int reviewCount}) {
+    if (_aggregate == rating && _count == reviewCount) return;
+    _aggregate = rating;
+    _count = reviewCount;
     revision.value = revision.value + 1;
-    final double avg = aggregate;
-    if (rating == 1 && avg < 2.0) {
-      AccountBlock.activate();
-    }
   }
 
-  /// Сбросить отзывы к дефолтному набору (для тестов/демо).
+  /// Полный сброс — после logout/удаления аккаунта.
   static void resetToDefault() {
-    _reviews
-      ..clear()
-      ..addAll(<ReviewRecord>[
-        ReviewRecord(rating: 5),
-        ReviewRecord(rating: 5),
-        ReviewRecord(rating: 5),
-        ReviewRecord(rating: 5),
-        ReviewRecord(rating: 5),
-        ReviewRecord(rating: 5),
-        ReviewRecord(rating: 4),
-        ReviewRecord(rating: 4),
-        ReviewRecord(rating: 4),
-        ReviewRecord(rating: 3),
-      ]);
+    if (_aggregate == 0 && _count == 0) return;
+    _aggregate = 0;
+    _count = 0;
     revision.value = revision.value + 1;
   }
 }

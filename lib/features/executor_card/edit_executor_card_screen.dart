@@ -1,21 +1,25 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:dispatcher_1/core/executor_card/executor_card_service.dart';
+import 'package:dispatcher_1/core/profile/profile_service.dart';
+import 'package:dispatcher_1/core/storage/storage_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_spacing.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
 import 'package:dispatcher_1/core/utils/photo_source.dart';
 import 'package:dispatcher_1/core/utils/plural.dart';
+import 'package:dispatcher_1/core/widgets/avatar_circle.dart';
 import 'package:dispatcher_1/core/widgets/dark_sub_app_bar.dart';
 import 'package:dispatcher_1/core/widgets/cropped_avatar.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
 import 'package:dispatcher_1/features/auth/photo_crop_screen.dart';
 import 'package:dispatcher_1/features/catalog/catalog_filter_screen.dart';
 import 'package:dispatcher_1/features/catalog/widgets/catalog_search_bar.dart';
-import 'package:dispatcher_1/features/profile/account_block.dart';
 
 import 'executor_card_screen.dart';
 
@@ -114,6 +118,15 @@ class _EditExecutorCardScreenState extends State<EditExecutorCardScreen> {
         final bool valid = value.isEmpty || _emailRegex.hasMatch(value);
         if (valid) {
           CropResult.userEmail = value;
+          // Пишем в `profiles_private.email` через RPC. На уровне UI
+          // оптимистично — без await: если сетевой запрос упадёт,
+          // в кэше у пользователя email уже сохранён, и при выходе
+          // с экрана значение всё равно попадёт в storage у
+          // следующей загрузки. Edit-screen профиля делает то же.
+          // ignore: discarded_futures
+          ProfileService.instance
+              .updatePrivateEmail(value)
+              .catchError((_) {/* silent */});
           if (_emailError != null) setState(() => _emailError = null);
         } else {
           setState(() => _emailError = 'Некорректная электронная почта');
@@ -450,6 +463,28 @@ class _HeaderRow extends StatefulWidget {
 }
 
 class _HeaderRowState extends State<_HeaderRow> {
+  String? _avatarUrl;
+  double _rating = 0;
+  int _reviewCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFromDb();
+  }
+
+  Future<void> _loadFromDb() async {
+    try {
+      final MyProfile? p = await ProfileService.instance.loadMine();
+      if (p == null || !mounted) return;
+      setState(() {
+        _avatarUrl = p.avatarUrl;
+        _rating = p.ratingAsExecutor;
+        _reviewCount = p.reviewCountAsExecutor;
+      });
+    } catch (_) {/* silent */}
+  }
+
   Future<void> _openCrop() async {
     final String? imagePath = await pickImageFromGallery(context: context);
     if (imagePath == null || !mounted) return;
@@ -458,13 +493,35 @@ class _HeaderRowState extends State<_HeaderRow> {
         builder: (_) => PhotoCropScreen(imagePath: imagePath),
       ),
     );
-    if (result != null && mounted) {
-      setState(() => CropResult.saved = result);
+    if (result == null || !mounted) return;
+    setState(() => CropResult.saved = result);
+    final String? path = result.imagePath;
+    if (path != null && !path.startsWith('assets/')) {
+      _uploadAvatar(path);
     }
   }
 
+  /// Заливает выбранный аватар в storage `avatars` и пишет URL в
+  /// `profiles.avatar_url`. Без этого аватар, выбранный в карточке
+  /// исполнителя, существовал только в памяти `CropResult.saved` —
+  /// после Hot Restart исчезал.
+  Future<void> _uploadAvatar(String path) async {
+    try {
+      final String url =
+          await StorageService.instance.uploadAvatar(File(path));
+      await ProfileService.instance.update(avatarUrl: url);
+      if (mounted) setState(() => _avatarUrl = url);
+    } catch (_) {/* silent */}
+  }
+
+  String _fmtRating(double v) =>
+      _reviewCount == 0 ? '0,0' : v.toStringAsFixed(1).replaceAll('.', ',');
+
   @override
   Widget build(BuildContext context) {
+    final Widget avatar = CropResult.saved != null
+        ? CroppedAvatar(size: 80.r)
+        : AvatarCircle(size: 80.r, avatarUrl: _avatarUrl);
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
@@ -475,7 +532,7 @@ class _HeaderRowState extends State<_HeaderRow> {
             height: 80.r,
             child: Stack(
               children: [
-                CroppedAvatar(size: 80.r),
+                avatar,
                 Positioned(
                   right: -1.w,
                   bottom: 0,
@@ -506,12 +563,12 @@ class _HeaderRowState extends State<_HeaderRow> {
                   Image.asset('assets/images/catalog/star.webp',
                       width: 20.r, height: 20.r),
                   SizedBox(width: 4.w),
-                  Text('4,5', style: AppTextStyles.body),
+                  Text(_fmtRating(_rating), style: AppTextStyles.body),
                   SizedBox(width: 16.w),
                   GestureDetector(
                     onTap: () => context.push('/profile/reviews'),
                     child: Text(
-                        '${ReviewsData.count} ${reviewsWord(ReviewsData.count)}',
+                        '$_reviewCount ${reviewsWord(_reviewCount)}',
                         style: AppTextStyles.body.copyWith(
                           color: AppColors.textPrimary,
                           decoration: TextDecoration.underline,

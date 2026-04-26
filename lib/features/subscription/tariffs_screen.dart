@@ -80,6 +80,11 @@ class _TariffsSheetState extends State<_TariffsSheet> {
   int? _subscriptionPrice;
   int? _slotPrice;
 
+  /// Длительность бесплатного триала. Показывается в paywall'ах
+  /// «Получите доступ к заказам» и «Оплатите размещение карточки
+  /// исполнителя» как «N дней бесплатно, затем …».
+  static const int _trialDays = 30;
+
   static const _ordersBullets = [
     'Откликайтесь на заказы',
     'Попадайте в список исполнителей',
@@ -128,7 +133,7 @@ class _TariffsSheetState extends State<_TariffsSheet> {
         title = 'Получите доступ к\nзаказам';
         description = '';
         priceLabel =
-            '${_fmtPrice(_subscriptionPrice)} ₽/месяц';
+            '$_trialDays дней бесплатно, затем ${_fmtPrice(_subscriptionPrice)} ₽/месяц';
         bullets = _ordersBullets;
       case TariffsVariant.service:
         title = 'Оплатите размещение\nуслуги';
@@ -141,7 +146,7 @@ class _TariffsSheetState extends State<_TariffsSheet> {
         description =
             'После оплаты ваша карточка появится в\nкаталоге, и заказчики смогут выбрать вас';
         priceLabel =
-            '${_fmtPrice(_subscriptionPrice)} ₽/месяц';
+            '$_trialDays дней бесплатно, затем ${_fmtPrice(_subscriptionPrice)} ₽/месяц';
         bullets = null;
     }
 

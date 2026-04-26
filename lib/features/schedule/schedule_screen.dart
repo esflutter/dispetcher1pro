@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:dispatcher_1/core/my_orders/models.dart';
+import 'package:dispatcher_1/core/my_orders/my_orders_service.dart';
 import 'package:dispatcher_1/core/schedule/schedule_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
@@ -88,9 +90,11 @@ class _ScheduledOrder {
     required this.title,
     required this.rentDate,
     required this.address,
-    this.customerId = '1',
-    this.customerName = 'Александр Иванов',
-    this.customerPhone = '+7 999 123-45-67',
+    required this.customerId,
+    required this.customerName,
+    required this.matchId,
+    required this.orderId,
+    this.customerPhone = '',
     this.customerEmail,
   });
   final MyOrderStatus status;
@@ -106,6 +110,14 @@ class _ScheduledOrder {
   /// задана — иначе блок «Электронная почта» не отображается.
   final String? customerEmail;
 
+  /// id мэтча в БД (`order_matches.id`). Нужен для accept/decline
+  /// прямо из карточки графика — без открытия деталей заказа.
+  final String matchId;
+
+  /// id самого заказа (`orders.id`) — используется как key при
+  /// открытии деталей.
+  final String orderId;
+
   _ScheduledOrder copyWith({MyOrderStatus? status}) => _ScheduledOrder(
         status: status ?? this.status,
         machinery: machinery,
@@ -116,6 +128,8 @@ class _ScheduledOrder {
         customerName: customerName,
         customerPhone: customerPhone,
         customerEmail: customerEmail,
+        matchId: matchId,
+        orderId: orderId,
       );
 }
 
@@ -148,90 +162,11 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
 
   bool _acceptingOrders = true;
 
-  /// Заказы по дню недели (1=пн..7=вс). Повторяется каждую неделю.
-  /// Инстансное поле (не `static const`), чтобы при подтверждении/отказе
-  /// в деталях заказа мы могли мутировать статус/удалять элементы и
-  /// `setState` отрисовывал актуальный список.
-  final Map<int, List<_ScheduledOrder>> _ordersByWeekday = <int, List<_ScheduledOrder>>{
-    1: <_ScheduledOrder>[ // понедельник — 3 заказа
-      _ScheduledOrder(
-        status: MyOrderStatus.pendingConfirmation,
-        machinery: ['Автокран', 'Экскаватор'],
-        title: 'Земляные работы',
-        rentDate: '09:00–12:00',
-        address: 'Московская область, Москва, Улица1, д.144',
-        customerId: '1',
-        customerName: 'Александр Иванов',
-      ),
-      _ScheduledOrder(
-        status: MyOrderStatus.accepted,
-        machinery: ['Погрузчик'],
-        title: 'Погрузка строительного мусора',
-        rentDate: '13:00–16:00',
-        address: 'Московская область, Москва, Проспект Мира, д.12',
-        customerId: '2',
-        customerName: 'Пётр Иванов',
-        customerPhone: '+7 999 234-56-78',
-        customerEmail: 'petrov.ivanov@example.ru',
-      ),
-      _ScheduledOrder(
-        status: MyOrderStatus.pendingConfirmation,
-        machinery: ['Манипулятор'],
-        title: 'Доставка бетонных плит',
-        rentDate: '17:00–19:00',
-        address: 'Московская область, Химки, ул. Ленина, д.5',
-        customerId: '3',
-        customerName: 'Сергей Петров',
-      ),
-    ],
-    2: <_ScheduledOrder>[ // вторник — 1 заказ
-      _ScheduledOrder(
-        status: MyOrderStatus.accepted,
-        machinery: ['Экскаватор', 'Самосвал'],
-        title: 'Копка траншеи под фундамент',
-        rentDate: '08:00–17:00',
-        address: 'Московская область, Подольск, ул. Кирова, д.88',
-        customerId: '4',
-        customerName: 'Михаил Смирнов',
-        customerPhone: '+7 999 345-67-89',
-        customerEmail: 'smirnov@example.ru',
-      ),
-    ],
-    3: <_ScheduledOrder>[], // среда — 0 заказов
-    4: <_ScheduledOrder>[ // четверг — 2 заказа
-      _ScheduledOrder(
-        status: MyOrderStatus.pendingConfirmation,
-        machinery: ['Автокран', 'Экскаватор'],
-        title: 'Земляные работы',
-        rentDate: '09:00–14:00',
-        address: 'Московская область, Москва, Улица1, д.144',
-        customerId: '5',
-        customerName: 'Виктор Новиков',
-      ),
-      _ScheduledOrder(
-        status: MyOrderStatus.accepted,
-        machinery: ['Экскаватор', 'Автокран', 'Эвакуатор', 'Манипулятор', 'Автовышка'],
-        title: 'Разработка котлована под фундамент',
-        rentDate: '15:00–18:00',
-        address: 'Московская область, Москва, Улица1, д.144',
-        customerId: '6',
-        customerName: 'Дмитрий Соколов',
-        customerPhone: '+7 999 456-78-90',
-      ),
-    ],
-    5: <_ScheduledOrder>[ // пятница — 1 заказ
-      _ScheduledOrder(
-        status: MyOrderStatus.pendingConfirmation,
-        machinery: ['Автовышка'],
-        title: 'Монтаж рекламного баннера',
-        rentDate: '10:00–13:00',
-        address: 'Москва, ул. Тверская, д.22',
-        customerId: '7',
-        customerName: 'Андрей Волков',
-      ),
-    ],
-    // 6 суббота, 7 воскресенье — 0 заказов
-  };
+  /// Заказы по конкретной дате (нормализованной до полуночи). Грузятся
+  /// в [_loadFromDb] из `MyOrdersService.listMine()` — берём матчи в
+  /// `pendingConfirmation`/`accepted` и группируем по `orderDateFrom`.
+  final Map<DateTime, List<_ScheduledOrder>> _ordersByDate =
+      <DateTime, List<_ScheduledOrder>>{};
 
   static const _monthNames = [
     '', 'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
@@ -256,15 +191,39 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     _loadFromDb();
   }
 
-  /// Загружаем все мои override'ы из `schedule_day_overrides`. Дни без
-  /// записей остаются дефолтно рабочими.
+  /// Загружаем все мои override'ы из `schedule_day_overrides` плюс
+  /// активные мэтчи (`pendingConfirmation`/`accepted`). Дни без записей
+  /// остаются дефолтно рабочими; матчи группируются по `orderDateFrom`
+  /// и попадают в [_ordersByDate].
   Future<void> _loadFromDb() async {
     try {
-      final Map<DateTime, ScheduleDayOverride> rows =
-          await ScheduleService.instance.loadMyOverrides();
+      final List<dynamic> results =
+          await Future.wait<dynamic>(<Future<dynamic>>[
+        ScheduleService.instance.loadMyOverrides(),
+        MyOrdersService.instance.listMine(),
+      ]);
+      if (!mounted) return;
+      final Map<DateTime, ScheduleDayOverride> overrides =
+          results[0] as Map<DateTime, ScheduleDayOverride>;
+      final List<MyOrderMatch> matches = results[1] as List<MyOrderMatch>;
+      // Контакты accepted/completed заказчиков — параллельно дёргаем
+      // только для тех, кому уже можно звонить.
+      final Set<String> needContact = <String>{
+        for (final MyOrderMatch m in matches)
+          if (m.status == MyMatchStatus.accepted ||
+              m.status == MyMatchStatus.completed)
+            m.customerId,
+      };
+      final Map<String, ({String? phone, String? email})?> contacts =
+          <String, ({String? phone, String? email})?>{};
+      await Future.wait(needContact.map((String id) async {
+        contacts[id] =
+            await MyOrdersService.instance.getCustomerContacts(id);
+      }));
       if (!mounted) return;
       setState(() {
-        for (final MapEntry<DateTime, ScheduleDayOverride> e in rows.entries) {
+        for (final MapEntry<DateTime, ScheduleDayOverride> e
+            in overrides.entries) {
           final ScheduleDayOverride o = e.value;
           if (!o.accepting) {
             _dayStates[e.key] = DayState.dayOff;
@@ -286,9 +245,47 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
             categories: Set<String>.from(o.categoryTitles),
           );
         }
+        _ordersByDate.clear();
+        for (final MyOrderMatch m in matches) {
+          if (m.status != MyMatchStatus.accepted &&
+              m.status != MyMatchStatus.awaitingExecutor) {
+            continue;
+          }
+          final DateTime key = DateTime(
+            m.orderDateFrom.year,
+            m.orderDateFrom.month,
+            m.orderDateFrom.day,
+          );
+          final MyOrderStatus uiStatus =
+              m.status == MyMatchStatus.accepted
+                  ? MyOrderStatus.accepted
+                  : MyOrderStatus.pendingConfirmation;
+          final ({String? phone, String? email})? c = contacts[m.customerId];
+          (_ordersByDate[key] ??= <_ScheduledOrder>[]).add(_ScheduledOrder(
+            status: uiStatus,
+            machinery: m.orderMachineryTitles,
+            title: m.orderTitle,
+            rentDate: _formatTimeRange(m),
+            address: m.orderAddress,
+            customerId: m.customerId,
+            customerName: m.customerName,
+            customerPhone: c?.phone ?? '',
+            customerEmail: c?.email,
+            matchId: m.matchId,
+            orderId: m.orderId,
+          ));
+        }
         _acceptingOrders = _acceptingFor(_selectedDate);
       });
     } catch (_) {/* silent */}
+  }
+
+  String _formatTimeRange(MyOrderMatch m) {
+    if (m.orderWholeDay) return 'Весь день';
+    final String? from = m.orderTimeFrom;
+    final String? to = m.orderTimeTo;
+    if (from == null || to == null) return '';
+    return '${from.substring(0, 5)}–${to.substring(0, 5)}';
   }
 
   TimeOfDay? _parseHm(String? s) {
@@ -365,7 +362,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   DayState _stateFor(DateTime d) {
     final key = _dateKey(d);
     if (_dayStates.containsKey(key)) return _dayStates[key]!;
-    final orders = _ordersByWeekday[d.weekday] ?? [];
+    final orders = _ordersByDate[_dateKey(d)] ?? const <_ScheduledOrder>[];
     return orders.isNotEmpty ? DayState.hasOrders : DayState.noOrders;
   }
 
@@ -454,7 +451,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     }
 
     final List<_ScheduledOrder> orders =
-        _ordersByWeekday[_selectedDate.weekday] ?? <_ScheduledOrder>[];
+        _ordersByDate[_dateKey(_selectedDate)] ?? <_ScheduledOrder>[];
     if (orders.isNotEmpty) {
       final bool? ok = await ScheduleAlerts.showMarkDayOffWithActiveOrders(
         context,
@@ -625,8 +622,10 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
             Padding(
               padding: EdgeInsets.symmetric(horizontal: 16.w),
               child: Row(
-                children: ['п', 'в', 'с', 'ч', 'п', 'с', 'в']
-                    .map((w) => Expanded(
+                children: const <String>[
+                  'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс',
+                ]
+                    .map((String w) => Expanded(
                           child: Center(
                             child: Text(w,
                                 style: AppTextStyles.subBody
@@ -766,7 +765,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       );
     }
 
-    final orders = _ordersByWeekday[_selectedDate.weekday] ?? [];
+    final orders = _ordersByDate[_dateKey(_selectedDate)] ?? [];
     if (orders.isEmpty) {
       return Padding(
         padding: EdgeInsets.only(bottom: 40.h),
@@ -803,24 +802,36 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   }
 
   /// Подтверждение заказа — статус меняется с `pendingConfirmation`
-  /// на `accepted`. Исполнитель ответил «Подтвердить» в деталях заказа.
-  void _confirmOrder(_ScheduledOrder order) {
-    final List<_ScheduledOrder>? list = _ordersByWeekday[_selectedDate.weekday];
+  /// на `accepted`. Помимо локального state шлём UPDATE в БД, чтобы
+  /// заказчик увидел смену статуса.
+  Future<void> _confirmOrder(_ScheduledOrder order) async {
+    final List<_ScheduledOrder>? list =
+        _ordersByDate[_dateKey(_selectedDate)];
     if (list == null) return;
     final int idx = list.indexOf(order);
     if (idx < 0) return;
     setState(() {
       list[idx] = order.copyWith(status: MyOrderStatus.accepted);
     });
+    try {
+      await MyOrdersService.instance.acceptMatch(order.matchId);
+    } catch (_) {/* silent — статус локально уже updated */}
   }
 
   /// Удаление заказа из дня — вызывается при «Отклонить» /
-  /// «Отказаться» / «Отозвать отклик» в деталях заказа. Заказ больше
-  /// не на исполнителе, поэтому из графика его убираем.
-  void _removeOrder(_ScheduledOrder order) {
-    final List<_ScheduledOrder>? list = _ordersByWeekday[_selectedDate.weekday];
+  /// «Отказаться» / «Отозвать отклик». В БД мэтч уезжает в
+  /// `rejected_by_executor`.
+  Future<void> _removeOrder(_ScheduledOrder order) async {
+    final List<_ScheduledOrder>? list =
+        _ordersByDate[_dateKey(_selectedDate)];
     if (list == null) return;
     setState(() => list.remove(order));
+    try {
+      // Семантически и withdraw, и declineMatch в БД — это
+      // переход в `rejected_by_executor`. Сервисные методы делают
+      // одно и то же, разница лишь в стартовом статусе мэтча.
+      await MyOrdersService.instance.declineMatch(order.matchId);
+    } catch (_) {/* silent */}
   }
 }
 

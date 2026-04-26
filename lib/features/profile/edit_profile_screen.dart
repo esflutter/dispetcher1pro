@@ -12,6 +12,7 @@ import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_spacing.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
 import 'package:dispatcher_1/core/utils/photo_source.dart';
+import 'package:dispatcher_1/core/widgets/avatar_circle.dart';
 import 'package:dispatcher_1/core/widgets/cropped_avatar.dart';
 import 'package:dispatcher_1/core/widgets/dark_sub_app_bar.dart';
 import 'package:dispatcher_1/features/auth/photo_crop_screen.dart';
@@ -181,10 +182,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 arrowAsset: 'assets/icons/profile/arrow_right.webp',
                 onTap: () async {
                   final confirmed = await showLogoutAlert(context);
-                  if (confirmed == true && context.mounted) {
-                    signOut();
-                    context.go('/auth/phone');
-                  }
+                  if (confirmed != true || !context.mounted) return;
+                  await signOut();
+                  if (!context.mounted) return;
+                  context.go('/auth/phone');
                 },
               ),
               SizedBox(height: AppSpacing.sm),
@@ -199,6 +200,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   // hard_delete_user — security definer RPC: удаляет
                   // auth.users (CASCADE убирает profiles и связанные
                   // данные), создаёт маркер бана по SHA-256 от телефона.
+                  bool rpcOk = true;
                   try {
                     final user = Supabase.instance.client.auth.currentUser;
                     if (user != null) {
@@ -208,10 +210,18 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                         'p_reason': 'user_request',
                       });
                     }
-                  } catch (_) {/* всё равно делаем local cleanup */}
-                  await Supabase.instance.client.auth.signOut();
+                  } catch (_) {
+                    rpcOk = false;
+                  }
+                  if (!rpcOk && context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                          content: Text('Не удалось удалить аккаунт. Попробуйте ещё раз.')),
+                    );
+                    return;
+                  }
+                  await deleteAccount();
                   if (!context.mounted) return;
-                  deleteAccount();
                   context.go('/auth/phone');
                 },
               ),
@@ -230,6 +240,22 @@ class _PhotoPicker extends StatefulWidget {
 }
 
 class _PhotoPickerState extends State<_PhotoPicker> {
+  String? _dbAvatarUrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFromDb();
+  }
+
+  Future<void> _loadFromDb() async {
+    try {
+      final MyProfile? p = await ProfileService.instance.loadMine();
+      if (p == null || !mounted) return;
+      setState(() => _dbAvatarUrl = p.avatarUrl);
+    } catch (_) {/* silent */}
+  }
+
   Future<void> _openCrop() async {
     final String? imagePath = await pickImageFromGallery(context: context);
     if (imagePath == null || !mounted) return;
@@ -240,9 +266,6 @@ class _PhotoPickerState extends State<_PhotoPicker> {
     );
     if (result != null && mounted) {
       setState(() => CropResult.saved = result);
-      // Загружаем оригинал в Storage и сохраняем URL в profiles.avatar_url.
-      // Используем исходный путь (до кропа) — крой хранится только визуально
-      // в CropResult; серверное превью будем делать отдельно при показе.
       final String? path = result.imagePath;
       if (path != null && !path.startsWith('assets/')) {
         _uploadAvatar(path);
@@ -255,14 +278,17 @@ class _PhotoPickerState extends State<_PhotoPicker> {
       final String url =
           await StorageService.instance.uploadAvatar(File(path));
       await ProfileService.instance.update(avatarUrl: url);
-    } catch (_) {
-      // Ошибка загрузки не блокирует UI — локально кроп уже сохранён
-      // в CropResult.saved; синхронизируем при следующем успешном save.
-    }
+      if (mounted) setState(() => _dbAvatarUrl = url);
+    } catch (_) {/* silent */}
   }
 
   @override
   Widget build(BuildContext context) {
+    // Только что выбранное фото имеет приоритет — показываем cropped
+    // local file. Иначе — сетевая аватарка из БД (или серый placeholder).
+    final Widget avatar = CropResult.saved != null
+        ? CroppedAvatar(size: 104.r)
+        : AvatarCircle(size: 104.r, avatarUrl: _dbAvatarUrl);
     return GestureDetector(
       onTap: _openCrop,
       child: SizedBox(
@@ -270,7 +296,7 @@ class _PhotoPickerState extends State<_PhotoPicker> {
         height: 104.r,
         child: Stack(
           children: [
-            CroppedAvatar(size: 104.r),
+            avatar,
             Positioned(
               right: -2.w,
               bottom: 0,

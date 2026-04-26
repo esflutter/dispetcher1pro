@@ -5,9 +5,11 @@ import 'package:go_router/go_router.dart';
 import 'package:dispatcher_1/core/catalog/catalog_service.dart';
 import 'package:dispatcher_1/core/catalog/format.dart';
 import 'package:dispatcher_1/core/catalog/models.dart';
+import 'package:dispatcher_1/core/my_orders/my_orders_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
 import 'package:dispatcher_1/core/utils/plural.dart';
+import 'package:dispatcher_1/core/widgets/avatar_circle.dart';
 import 'package:dispatcher_1/features/catalog/order_detail_screen.dart';
 import 'package:dispatcher_1/features/catalog/widgets/catalog_search_bar.dart';
 import 'package:dispatcher_1/features/catalog/widgets/order_card.dart';
@@ -15,15 +17,15 @@ import 'package:dispatcher_1/features/profile/reviews_screen.dart';
 
 /// Карточка заказчика — публичный профиль, который видит исполнитель.
 /// Данные тянутся из БД: `profiles` + `orders` этого заказчика.
-/// Контакты (телефон/email) в публичной проекции недоступны — они
-/// в `profiles_private` под RLS, доступны только участнику accepted-мэтча.
+/// Контакты (телефон/email) лежат в `profiles_private` под RLS — RLS
+/// пропустит их только участнику accepted/completed мэтча. Если флаг
+/// [hasMatch] выставлен снаружи, экран дополнительно тянет контакты.
 class CustomerCardScreen extends StatefulWidget {
   const CustomerCardScreen({
     super.key,
     required this.customerId,
     // Следующие параметры приходят из старого контракта «Мои заказы» —
-    // игнорируются, т.к. имя/рейтинг/контакты теперь тянутся из БД.
-    // TODO: убрать после переписывания `features/orders/order_detail_screen`.
+    // игнорируются, т.к. имя/рейтинг теперь тянутся из БД.
     this.customerName,
     this.customerRating,
     this.customerReviews,
@@ -38,6 +40,11 @@ class CustomerCardScreen extends StatefulWidget {
   final int? customerReviews;
   final String? customerPhone;
   final String? customerEmail;
+
+  /// Был ли уже хотя бы один accepted/completed мэтч с этим заказчиком.
+  /// Если `true` — экран попытается прочитать `profiles_private` и
+  /// показать телефон/email. Если `null` или `false` — контакты не
+  /// загружаются и не показываются.
   final bool? hasMatch;
 
   @override
@@ -55,13 +62,22 @@ class _CustomerCardScreenState extends State<CustomerCardScreen> {
 
   Future<_CustomerCardData> _load() async {
     final CatalogService svc = CatalogService.instance;
+    final bool wantsContacts = widget.hasMatch == true;
     final List<dynamic> res = await Future.wait<dynamic>(<Future<dynamic>>[
       svc.getCustomer(widget.customerId),
       svc.listCustomerOrders(widget.customerId),
+      if (wantsContacts)
+        MyOrdersService.instance.getCustomerContacts(widget.customerId)
+      else
+        Future<({String? phone, String? email})?>.value(null),
     ]);
+    final ({String? phone, String? email})? contacts =
+        res[2] as ({String? phone, String? email})?;
     return _CustomerCardData(
       profile: res[0] as CustomerProfile?,
       orders: res[1] as List<OrderListItem>,
+      phone: contacts?.phone ?? widget.customerPhone,
+      email: contacts?.email ?? widget.customerEmail,
     );
   }
 
@@ -113,7 +129,12 @@ class _CustomerCardScreenState extends State<CustomerCardScreen> {
               ),
             );
           }
-          return _Content(profile: data.profile!, orders: data.orders);
+          return _Content(
+            profile: data.profile!,
+            orders: data.orders,
+            phone: data.phone,
+            email: data.email,
+          );
         },
       ),
     );
@@ -121,21 +142,37 @@ class _CustomerCardScreenState extends State<CustomerCardScreen> {
 }
 
 class _CustomerCardData {
-  const _CustomerCardData({required this.profile, required this.orders});
+  const _CustomerCardData({
+    required this.profile,
+    required this.orders,
+    this.phone,
+    this.email,
+  });
   final CustomerProfile? profile;
   final List<OrderListItem> orders;
+  final String? phone;
+  final String? email;
 }
 
 class _Content extends StatelessWidget {
-  const _Content({required this.profile, required this.orders});
+  const _Content({
+    required this.profile,
+    required this.orders,
+    this.phone,
+    this.email,
+  });
   final CustomerProfile profile;
   final List<OrderListItem> orders;
+  final String? phone;
+  final String? email;
 
   @override
   Widget build(BuildContext context) {
     final String statusLabel = _legalStatusLabel(profile.legalStatus);
     final bool hasAbout =
         profile.about != null && profile.about!.trim().isNotEmpty;
+    final bool showPhone = phone != null && phone!.trim().isNotEmpty;
+    final bool showEmail = email != null && email!.trim().isNotEmpty;
     return SafeArea(
       top: false,
       child: SingleChildScrollView(
@@ -145,6 +182,14 @@ class _Content extends StatelessWidget {
           children: <Widget>[
             _HeaderBlock(profile: profile),
             SizedBox(height: 20.h),
+            if (showPhone) ...<Widget>[
+              _Field(label: 'Номер телефона', value: phone!),
+              SizedBox(height: 16.h),
+            ],
+            if (showEmail) ...<Widget>[
+              _Field(label: 'Электронная почта', value: email!),
+              SizedBox(height: 16.h),
+            ],
             if (hasAbout) ...<Widget>[
               _Field(label: 'О себе', value: profile.about!),
               SizedBox(height: 16.h),
@@ -191,15 +236,7 @@ class _HeaderBlock extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: <Widget>[
-        CircleAvatar(
-          radius: 36.r,
-          backgroundColor: AppColors.primaryTint,
-          backgroundImage: profile.avatarUrl != null &&
-                  profile.avatarUrl!.trim().isNotEmpty
-              ? NetworkImage(profile.avatarUrl!) as ImageProvider
-              : const AssetImage(
-                  'assets/images/catalog/avatar_placeholder.webp'),
-        ),
+        AvatarCircle(size: 72.r, avatarUrl: profile.avatarUrl),
         SizedBox(width: 12.w),
         Expanded(
           child: Column(
@@ -227,6 +264,7 @@ class _HeaderBlock extends StatelessWidget {
                       MaterialPageRoute<void>(
                         builder: (_) => ReviewsScreen(
                           subject: ReviewSubject.customer,
+                          targetUserId: profile.id,
                           initialRating: profile.ratingAsCustomer,
                           initialCount: profile.reviewCountAsCustomer,
                         ),

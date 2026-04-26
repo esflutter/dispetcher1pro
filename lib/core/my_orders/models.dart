@@ -52,6 +52,7 @@ class MyOrderMatch {
   const MyOrderMatch({
     required this.matchId,
     required this.orderId,
+    required this.orderDisplayNumber,
     required this.status,
     required this.createdAt,
     required this.agreedPricePerHour,
@@ -77,6 +78,12 @@ class MyOrderMatch {
 
   final String matchId;
   final String orderId;
+
+  /// `orders.display_number` — числовой человеко-читаемый номер,
+  /// который заказчик видит в своих заказах. Показывается одинаково
+  /// у обеих сторон, чтобы можно было ссылаться на «заказ №00012345».
+  final int orderDisplayNumber;
+
   final MyMatchStatus status;
   final DateTime createdAt;
   final double? agreedPricePerHour;

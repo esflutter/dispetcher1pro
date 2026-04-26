@@ -128,7 +128,18 @@ class _AddCardScreenState extends State<AddCardScreen> {
               child: PrimaryButton(
                 label: 'Добавить',
                 enabled: _valid,
-                onPressed: () => context.push('/subscription/payment'),
+                onPressed: () {
+                  // Возвращаем последние 4 цифры в `PaymentScreen` —
+                  // он их подставляет в чекаут «•••• 1234». Без этого
+                  // кнопка «Оплатить» оставалась disabled, и оплатить
+                  // было невозможно.
+                  final String digits =
+                      _number.text.replaceAll(' ', '');
+                  final String last4 = digits.length >= 4
+                      ? digits.substring(digits.length - 4)
+                      : digits;
+                  context.pop(last4);
+                },
               ),
             ),
           ],

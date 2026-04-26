@@ -3,12 +3,16 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 
 /// Сплеш-экран приложения «Диспетчер №1».
-/// Показывает лого, через 1.5 секунды переходит на онбординг.
+/// Через 1.5 секунды отправляем пользователя:
+/// - на `/shell`, если есть валидная Supabase-сессия (вошедший
+///   пользователь не должен снова вводить телефон при рестарте);
+/// - иначе на `/onboarding`.
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
 
@@ -23,7 +27,17 @@ class _SplashScreenState extends State<SplashScreen> {
   void initState() {
     super.initState();
     _timer = Timer(const Duration(milliseconds: 1500), () {
-      if (mounted) context.go('/onboarding');
+      if (!mounted) return;
+      // Supabase может быть не инициализирован, если запускаем без
+      // --dart-define ключей (URL/anonKey). Тогда сессии всё равно
+      // нет — отправляем на онбординг, чтобы не зависнуть на сплэше.
+      Session? session;
+      try {
+        session = Supabase.instance.client.auth.currentSession;
+      } catch (_) {
+        session = null;
+      }
+      context.go(session != null ? '/shell' : '/onboarding');
     });
   }
 

@@ -4,6 +4,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/utils/yandex_maps.dart';
+import 'package:dispatcher_1/core/widgets/avatar_circle.dart';
 import 'package:dispatcher_1/features/auth/photo_crop_screen.dart';
 import 'package:dispatcher_1/features/orders/widgets/order_status_pill.dart';
 
@@ -188,13 +189,7 @@ class _CustomerRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: <Widget>[
-        CircleAvatar(
-          radius: 24.r,
-          backgroundColor: AppColors.primaryTint,
-          backgroundImage: AssetImage(
-            avatar ?? 'assets/images/catalog/avatar_placeholder.webp',
-          ),
-        ),
+        AvatarCircle(size: 48.r, avatarUrl: avatar),
         SizedBox(width: 10.w),
         Expanded(
           child: Column(

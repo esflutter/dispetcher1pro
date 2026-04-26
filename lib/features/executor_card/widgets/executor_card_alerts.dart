@@ -7,11 +7,17 @@ import 'package:dispatcher_1/core/theme/app_text_styles.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
 import 'package:dispatcher_1/features/catalog/widgets/respond_bottom_sheet.dart';
 
-Future<void> showCreateExecutorCardAlert(BuildContext context) {
+Future<void> showCreateExecutorCardAlert(
+  BuildContext context, {
+  String? rejectReason,
+}) {
   return showDialog<void>(
     context: context,
     barrierColor: Colors.black.withValues(alpha: 0.35),
-    builder: (_) => const RespondModalDialog(verified: false),
+    builder: (_) => RespondModalDialog(
+      verified: false,
+      rejectReason: rejectReason,
+    ),
   );
 }
 

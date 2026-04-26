@@ -68,7 +68,17 @@ class _OrderFeedScreenState extends State<OrderFeedScreen> {
       dateFrom: AppliedFilter.dateFrom,
       dateTo: AppliedFilter.exactDate ? null : AppliedFilter.dateTo,
       addressContains: AppliedFilter.address,
+      timeFrom: _hhmm(AppliedFilter.timeFrom),
+      timeTo: _hhmm(AppliedFilter.timeTo),
+      wholeDay: AppliedFilter.wholeDay ? true : null,
     );
+  }
+
+  /// `TimeOfDay(h:9, m:30)` → `'09:30'`. Возвращает null, если нет
+  /// значения, чтобы не ставить пустое условие в SELECT.
+  String? _hhmm(TimeOfDay? t) {
+    if (t == null) return null;
+    return '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
   }
 
   void _onFilterChanged() {

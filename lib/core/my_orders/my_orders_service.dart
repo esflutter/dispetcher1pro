@@ -5,6 +5,15 @@ import 'package:dispatcher_1/core/catalog/models.dart';
 
 import 'models.dart';
 
+/// Заказчик подтвердил другого исполнителя раньше (race на UNIQUE-индексе
+/// `order_matches_single_accepted`). UI должен показать сообщение
+/// «На этот заказ уже выбрали другого исполнителя».
+class MatchAlreadyTakenException implements Exception {
+  const MatchAlreadyTakenException();
+  @override
+  String toString() => 'Match already taken';
+}
+
 /// Чтение/обновление моих откликов (`order_matches` WHERE executor_id = me).
 /// FSM-переходы статуса валидирует триггер `validate_match_transition`
 /// в БД — клиент только пишет целевой статус.
@@ -26,8 +35,8 @@ class MyOrdersService {
           'id, order_id, status, created_at, '
           'agreed_price_per_hour, agreed_price_per_day, agreed_min_hours, '
           'order:orders!order_matches_order_id_fkey('
-          'id, title, address, date_from, date_to, time_from, time_to, '
-          'exact_date, whole_day, machinery_ids, '
+          'id, display_number, title, address, date_from, date_to, '
+          'time_from, time_to, exact_date, whole_day, machinery_ids, '
           'customer:profiles!orders_customer_id_fkey('
           'id, name, rating_as_customer, review_count_as_customer)), '
           'service:services!order_matches_service_id_fkey(machinery_ids)',
@@ -49,11 +58,22 @@ class MyOrdersService {
   }
 
   /// Подтвердить мэтч (`awaiting_executor` → `accepted`).
+  /// Бросает [MatchAlreadyTakenException], если на этот заказ уже
+  /// проставлен другой accepted-мэтч (заказчик одновременно подтвердил
+  /// другого исполнителя). UNIQUE-индекс `order_matches_single_accepted`
+  /// возвращает 23505 — клиент должен показать понятное сообщение.
   Future<void> acceptMatch(String matchId) async {
-    await _client
-        .from('order_matches')
-        .update(<String, dynamic>{'status': 'accepted'})
-        .eq('id', matchId);
+    try {
+      await _client
+          .from('order_matches')
+          .update(<String, dynamic>{'status': 'accepted'})
+          .eq('id', matchId);
+    } on PostgrestException catch (e) {
+      if (e.code == '23505') {
+        throw const MatchAlreadyTakenException();
+      }
+      rethrow;
+    }
   }
 
   /// Отказаться от заказа, которого мы ждали подтверждать
@@ -62,14 +82,6 @@ class MyOrdersService {
     await _client
         .from('order_matches')
         .update(<String, dynamic>{'status': 'rejected_by_executor'})
-        .eq('id', matchId);
-  }
-
-  /// Завершить мэтч (`accepted` → `completed`).
-  Future<void> complete(String matchId) async {
-    await _client
-        .from('order_matches')
-        .update(<String, dynamic>{'status': 'completed'})
         .eq('id', matchId);
   }
 
@@ -130,6 +142,7 @@ class MyOrdersService {
     return MyOrderMatch(
       matchId: r['id'] as String,
       orderId: r['order_id'] as String,
+      orderDisplayNumber: order['display_number'] as int,
       status: MyMatchStatus.fromDb(r['status'] as String),
       createdAt: DateTime.parse(r['created_at'] as String),
       agreedPricePerHour: _toDouble(r['agreed_price_per_hour']),

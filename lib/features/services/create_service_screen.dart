@@ -5,6 +5,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:dispatcher_1/core/catalog/catalog_service.dart';
+import 'package:dispatcher_1/core/catalog/models.dart' as cat;
 import 'package:dispatcher_1/core/my_services/models.dart';
 import 'package:dispatcher_1/core/my_services/my_services_service.dart';
 import 'package:dispatcher_1/core/storage/storage_service.dart';
@@ -77,65 +79,117 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
     'В радиусе 20 км',
     'В радиусе 50 км',
   ];
-  static const _categories = [
-    'Земляные работы',
-    'Погрузочно-разгрузочные работы',
-    'Перевозка материалов',
-    'Строительные работы',
-    'Дорожные работы',
-    'Буровые работы',
-    'Высотные работы',
-    'Демонтажные работы',
-    'Благоустройство территории',
-  ];
-  static const _machinery = [
-    'Экскаватор-погрузчик',
-    'Экскаватор',
-    'Погрузчик',
-    'Миниэкскаватор',
-    'Буроям',
-    'Самогруз',
-    'Автокран',
-    'Бетононасос',
-    'Эвакуатор',
-    'Автовышка',
-    'Манипулятор',
-    'Минипогрузчик',
-    'Самосвал',
-    'Минитрактор',
-  ];
+
+  // Справочники тянем из CatalogService — он же кэширует их в памяти.
+  // Без актуальных id↔title из БД маппинг при INSERT (services.machinery_ids
+  // / category_ids) промахнётся и часть выбора потеряется.
+  List<String> _categories = const <String>[];
+  List<String> _machinery = const <String>[];
 
   bool get _isEdit => widget.serviceId != null;
 
-  ServiceMock? _editingService;
+  /// true пока подгружаем полную запись услуги из БД (только в edit).
+  /// Кнопка «Сохранить» в это время бесполезна, форма пуста.
+  bool _loadingDetail = false;
 
   @override
   void initState() {
     super.initState();
     if (_isEdit) {
-      try {
-        _editingService = ServiceData.services
-            .firstWhere((s) => s.id == widget.serviceId);
-      } catch (_) {}
-      if (_editingService != null) {
-        final s = _editingService!;
-        _titleCtrl.text = s.title;
-        _descCtrl.text = s.description;
-        // Ноль трактуем как «не заполнено» — в поле оставляем hint,
-        // а не «0», чтобы пользователь не удалял ноль вручную.
-        _priceHourCtrl.text = s.pricePerHour == '0' ? '' : s.pricePerHour;
-        _priceDayCtrl.text = s.pricePerDay == '0' ? '' : s.pricePerDay;
-        _minHoursCtrl.text = s.minOrder;
-        _selCat.addAll(s.categories);
-        // Инвариант формы — максимум один вид спецтехники на услугу.
-        // Старые услуги / presets могли быть сохранены с несколькими —
-        // берём только первую, чтобы форма оставалась валидной.
-        if (s.machinery.isNotEmpty) _selMach.add(s.machinery.first);
-        _photos.addAll(s.photos);
-        _address = s.address;
-        _radiusIndex = s.radiusIndex;
-      }
+      _loadingDetail = true;
+      _loadEditingService();
     }
+    final List<cat.MachineryRef>? mc =
+        CatalogService.instance.cachedMachinery;
+    final List<cat.CategoryRef>? cc =
+        CatalogService.instance.cachedCategories;
+    if (mc != null) {
+      _machinery =
+          mc.map((cat.MachineryRef e) => e.title).toList(growable: false);
+    }
+    if (cc != null) {
+      _categories =
+          cc.map((cat.CategoryRef e) => e.title).toList(growable: false);
+    }
+    if (mc == null || cc == null) {
+      _loadDirectories();
+    }
+  }
+
+  Future<void> _loadDirectories() async {
+    try {
+      final List<cat.MachineryRef> m =
+          await CatalogService.instance.listActiveMachinery();
+      final List<cat.CategoryRef> c =
+          await CatalogService.instance.listActiveCategories();
+      if (!mounted) return;
+      setState(() {
+        _machinery =
+            m.map((cat.MachineryRef e) => e.title).toList(growable: false);
+        _categories =
+            c.map((cat.CategoryRef e) => e.title).toList(growable: false);
+      });
+    } catch (_) {
+      // БД недоступна — чипы остаются пустыми, пользователь увидит это
+      // визуально и поймёт, что форму открыли без сети.
+    }
+  }
+
+  /// Грузим полную услугу из БД — `MyServicesService.getMine` отдаёт
+  /// поля photos/address/radiusKm, которых нет в `ServiceData` (там
+  /// только summary). Без этого re-save затирал бы фото и местоположение.
+  Future<void> _loadEditingService() async {
+    final String? id = widget.serviceId;
+    if (id == null) return;
+    try {
+      final MyServiceDetail? d =
+          await MyServicesService.instance.getMine(id);
+      if (!mounted || d == null) {
+        if (mounted) setState(() => _loadingDetail = false);
+        return;
+      }
+      setState(() {
+        _titleCtrl.text = d.title;
+        _descCtrl.text = d.description ?? '';
+        _priceHourCtrl.text = _fmtPriceForField(d.pricePerHour);
+        _priceDayCtrl.text = _fmtPriceForField(d.pricePerDay);
+        _minHoursCtrl.text = d.minHours?.toString() ?? '';
+        _selCat
+          ..clear()
+          ..addAll(d.categoryTitles);
+        _selMach.clear();
+        // Инвариант формы — максимум один вид спецтехники на услугу.
+        if (d.machineryTitles.isNotEmpty) {
+          _selMach.add(d.machineryTitles.first);
+        }
+        _photos
+          ..clear()
+          ..addAll(d.photos);
+        _address = d.locationAddress;
+        _radiusIndex = switch (d.radiusKm) {
+          10 => 0,
+          20 => 1,
+          50 => 2,
+          _ => -1,
+        };
+        _loadingDetail = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loadingDetail = false);
+    }
+  }
+
+  /// «12500» → «12 500», `null`/`0` → пустая строка (показываем hint).
+  String _fmtPriceForField(double? v) {
+    if (v == null || v <= 0) return '';
+    final int i = v.round();
+    final String s = i.toString();
+    final StringBuffer b = StringBuffer();
+    for (int k = 0; k < s.length; k++) {
+      if (k > 0 && (s.length - k) % 3 == 0) b.write(' ');
+      b.write(s[k]);
+    }
+    return b.toString();
   }
 
 
@@ -267,7 +321,9 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
       appBar: _isEdit
           ? const DarkSubAppBar(title: 'Редактирование услуги')
           : _CreateAppBar(onClose: () => Navigator.of(context).maybePop()),
-      body: _buildManualMode(),
+      body: _loadingDetail
+          ? const Center(child: CircularProgressIndicator())
+          : _buildManualMode(),
     );
   }
 
@@ -560,80 +616,6 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
 
 }
 
-/// Экран автоматического создания услуги через ИИ-ассистента.
-class _AiCreateServiceScreen extends StatefulWidget {
-  const _AiCreateServiceScreen();
-
-  @override
-  State<_AiCreateServiceScreen> createState() => _AiCreateServiceScreenState();
-}
-
-class _AiCreateServiceScreenState extends State<_AiCreateServiceScreen> {
-  final _ctrl = TextEditingController();
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        backgroundColor: AppColors.navBarDark,
-        foregroundColor: Colors.white,
-        elevation: 0,
-        centerTitle: true,
-        toolbarHeight: 48.h,
-        automaticallyImplyLeading: false,
-        title: Padding(
-          padding: EdgeInsets.only(top: 2.h),
-          child: Text(
-            'Создание услуги',
-            style: AppTextStyles.titleS.copyWith(color: Colors.white),
-          ),
-        ),
-        actions: [
-          Padding(
-            padding: EdgeInsets.only(right: 8.w, top: 2.h),
-            child: IconButton(
-              padding: EdgeInsets.zero,
-              icon: Icon(Icons.close_rounded, size: 24.r, color: Colors.white),
-              onPressed: () => Navigator.of(context).pop(),
-            ),
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          Padding(
-            padding: EdgeInsets.fromLTRB(16.w, 16.h, 16.w, 0),
-            child: Container(
-              width: double.infinity,
-              padding: EdgeInsets.all(16.w),
-              decoration: BoxDecoration(
-                color: AppColors.primaryTint,
-                borderRadius: BorderRadius.circular(12.r),
-              ),
-              child: Text(
-                'Опишите услугу — текстом или голосом, я заполню всё за вас',
-                style: AppTextStyles.body,
-              ),
-            ),
-          ),
-          const Spacer(),
-          _AiInputBar(
-            controller: _ctrl,
-            onSend: () => Navigator.of(context).pop(),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 // ── Вспомогательные виджеты ──
 
 class _SectionTitle extends StatelessWidget {
@@ -918,19 +900,12 @@ class _PhotosGrid extends StatelessWidget {
             children: [
               ClipRRect(
                 borderRadius: BorderRadius.circular(10.r),
-                child: isAssetPath(photos[i])
-                    ? Image.asset(
-                        photos[i],
-                        width: 72.r,
-                        height: 72.r,
-                        fit: BoxFit.cover,
-                      )
-                    : Image.file(
-                        File(photos[i]),
-                        width: 72.r,
-                        height: 72.r,
-                        fit: BoxFit.cover,
-                      ),
+                child: imageFromPath(
+                  photos[i],
+                  width: 72.r,
+                  height: 72.r,
+                  fit: BoxFit.cover,
+                ),
               ),
               Positioned(
                 top: 4.w,
@@ -994,93 +969,6 @@ class _AddPhotosButton extends StatelessWidget {
   }
 }
 
-class _AiInputBar extends StatelessWidget {
-  const _AiInputBar({required this.controller, required this.onSend});
-  final TextEditingController controller;
-  final VoidCallback onSend;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: EdgeInsets.fromLTRB(12.w, 12.h, 12.w, 12.h),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.08),
-            blurRadius: 8,
-            offset: const Offset(0, -2),
-          ),
-        ],
-      ),
-      child: SafeArea(
-        top: false,
-        child: Row(
-          children: [
-            Container(
-              width: 44.r,
-              height: 44.r,
-              decoration: BoxDecoration(
-                color: AppColors.primary,
-                borderRadius: BorderRadius.circular(12.r),
-              ),
-              alignment: Alignment.center,
-              child:
-                  Icon(Icons.image_outlined, color: Colors.white, size: 22.r),
-            ),
-            SizedBox(width: 8.w),
-            Expanded(
-              child: Container(
-                height: 44.r,
-                padding: EdgeInsets.symmetric(horizontal: 16.w),
-                decoration: BoxDecoration(
-                  color: AppColors.surfaceVariant,
-                  borderRadius: BorderRadius.circular(100.r),
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: controller,
-                        inputFormatters: [LengthLimitingTextInputFormatter(1000)],
-                        decoration: InputDecoration(
-                          hintText: 'Написать...',
-                          hintStyle: AppTextStyles.body
-                              .copyWith(color: AppColors.textTertiary),
-                          isCollapsed: true,
-                          border: InputBorder.none,
-                          enabledBorder: InputBorder.none,
-                          focusedBorder: InputBorder.none,
-                        ),
-                      ),
-                    ),
-                    Icon(Icons.mic_none_rounded,
-                        size: 22.r, color: AppColors.textSecondary),
-                  ],
-                ),
-              ),
-            ),
-            SizedBox(width: 8.w),
-            GestureDetector(
-              onTap: onSend,
-              child: Container(
-                width: 44.r,
-                height: 44.r,
-                decoration: BoxDecoration(
-                  color: AppColors.primary,
-                  borderRadius: BorderRadius.circular(12.r),
-                ),
-                alignment: Alignment.center,
-                child: Icon(Icons.arrow_forward_rounded,
-                    color: Colors.white, size: 22.r),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
 
 /// AppBar режима создания услуги: тёмный фон, крестик вместо стрелки назад.
 class _CreateAppBar extends StatelessWidget implements PreferredSizeWidget {

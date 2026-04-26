@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
@@ -73,9 +71,7 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
           child: InteractiveViewer(
             minScale: 1,
             maxScale: 4,
-            child: isAssetPath(widget.photos[i])
-                ? Image.asset(widget.photos[i], fit: BoxFit.contain)
-                : Image.file(File(widget.photos[i]), fit: BoxFit.contain),
+            child: imageFromPath(widget.photos[i], fit: BoxFit.contain),
           ),
         ),
       ),

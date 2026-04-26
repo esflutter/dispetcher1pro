@@ -16,6 +16,10 @@ class ChatScreen extends StatefulWidget {
 
   final String? initialMessage;
 
+  /// Сбрасывает историю чата к начальному приветствию. Вызывается из
+  /// [auth_reset._clearAll] при logout/удалении аккаунта.
+  static void resetHistory() => _ChatScreenState.resetHistory();
+
   @override
   State<ChatScreen> createState() => _ChatScreenState();
 }
@@ -30,6 +34,20 @@ class _ChatScreenState extends State<ChatScreen> {
   ];
 
   static int _idCounter = 0;
+
+  /// Сбрасывает историю чата к начальному состоянию (одно приветствие
+  /// от ассистента). Вызывается из [auth_reset._clearAll], чтобы при
+  /// смене пользователя на устройстве чат был чистый.
+  static void resetHistory() {
+    _messages
+      ..clear()
+      ..add(const ChatMessage(
+        id: 'm1',
+        text: 'Здравствуйте! Чем могу помочь?',
+        fromUser: false,
+      ));
+    _idCounter = 0;
+  }
 
   final List<String> _pendingImages = <String>[];
   final ScrollController _scrollController = ScrollController();

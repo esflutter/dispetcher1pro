@@ -6,6 +6,7 @@ import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_spacing.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
 import 'package:dispatcher_1/core/utils/plural.dart';
+import 'package:dispatcher_1/core/widgets/avatar_circle.dart';
 import 'package:dispatcher_1/core/widgets/dark_sub_app_bar.dart';
 
 import 'account_block.dart';
@@ -16,13 +17,13 @@ class Review {
     required this.date,
     required this.rating,
     required this.text,
-    this.avatarIndex = 0,
+    this.authorAvatarUrl,
   });
   final String author;
   final String date;
   final int rating;
   final String text;
-  final int avatarIndex;
+  final String? authorAvatarUrl;
 }
 
 /// Про кого открыт список отзывов. [executor] — отзывы заказчиков об
@@ -93,7 +94,7 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
           .from('reviews')
           .select(
             'id, rating, text, created_at, '
-            'author:profiles!reviews_author_id_fkey(name)',
+            'author:profiles!reviews_author_id_fkey(name, avatar_url)',
           )
           .eq('target_id', targetId)
           .eq('subject', _isCustomer ? 'customer' : 'executor')
@@ -111,6 +112,9 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
     final String authorName = author is Map<String, dynamic>
         ? (author['name'] as String?) ?? 'Пользователь'
         : 'Пользователь';
+    final String? authorAvatarUrl = author is Map<String, dynamic>
+        ? author['avatar_url'] as String?
+        : null;
     final DateTime created = DateTime.parse(r['created_at'] as String);
     final String date =
         '${created.day.toString().padLeft(2, '0')}/${created.month.toString().padLeft(2, '0')}/${created.year}';
@@ -119,7 +123,7 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
       date: date,
       rating: r['rating'] as int,
       text: (r['text'] as String?) ?? '',
-      avatarIndex: ((authorName.codeUnitAt(0) % 6) + 1).clamp(1, 6),
+      authorAvatarUrl: authorAvatarUrl,
     );
   }
 
@@ -137,13 +141,21 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
             }
             final List<Review> reviews =
                 snap.data ?? const <Review>[];
-            final int count = reviews.length;
-            final String ratingText = count == 0
-                ? '0,0'
-                : (reviews.fold<int>(0, (int s, Review r) => s + r.rating) /
-                        count)
-                    .toStringAsFixed(1)
-                    .replaceAll('.', ',');
+            // Источник правды для агрегата — `profiles.rating_as_*` /
+            // `review_count_as_*` из карточки заказа/исполнителя. На
+            // экране показываем `LIMIT 50` отзывов, поэтому считать
+            // по выборке = расходиться с цифрой в карточке. Если
+            // initialRating/initialCount не переданы (пустой push без
+            // контекста) — fallback на подсчёт по выборке.
+            final int count = widget.initialCount ?? reviews.length;
+            final double aggregate = widget.initialRating ??
+                (reviews.isEmpty
+                    ? 0
+                    : reviews.fold<int>(0, (int s, Review r) => s + r.rating) /
+                        reviews.length);
+            final String ratingText = aggregate > 0
+                ? aggregate.toStringAsFixed(1).replaceAll('.', ',')
+                : '0,0';
             return reviews.isEmpty
                 ? const _Empty()
                 : ListView.separated(
@@ -232,27 +244,14 @@ class _ReviewCard extends StatelessWidget {
   const _ReviewCard({required this.review});
   final Review review;
 
-  static const List<String> _avatars = <String>[
-    'assets/images/profile/photo_1.webp',
-    'assets/images/profile/photo_2.webp',
-    'assets/images/profile/photo_3.webp',
-    'assets/images/profile/photo_4.webp',
-    'assets/images/profile/photo_5.webp',
-    'assets/images/profile/photo_6.webp',
-  ];
-
   @override
   Widget build(BuildContext context) {
-    final String avatarPath = _avatars[(review.avatarIndex - 1) % _avatars.length];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
         Row(
           children: <Widget>[
-            ClipOval(
-              child: Image.asset(avatarPath,
-                  width: 72.r, height: 72.r, fit: BoxFit.cover),
-            ),
+            AvatarCircle(size: 72.r, avatarUrl: review.authorAvatarUrl),
             SizedBox(width: 20.w),
             Expanded(
               child: Column(

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:dispatcher_1/core/profile/profile_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_spacing.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
@@ -39,26 +40,42 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
       ),
     );
     if (paid == true && mounted) {
+      // Дата оплаченного периода — now() + 30 дней (длительность одного
+      // оплаченного цикла подписки). После рестарта `loadMyPrivate`
+      // отдаст ту же дату из `profiles_private.subscription_paid_until`.
+      final DateTime paidUntil =
+          DateTime.now().add(const Duration(days: 30));
       setState(() {
         VerificationStatus.hasSubscription = true;
-        // В моке фиксируем дату оплаченного периода. В проде это придёт
-        // с бэкенда вместе с ответом об успешной оплате.
         VerificationStatus.subscriptionPaidUntilText ??= '15 июля';
       });
+      // ignore: discarded_futures
+      ProfileService.instance
+          .updateSubscription(paidUntil: paidUntil, autoRenew: true)
+          .catchError((_) {/* silent */});
     }
   }
 
   Future<void> _onToggle(bool value) async {
     if (!value && _status == SubscriptionStatus.active) {
       // Выключение активной — переводит в «Приостановлена»: флаг
-      // подписки снимаем, но оплаченный период оставляем.
+      // подписки снимаем, но оплаченный период оставляем; в БД
+      // выключаем `subscription_auto_renew`.
       final bool? ok = await _showDisableDialog();
       if (ok != true) return;
       setState(() => VerificationStatus.hasSubscription = false);
+      // ignore: discarded_futures
+      ProfileService.instance
+          .updateSubscription(autoRenew: false)
+          .catchError((_) {/* silent */});
     } else if (value && _status == SubscriptionStatus.paused) {
       // Возврат из «Приостановлена» в «Активна» — без повторной оплаты,
       // т. к. платёжный период ещё не закончился.
       setState(() => VerificationStatus.hasSubscription = true);
+      // ignore: discarded_futures
+      ProfileService.instance
+          .updateSubscription(autoRenew: true)
+          .catchError((_) {/* silent */});
     } else if (value && _status == SubscriptionStatus.inactive) {
       if (!mounted) return;
       await _openPaywall();

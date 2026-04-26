@@ -105,9 +105,39 @@ Future<List<String>> pickMultipleImagesFromGallery({
 /// True, если путь указывает на ассет приложения, а не файл.
 bool isAssetPath(String path) => path.startsWith('assets/');
 
-/// Отдаёт нужный [ImageProvider] для картинки. Для ассетов —
-/// [AssetImage], для файлов — [FileImage]. Используется в виджетах,
-/// которые должны показывать и моковые ассеты, и реально
-/// загруженные пользователем фото.
-ImageProvider photoProvider(String path) =>
-    isAssetPath(path) ? AssetImage(path) : FileImage(File(path));
+/// True, если путь — это HTTP(S) URL (например, фото в storage Supabase).
+bool isNetworkPath(String path) =>
+    path.startsWith('http://') || path.startsWith('https://');
+
+/// Отдаёт нужный [ImageProvider] для картинки в зависимости от
+/// источника:
+/// - `assets/...`           → [AssetImage]
+/// - `http(s)://...`        → [NetworkImage] (фото в storage Supabase)
+/// - всё остальное          → [FileImage] (только что выбранный с устройства)
+///
+/// Используется в виджетах, которые должны показывать и ассеты,
+/// и реальные фото с устройства, и URL'ы из БД.
+ImageProvider photoProvider(String path) {
+  if (isAssetPath(path)) return AssetImage(path);
+  if (isNetworkPath(path)) return NetworkImage(path);
+  return FileImage(File(path));
+}
+
+/// Универсальный [Image] для путей трёх типов (asset/http/file). Без
+/// этого виджеты с фото услуг (где путь может быть и локальным файлом
+/// при свежем выборе, и https URL после загрузки в storage) ловили
+/// FileSystemException на `Image.file(File('https://...'))`.
+Widget imageFromPath(
+  String path, {
+  BoxFit? fit,
+  double? width,
+  double? height,
+}) {
+  if (isAssetPath(path)) {
+    return Image.asset(path, fit: fit, width: width, height: height);
+  }
+  if (isNetworkPath(path)) {
+    return Image.network(path, fit: fit, width: width, height: height);
+  }
+  return Image.file(File(path), fit: fit, width: width, height: height);
+}

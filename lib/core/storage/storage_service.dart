@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Загрузка файлов в Supabase Storage. Бакеты заведены в миграции 005:
@@ -32,12 +33,35 @@ class StorageService {
     if (user == null) {
       throw const AuthException('Нет активной сессии');
     }
-    final String ext = _extOf(file.path);
-    final String fileName = '${DateTime.now().microsecondsSinceEpoch}$ext';
+    final File compressed = await _compress(file);
+    final String fileName = '${DateTime.now().microsecondsSinceEpoch}.webp';
     final String path = '${user.id}/$fileName';
-    await _client.storage.from('order-photos').upload(path, file);
+    await _client.storage.from('order-photos').upload(path, compressed);
     // Возвращаем сам путь — клиент при отображении запрашивает signed URL.
     return path;
+  }
+
+  /// Ресайзит и конвертирует фото в webp перед upload. Это сильно режет
+  /// трафик: 5-мегапиксельное JPG ≈ 1.5 МБ → webp 1280px ≈ 200 КБ.
+  /// При неудаче (некоторые форматы платформа не сжимает) возвращает
+  /// исходный файл — лучше залить как есть, чем сорвать создание заказа.
+  Future<File> _compress(File source) async {
+    try {
+      final String target =
+          '${source.path}.${DateTime.now().microsecondsSinceEpoch}.webp';
+      final XFile? out = await FlutterImageCompress.compressAndGetFile(
+        source.absolute.path,
+        target,
+        format: CompressFormat.webp,
+        quality: 85,
+        minWidth: 1280,
+        minHeight: 1280,
+      );
+      if (out == null) return source;
+      return File(out.path);
+    } catch (_) {
+      return source;
+    }
   }
 
   /// Возвращает signed URL для приватного файла (1 час).
@@ -46,21 +70,15 @@ class StorageService {
     return _client.storage.from(bucket).createSignedUrl(path, expiresInSec);
   }
 
-  String _extOf(String filePath) {
-    final int dot = filePath.lastIndexOf('.');
-    if (dot < 0) return '';
-    return filePath.substring(dot).toLowerCase();
-  }
-
   Future<String> _uploadToPublicBucket(String bucket, File file) async {
     final User? user = _client.auth.currentUser;
     if (user == null) {
       throw const AuthException('Нет активной сессии');
     }
-    final String ext = _extOf(file.path);
-    final String fileName = '${DateTime.now().microsecondsSinceEpoch}$ext';
+    final File compressed = await _compress(file);
+    final String fileName = '${DateTime.now().microsecondsSinceEpoch}.webp';
     final String path = '${user.id}/$fileName';
-    await _client.storage.from(bucket).upload(path, file);
+    await _client.storage.from(bucket).upload(path, compressed);
     return _client.storage.from(bucket).getPublicUrl(path);
   }
 }

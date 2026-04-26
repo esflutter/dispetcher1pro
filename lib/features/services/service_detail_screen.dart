@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
@@ -310,9 +308,7 @@ class _PhotosGrid extends StatelessWidget {
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(8.r),
-          child: isAssetPath(photos[i])
-              ? Image.asset(photos[i], fit: BoxFit.cover)
-              : Image.file(File(photos[i]), fit: BoxFit.cover),
+          child: imageFromPath(photos[i], fit: BoxFit.cover),
         ),
       ),
     );

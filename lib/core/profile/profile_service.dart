@@ -35,7 +35,8 @@ class ProfileService {
       final Map<String, dynamic>? r = await _client
           .from('profiles_private')
           .select('phone, email, date_of_birth, '
-              'subscription_paid_until, subscription_auto_renew')
+              'subscription_paid_until, subscription_auto_renew, '
+              'verification_reject_reason')
           .eq('id', user.id)
           .maybeSingle();
       if (r == null) return null;
@@ -77,6 +78,33 @@ class ProfileService {
     await _client
         .from('profiles_private')
         .update(<String, dynamic>{'email': email.isEmpty ? null : email})
+        .eq('id', user.id);
+  }
+
+  /// UPDATE `profiles_private` — `subscription_paid_until` и
+  /// `subscription_auto_renew`. Используется paywall'ом и тумблером
+  /// «Авто-продление» в `subscription_screen`. Когда подписка
+  /// продлевается, `subscriptionPaidUntil` приходит как `now() + 30d`;
+  /// при отмене auto-renew — флаг `false` без смены даты.
+  Future<void> updateSubscription({
+    DateTime? paidUntil,
+    bool? autoRenew,
+  }) async {
+    final User? user = _client.auth.currentUser;
+    if (user == null) {
+      throw const AuthException('Нет активной сессии');
+    }
+    final Map<String, dynamic> payload = <String, dynamic>{};
+    if (paidUntil != null) {
+      payload['subscription_paid_until'] = paidUntil.toUtc().toIso8601String();
+    }
+    if (autoRenew != null) {
+      payload['subscription_auto_renew'] = autoRenew;
+    }
+    if (payload.isEmpty) return;
+    await _client
+        .from('profiles_private')
+        .update(payload)
         .eq('id', user.id);
   }
 }
@@ -153,12 +181,18 @@ class MyPrivate {
     required this.dateOfBirth,
     required this.subscriptionPaidUntil,
     required this.subscriptionAutoRenew,
+    required this.verificationRejectReason,
   });
   final String? phone;
   final String? email;
   final DateTime? dateOfBirth;
   final DateTime? subscriptionPaidUntil;
   final bool subscriptionAutoRenew;
+
+  /// Текстовая причина отказа модерацией. `null` — нет отказа или отказ
+  /// без причины. Показывается на экране карточки исполнителя при
+  /// `verification_status = rejected`.
+  final String? verificationRejectReason;
 
   factory MyPrivate.fromRow(Map<String, dynamic> r) => MyPrivate(
         phone: r['phone'] as String?,
@@ -171,6 +205,7 @@ class MyPrivate {
             : DateTime.parse(r['subscription_paid_until'] as String),
         subscriptionAutoRenew:
             (r['subscription_auto_renew'] as bool?) ?? false,
+        verificationRejectReason: r['verification_reject_reason'] as String?,
       );
 }
 

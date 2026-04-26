@@ -8,10 +8,33 @@ import 'package:dispatcher_1/core/theme/app_text_styles.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
 
 /// Экран «Способ оплаты» — нижняя карточка поверх фотографии.
-class PaymentScreen extends StatelessWidget {
+class PaymentScreen extends StatefulWidget {
   const PaymentScreen({super.key, this.cardLast4});
 
+  /// Если карта уже выбрана снаружи (например, при возврате из
+  /// `/subscription/card`) — её последние 4 цифры приходят сюда. Иначе
+  /// state-screen откроет добавление карты сам.
   final String? cardLast4;
+
+  @override
+  State<PaymentScreen> createState() => _PaymentScreenState();
+}
+
+class _PaymentScreenState extends State<PaymentScreen> {
+  String? _cardLast4;
+
+  @override
+  void initState() {
+    super.initState();
+    _cardLast4 = widget.cardLast4;
+  }
+
+  Future<void> _onAddCard() async {
+    final String? last4 = await context.push<String>('/subscription/card');
+    if (last4 != null && last4.isNotEmpty && mounted) {
+      setState(() => _cardLast4 = last4);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -27,7 +50,10 @@ class PaymentScreen extends StatelessWidget {
           ),
           Align(
             alignment: Alignment.bottomCenter,
-            child: _PaymentSheet(cardLast4: cardLast4),
+            child: _PaymentSheet(
+              cardLast4: _cardLast4,
+              onAddCard: _onAddCard,
+            ),
           ),
         ],
       ),
@@ -36,8 +62,9 @@ class PaymentScreen extends StatelessWidget {
 }
 
 class _PaymentSheet extends StatelessWidget {
-  const _PaymentSheet({required this.cardLast4});
+  const _PaymentSheet({required this.cardLast4, required this.onAddCard});
   final String? cardLast4;
+  final VoidCallback onAddCard;
 
   @override
   Widget build(BuildContext context) {
@@ -94,7 +121,7 @@ class _PaymentSheet extends StatelessWidget {
               )
             else
               GestureDetector(
-                onTap: () => context.push('/subscription/card'),
+                onTap: onAddCard,
                 behavior: HitTestBehavior.opaque,
                 child: Row(
                   children: [

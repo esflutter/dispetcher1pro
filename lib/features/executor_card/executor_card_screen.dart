@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:dispatcher_1/core/executor_card/executor_card_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_spacing.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
+import 'package:dispatcher_1/core/profile/profile_service.dart';
+import 'package:dispatcher_1/core/widgets/avatar_circle.dart';
 import 'package:dispatcher_1/core/widgets/clickable_address.dart';
 import 'package:dispatcher_1/core/widgets/dark_sub_app_bar.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
@@ -59,6 +62,12 @@ class _ExecutorCardScreenState extends State<ExecutorCardScreen> {
   /// выставлен в `true` прошлым заходом.
   ExecutorCardStatus? _lastAlertedStatus;
 
+  /// Кэш текста причины отказа из `profiles_private.verification_reject_reason`.
+  /// Подгружаем один раз вместе с карточкой, чтобы при показе алерта
+  /// «отправьте документы» сразу пояснить, что именно не понравилось
+  /// модерации, а не показывать общий текст.
+  String? _verificationRejectReason;
+
   bool get _filled =>
       AccountBlock.isBlocked ||
       (VerificationStatus.current.isVerified &&
@@ -87,6 +96,46 @@ class _ExecutorCardScreenState extends State<ExecutorCardScreen> {
     VerificationStatus.notifier.addListener(_refresh);
     ExecutorCardState.notifier.addListener(_refresh);
     WidgetsBinding.instance.addPostFrameCallback((_) => _maybeShowStatusAlert());
+    _loadFromDb();
+  }
+
+  /// Тянет карточку из БД и заполняет [ExecutorCardData] + флаг
+  /// `cardCreated`. Без этой загрузки экран после свежего логина
+  /// показывал «Создайте карточку», даже если в БД она уже есть.
+  Future<void> _loadFromDb() async {
+    try {
+      final MyExecutorCard? c = await ExecutorCardService.instance.loadMine();
+      if (c == null || !mounted) return;
+      ExecutorCardData.location = c.locationAddress;
+      ExecutorCardData.radius =
+          c.radiusKm != null ? 'В радиусе ${c.radiusKm} км' : null;
+      ExecutorCardData.about = c.about;
+      ExecutorCardData.experience = c.experienceYears?.toString();
+      ExecutorCardData.status = _legalStatusLabel(c.legalStatus);
+      ExecutorCardScreen.cardCreated = c.isPublished;
+      // Параллельно тянем причину отказа модерации (если есть). Поле
+      // живёт в profiles_private — RLS пропустит только владельца.
+      final MyPrivate? priv = await ProfileService.instance.loadMyPrivate();
+      if (mounted && priv != null) {
+        _verificationRejectReason = priv.verificationRejectReason;
+      }
+      if (mounted) setState(() {});
+    } catch (_) {/* silent */}
+  }
+
+  String? _legalStatusLabel(String? code) {
+    switch (code) {
+      case 'individual':
+        return 'Физ. лицо';
+      case 'self_employed':
+        return 'Самозанятый';
+      case 'ip':
+        return 'ИП';
+      case 'legal_entity':
+        return 'Юр. лицо';
+      default:
+        return null;
+    }
   }
 
   @override
@@ -115,7 +164,10 @@ class _ExecutorCardScreenState extends State<ExecutorCardScreen> {
       showExecutorCardStatusDialog(context, s);
     } else if (VerificationStatus.current == VerificationStatus.rejected) {
       _lastAlertedStatus = s;
-      showCreateExecutorCardAlert(context);
+      showCreateExecutorCardAlert(
+        context,
+        rejectReason: _verificationRejectReason,
+      );
     }
   }
 
@@ -469,13 +521,46 @@ class _FilledCard extends StatelessWidget {
   }
 }
 
-class _HeaderRow extends StatelessWidget {
+class _HeaderRow extends StatefulWidget {
+  @override
+  State<_HeaderRow> createState() => _HeaderRowState();
+}
+
+class _HeaderRowState extends State<_HeaderRow> {
+  String? _avatarUrl;
+  double _rating = 0;
+  int _reviewCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFromDb();
+  }
+
+  Future<void> _loadFromDb() async {
+    try {
+      final MyProfile? p = await ProfileService.instance.loadMine();
+      if (p == null || !mounted) return;
+      setState(() {
+        _avatarUrl = p.avatarUrl;
+        _rating = p.ratingAsExecutor;
+        _reviewCount = p.reviewCountAsExecutor;
+      });
+    } catch (_) {/* silent */}
+  }
+
+  String _fmtRating(double v) =>
+      _reviewCount == 0 ? '0,0' : v.toStringAsFixed(1).replaceAll('.', ',');
+
   @override
   Widget build(BuildContext context) {
+    final Widget avatar = CropResult.saved != null
+        ? CroppedAvatar(size: 72.r)
+        : AvatarCircle(size: 72.r, avatarUrl: _avatarUrl);
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: <Widget>[
-        CroppedAvatar(size: 72.r),
+        avatar,
         SizedBox(width: 12.w),
         Expanded(
           child: Column(
@@ -488,12 +573,12 @@ class _HeaderRow extends StatelessWidget {
                   Image.asset('assets/images/catalog/star.webp',
                       width: 20.r, height: 20.r),
                   SizedBox(width: 4.w),
-                  Text('4,5', style: AppTextStyles.body),
+                  Text(_fmtRating(_rating), style: AppTextStyles.body),
                   SizedBox(width: 16.w),
                   GestureDetector(
                     onTap: () => context.push('/profile/reviews'),
                     child: Text(
-                      '${ReviewsData.count} ${reviewsWord(ReviewsData.count)}',
+                      '$_reviewCount ${reviewsWord(_reviewCount)}',
                       style: AppTextStyles.body.copyWith(
                         color: AppColors.textPrimary,
                         decoration: TextDecoration.underline,

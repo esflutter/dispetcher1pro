@@ -32,18 +32,22 @@ class _PhoneInputScreenState extends State<PhoneInputScreen> {
   @override
   void initState() {
     super.initState();
-    _controller.addListener(() {
-      final complete = _maskFormatter.getUnmaskedText().length == 10;
-      if (complete != _isComplete) {
-        setState(() => _isComplete = complete);
-      }
-    });
+    _controller.addListener(_onTextChanged);
   }
 
   @override
   void dispose() {
+    _controller.removeListener(_onTextChanged);
     _controller.dispose();
     super.dispose();
+  }
+
+  void _onTextChanged() {
+    if (!mounted) return;
+    final complete = _maskFormatter.getUnmaskedText().length == 10;
+    if (complete != _isComplete) {
+      setState(() => _isComplete = complete);
+    }
   }
 
   Future<void> _onNext() async {
@@ -63,9 +67,9 @@ class _PhoneInputScreenState extends State<PhoneInputScreen> {
       CropResult.userPhone = PhoneFormat.toPretty(e164);
       context.go('/auth/otp');
     } on AuthException catch (e) {
-      if (mounted) _showError(e.message);
-    } catch (_) {
-      if (mounted) _showError('Не удалось отправить код. Проверьте соединение.');
+      if (mounted) _showError('Auth: ${e.statusCode ?? '?'} — ${e.message}');
+    } catch (e) {
+      if (mounted) _showError('${e.runtimeType}: $e');
     } finally {
       if (mounted) setState(() => _sending = false);
     }

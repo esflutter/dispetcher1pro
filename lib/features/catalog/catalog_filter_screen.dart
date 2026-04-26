@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
+import 'package:dispatcher_1/core/catalog/catalog_service.dart';
+import 'package:dispatcher_1/core/catalog/models.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
@@ -22,34 +24,11 @@ class CatalogFilterScreen extends StatefulWidget {
 }
 
 class _CatalogFilterScreenState extends State<CatalogFilterScreen> {
-  static const List<String> _serviceCategories = <String>[
-    'Земляные работы',
-    'Погрузочно-разгрузочные работы',
-    'Перевозка материалов',
-    'Строительные работы',
-    'Дорожные работы',
-    'Буровые работы',
-    'Высотные работы',
-    'Демонтажные работы',
-    'Благоустройство территории',
-  ];
-
-  static const List<String> _equipment = <String>[
-    'Экскаватор-погрузчик',
-    'Экскаватор',
-    'Погрузчик',
-    'Миниэкскаватор',
-    'Буроям',
-    'Самогруз',
-    'Автокран',
-    'Бетононасос',
-    'Эвакуатор',
-    'Автовышка',
-    'Манипулятор',
-    'Минипогрузчик',
-    'Самосвал',
-    'Минитрактор',
-  ];
+  // Чипы фильтра тянем из CatalogService — иначе при малейшем
+  // расхождении title в коде vs БД фильтр молча возвращает «всех»
+  // или «никого».
+  List<String> _serviceCategories = const <String>[];
+  List<String> _equipment = const <String>[];
 
   final Set<String> _selectedCategories = <String>{};
   final Set<String> _selectedEquipment = <String>{};
@@ -86,6 +65,38 @@ class _CatalogFilterScreenState extends State<CatalogFilterScreen> {
     _wholeDay = AppliedFilter.wholeDay;
     _radiusKm = AppliedFilter.radiusKm;
     _address = AppliedFilter.address;
+
+    final List<MachineryRef>? mc = CatalogService.instance.cachedMachinery;
+    final List<CategoryRef>? cc = CatalogService.instance.cachedCategories;
+    if (mc != null) {
+      _equipment =
+          mc.map((MachineryRef e) => e.title).toList(growable: false);
+    }
+    if (cc != null) {
+      _serviceCategories =
+          cc.map((CategoryRef e) => e.title).toList(growable: false);
+    }
+    if (mc == null || cc == null) {
+      _loadDirectories();
+    }
+  }
+
+  Future<void> _loadDirectories() async {
+    try {
+      final List<MachineryRef> m =
+          await CatalogService.instance.listActiveMachinery();
+      final List<CategoryRef> c =
+          await CatalogService.instance.listActiveCategories();
+      if (!mounted) return;
+      setState(() {
+        _equipment =
+            m.map((MachineryRef e) => e.title).toList(growable: false);
+        _serviceCategories =
+            c.map((CategoryRef e) => e.title).toList(growable: false);
+      });
+    } catch (_) {
+      // БД недоступна — чипы пустые, фильтр временно «не работает».
+    }
   }
 
   void _applyFilter() {
@@ -1200,7 +1211,6 @@ class AddressBottomSheet extends StatefulWidget {
 
 class AddressBottomSheetState extends State<AddressBottomSheet> {
   final TextEditingController _ctrl = TextEditingController();
-  String _query = '';
 
   static const List<MockAddress> _all = <MockAddress>[
     MockAddress('Моё местоположение', null),
@@ -1255,8 +1265,6 @@ class AddressBottomSheetState extends State<AddressBottomSheet> {
                           controller: _ctrl,
                           autofocus: true,
                           inputFormatters: [LengthLimitingTextInputFormatter(100)],
-                          onChanged: (String v) =>
-                              setState(() => _query = v),
                           style: AppTextStyles.bodyMRegular.copyWith(
                             fontSize: 16.sp,
                             color: AppColors.textPrimary,

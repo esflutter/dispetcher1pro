@@ -6,6 +6,7 @@ import 'package:dispatcher_1/core/catalog/models.dart';
 import 'package:dispatcher_1/core/my_orders/models.dart';
 import 'package:dispatcher_1/core/my_orders/my_orders_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
+import 'package:dispatcher_1/core/utils/phone_dial.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
 import 'package:dispatcher_1/features/orders/order_detail_screen.dart';
 import 'package:dispatcher_1/features/orders/widgets/my_order_card.dart';
@@ -15,19 +16,6 @@ import 'package:dispatcher_1/features/profile/account_block.dart';
 /// «Мои заказы» исполнителя. Источник — таблица `order_matches` JOIN
 /// `orders` + `profiles` (заказчик). Три вкладки — Новые / Принятые /
 /// Не принятые — делят список по [MyMatchStatus].
-///
-/// Локальных мок-списков больше нет: после любого экшена (withdraw,
-/// accept, decline, complete) экран делает reload из БД.
-class MyOrdersStore {
-  MyOrdersStore._();
-
-  /// Пустой reset — legacy для [auth_reset._clearAll].
-  /// Локальных данных у нас больше нет, но метод оставляем как точку
-  /// расширения (например, чтобы сбросить закэшированные avatar-URL'ы
-  /// после logout).
-  static void clear() {}
-}
-
 class MyOrdersScreen extends StatefulWidget {
   const MyOrdersScreen(
       {super.key, this.onGoToCatalog, this.isBlocked = false});
@@ -39,10 +27,19 @@ class MyOrdersScreen extends StatefulWidget {
   State<MyOrdersScreen> createState() => _MyOrdersScreenState();
 }
 
+class _MyOrdersData {
+  const _MyOrdersData({required this.matches, required this.phones});
+  final List<MyOrderMatch> matches;
+
+  /// Ключ — `customerId`. Значение — телефон из `profiles_private`,
+  /// читаем только для accepted/completed мэтчей; для остальных — null.
+  final Map<String, String?> phones;
+}
+
 class _MyOrdersScreenState extends State<MyOrdersScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tab;
-  late Future<List<MyOrderMatch>> _future;
+  late Future<_MyOrdersData> _future;
 
   bool get _blocked => AccountBlock.isBlocked || widget.isBlocked;
 
@@ -61,8 +58,25 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
     super.dispose();
   }
 
-  Future<List<MyOrderMatch>> _fetch() =>
-      MyOrdersService.instance.listMine();
+  /// Загружает мэтчи + телефоны заказчиков для accepted/completed
+  /// (RLS пропускает только участникам соответствующих мэтчей).
+  Future<_MyOrdersData> _fetch() async {
+    final List<MyOrderMatch> matches =
+        await MyOrdersService.instance.listMine();
+    final Set<String> needContact = <String>{
+      for (final MyOrderMatch m in matches)
+        if (m.status == MyMatchStatus.accepted ||
+            m.status == MyMatchStatus.completed)
+          m.customerId,
+    };
+    final Map<String, String?> phones = <String, String?>{};
+    await Future.wait(needContact.map((String id) async {
+      final ({String? phone, String? email})? c =
+          await MyOrdersService.instance.getCustomerContacts(id);
+      phones[id] = c?.phone;
+    }));
+    return _MyOrdersData(matches: matches, phones: phones);
+  }
 
   void _refresh() {
     if (!mounted) return;
@@ -91,17 +105,19 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
           ),
         ),
       ),
-      body: FutureBuilder<List<MyOrderMatch>>(
+      body: FutureBuilder<_MyOrdersData>(
         future: _future,
         builder: (BuildContext context,
-            AsyncSnapshot<List<MyOrderMatch>> snap) {
+            AsyncSnapshot<_MyOrdersData> snap) {
           if (snap.connectionState != ConnectionState.done) {
             return const Center(child: CircularProgressIndicator());
           }
           if (snap.hasError) {
             return _RetryView(onRetry: _refresh);
           }
-          final List<MyOrderMatch> all = snap.data ?? const <MyOrderMatch>[];
+          final _MyOrdersData data =
+              snap.data ?? const _MyOrdersData(matches: [], phones: {});
+          final List<MyOrderMatch> all = data.matches;
           if (all.isEmpty) {
             return _EmptyOrders(onGoToCatalog: widget.onGoToCatalog);
           }
@@ -118,7 +134,7 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
           final List<MyOrderMatch> rejected = all
               .where((MyOrderMatch m) => m.status.isRejected)
               .toList();
-          return _buildWithTabs(active, accepted, rejected);
+          return _buildWithTabs(active, accepted, rejected, data.phones);
         },
       ),
     );
@@ -128,6 +144,7 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
     List<MyOrderMatch> active,
     List<MyOrderMatch> accepted,
     List<MyOrderMatch> rejected,
+    Map<String, String?> phones,
   ) {
     return Column(
       children: <Widget>[
@@ -143,9 +160,9 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
           child: TabBarView(
             controller: _tab,
             children: <Widget>[
-              _buildList(active),
-              _buildList(accepted),
-              _buildList(rejected),
+              _buildList(active, phones),
+              _buildList(accepted, phones),
+              _buildList(rejected, phones),
             ],
           ),
         ),
@@ -153,7 +170,7 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
     );
   }
 
-  Widget _buildList(List<MyOrderMatch> items) {
+  Widget _buildList(List<MyOrderMatch> items, Map<String, String?> phones) {
     if (items.isEmpty) {
       return _EmptyOrders(onGoToCatalog: widget.onGoToCatalog);
     }
@@ -168,6 +185,11 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
           final bool isLast = i == items.length - 1;
           final MyOrderStatus uiStatus = _uiStatus(m.status);
           final String rentDate = _rentDate(m);
+          // Телефон тянется только для accepted/completed мэтчей. У
+          // остальных карточек звонить ещё рано — кнопка должна быть
+          // визуально, но не выполнять никакого действия.
+          final String? phone = phones[m.customerId];
+          final bool canCall = phone != null && phone.trim().isNotEmpty;
           return Column(
             children: <Widget>[
               MyOrderCard(
@@ -178,7 +200,7 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
                 address: m.orderAddress,
                 publishedAgo: formatPublishedAgo(m.createdAt),
                 customerName: m.customerName,
-                customerPhone: null, // подтягивается отдельно в деталях
+                customerPhone: phone,
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute<void>(
                     builder: (_) => MyOrderDetailScreen(
@@ -187,10 +209,11 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
                       rentDate: rentDate,
                       address: m.orderAddress,
                       publishedAgo: formatPublishedAgo(m.createdAt),
-                      orderNumber: '№${m.orderId.substring(0, 8)}',
+                      orderNumber:
+                          '№${m.orderDisplayNumber.toString().padLeft(8, '0')}',
                       customerId: m.customerId,
                       customerName: m.customerName,
-                      customerPhone: '',
+                      customerPhone: phone ?? '',
                       customerEmail: null,
                       customerRating: m.customerRating,
                       customerReviews: m.customerReviewCount,
@@ -212,7 +235,7 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
                     ),
                   ),
                 ),
-                onContact: () {},
+                onContact: canCall ? () => dialPhone(context, phone) : null,
               ),
               if (!isLast)
                 Container(
@@ -229,6 +252,15 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
   Future<void> _doAction(Future<void> Function() op) async {
     try {
       await op();
+    } on MatchAlreadyTakenException {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Заказчик уже выбрал другого исполнителя.'),
+        ),
+      );
+      _refresh();
+      return;
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
