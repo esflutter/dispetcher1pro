@@ -5,6 +5,8 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:dispatcher_1/core/storage/storage_service.dart';
+
 /// Утилиты для работы с фото: пикер с устройства и универсальный
 /// [ImageProvider] для путей, которые могут быть либо ассетом
 /// (`assets/...`), либо реальным файлом на устройстве.
@@ -39,6 +41,35 @@ void _showDeniedSnack(BuildContext context) {
   );
 }
 
+/// Снэкбар «Файл слишком большой, максимум N МБ». Показываем сразу при
+/// пике, не дожидаясь попытки upload — иначе пользователь узнает о
+/// проблеме только при «Создать заказ» через 5 секунд после нажатия.
+void _showTooLargeSnack(BuildContext context, double actualMb) {
+  final int maxMb = StorageService.maxFileBytes ~/ (1024 * 1024);
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Text(
+        'Фото ${actualMb.toStringAsFixed(1)} МБ — слишком большое, '
+        'максимум $maxMb МБ.',
+      ),
+      duration: const Duration(seconds: 3),
+    ),
+  );
+}
+
+/// Возвращает путь, если файл укладывается в лимит размера. Иначе —
+/// показывает снэкбар (если есть [context]) и возвращает null. Использует
+/// тот же лимит, что StorageService применяет на upload — лучше отсечь
+/// здесь, чем дать пользователю наполнить форму и сорваться на публикации.
+String? _filterBySizeOrWarn(String path, BuildContext? context) {
+  final int bytes = File(path).lengthSync();
+  if (bytes <= StorageService.maxFileBytes) return path;
+  if (context != null && context.mounted) {
+    _showTooLargeSnack(context, bytes / (1024 * 1024));
+  }
+  return null;
+}
+
 /// Выбрать одно изображение из галереи. Ограничиваем размер и
 /// качество — чтобы не таскать по памяти и сети оригиналы по
 /// десяткам мегабайт.
@@ -52,11 +83,14 @@ Future<String?> pickImageFromGallery({BuildContext? context}) async {
   try {
     final XFile? file = await _picker.pickImage(
       source: ImageSource.gallery,
-      maxWidth: 1920,
-      maxHeight: 1920,
+      maxWidth: StorageService.maxImageDimension.toDouble(),
+      maxHeight: StorageService.maxImageDimension.toDouble(),
       imageQuality: 85,
     );
-    return file?.path;
+    if (file == null) return null;
+    // Внутри `_filterBySizeOrWarn` сделаем `context.mounted` перед showSnackBar.
+    // ignore: use_build_context_synchronously
+    return _filterBySizeOrWarn(file.path, context);
   } on PlatformException catch (e) {
     if (_deniedCodes.contains(e.code) &&
         context != null &&
@@ -75,6 +109,10 @@ Future<String?> pickImageFromGallery({BuildContext? context}) async {
 /// далеко не во всех галереях, например на Android <13 или в
 /// вендорских).
 ///
+/// Слишком большие файлы (>20 МБ) отсекаются с предупреждением — и
+/// пользователь сразу видит, что «5 фото из 7 добавлены, 2 слишком
+/// большие», а не молча теряет их при публикации.
+///
 /// Поведение при отказе в доступе — как у [pickImageFromGallery].
 Future<List<String>> pickMultipleImagesFromGallery({
   int? limit,
@@ -85,12 +123,35 @@ Future<List<String>> pickMultipleImagesFromGallery({
   _pickInProgress = true;
   try {
     final List<XFile> files = await _picker.pickMultiImage(
-      maxWidth: 1920,
-      maxHeight: 1920,
+      maxWidth: StorageService.maxImageDimension.toDouble(),
+      maxHeight: StorageService.maxImageDimension.toDouble(),
       imageQuality: 85,
       limit: limit,
     );
-    return files.map((XFile f) => f.path).toList();
+    final List<String> ok = <String>[];
+    int rejected = 0;
+    for (final XFile f in files) {
+      final int bytes = File(f.path).lengthSync();
+      if (bytes > StorageService.maxFileBytes) {
+        rejected++;
+      } else {
+        ok.add(f.path);
+      }
+    }
+    if (rejected > 0 && context != null && context.mounted) {
+      final int maxMb = StorageService.maxFileBytes ~/ (1024 * 1024);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            rejected == 1
+                ? '1 фото слишком большое, максимум $maxMb МБ.'
+                : '$rejected фото слишком большие, максимум $maxMb МБ.',
+          ),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
+    return ok;
   } on PlatformException catch (e) {
     if (_deniedCodes.contains(e.code) &&
         context != null &&
