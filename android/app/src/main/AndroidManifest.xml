@@ -1,4 +1,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Сеть нужна для Supabase (БД, Storage, Auth). В debug-манифесте она
+         декларируется отдельно для нужд Flutter tool, но release-сборка
+         читает только этот файл — без явного разрешения на проде
+         все сетевые вызовы молча падают. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <application

@@ -42,6 +42,22 @@ flutter_launcher_icons:
   adaptive_icon_foreground: "assets/icons/app_icon.png"
   remove_alpha_ios: true
 
+# Нативный splash до загрузки Flutter — намеренно ПЛЕЙН-БЕЛЫЙ, без
+# логотипа. Дальше Flutter рисует `splash_screen.dart` с лого + текстом
+# «Диспетчер №1 PRO» + жёлтым спиннером — единственный «правильный»
+# splash, который видит пользователь. Если показать иконку и здесь —
+# будет визуальный jumpcut: «голая иконка → иконка с текстом и
+# спиннером», что выглядит сломанно.
+# (На Android 12+ система всё равно покажет системный лаунчер-иконку
+# в первый кадр — это поведение OS, отключить нельзя.)
+flutter_native_splash:
+  color: "#FFFFFF"
+  android: true
+  ios: true
+  web: false
+  android_12:
+    color: "#FFFFFF"
+
 flutter:
   uses-material-design: true
 
