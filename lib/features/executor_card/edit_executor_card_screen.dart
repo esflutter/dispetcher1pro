@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:dispatcher_1/core/dadata/dadata_service.dart';
 import 'package:dispatcher_1/core/executor_card/executor_card_service.dart';
 import 'package:dispatcher_1/core/profile/profile_service.dart';
 import 'package:dispatcher_1/core/storage/storage_service.dart';
@@ -227,14 +228,15 @@ class _EditExecutorCardScreenState extends State<EditExecutorCardScreen> {
               SizedBox(height: 12.h),
               GestureDetector(
                 onTap: () async {
-                  final String? result = await showModalBottomSheet<String>(
+                  final DadataAddress? result =
+                      await showModalBottomSheet<DadataAddress>(
                     context: context,
                     isScrollControlled: true,
                     backgroundColor: Colors.transparent,
                     builder: (_) => const AddressBottomSheet(),
                   );
                   if (result != null) {
-                    setState(() => _location.text = result);
+                    setState(() => _location.text = result.value);
                   }
                 },
                 child: Container(

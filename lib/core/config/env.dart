@@ -21,10 +21,22 @@ class Env {
   static const String supabaseAnonKey =
       String.fromEnvironment('SUPABASE_ANON_KEY');
 
+  /// API-ключ DaData для Suggest API (подсказки адресов + координаты).
+  /// Только Token, не Secret: Secret — серверный ключ для standardize,
+  /// в клиент он не попадает. Token защищён ограничениями по
+  /// `package_name` в кабинете dadata.ru.
+  static const String dadataApiKey =
+      String.fromEnvironment('DADATA_API_KEY');
+
   /// true, если оба ключа заданы. Если запускаем без них — приложение
   /// продолжит работать на моках (пока бэкенд не подключён).
   static bool get hasSupabaseConfig =>
       supabaseUrl.isNotEmpty && supabaseAnonKey.isNotEmpty;
+
+  /// true, если есть DaData-ключ. Без него UI продолжает работать,
+  /// но подсказки адресов отдают пустой список — пользователь увидит
+  /// «Введите адрес» без выпадающих вариантов.
+  static bool get hasDadataConfig => dadataApiKey.isNotEmpty;
 
   /// Падает на старте, если забыли передать ключи в релизной сборке.
   /// Вызывать в `main()` только для release-билдов.

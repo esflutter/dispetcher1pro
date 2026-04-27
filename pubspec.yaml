@@ -26,6 +26,10 @@ dependencies:
   supabase_flutter: ^2.8.0
   cached_network_image: ^3.4.1
   flutter_image_compress: ^2.4.0
+  # HTTP-клиент для DaData Suggest API (подсказки адресов с координатами).
+  # Привязан к версии, которую и так тянет supabase_flutter транзитивно,
+  # но указываем явно — это direct dep наших файлов в `lib/core/dadata/`.
+  http: ^1.6.0
   # Карты на 2 экранах каталога. flutter_map — pure-Flutter map widget.
   # vector_map_tiles — рендерит векторные тайлы (OpenFreeMap).
   # OpenFreeMap бесплатен для коммерческого использования, без API-ключей,

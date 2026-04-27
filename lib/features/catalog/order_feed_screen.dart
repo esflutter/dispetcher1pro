@@ -406,11 +406,16 @@ class _OrdersMapWithCardState extends State<_OrdersMapWithCard> {
     final OrderListItem o = widget.orders[idx];
     final String firstMachinery =
         o.machineryTitles.isEmpty ? '' : o.machineryTitles.first;
-    final List<String> orderIds =
-        widget.orders.map((OrderListItem o) => o.id).toList();
+    final List<OrderMarkerData> markers = widget.orders
+        .map((OrderListItem o) => OrderMarkerData(
+              id: o.id,
+              lat: o.latitude,
+              lon: o.longitude,
+            ))
+        .toList();
     return Stack(
       children: <Widget>[
-        Positioned.fill(child: OrdersMapScreen(orderIds: orderIds)),
+        Positioned.fill(child: OrdersMapScreen(markers: markers)),
         Positioned(
           left: 0,
           right: 0,

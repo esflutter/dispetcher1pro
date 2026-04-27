@@ -118,9 +118,9 @@ class CatalogService {
     PostgrestFilterBuilder<List<Map<String, dynamic>>> q = _client
         .from('orders')
         .select(
-          'id, display_number, title, address, date_from, date_to, '
-          'time_from, time_to, exact_date, whole_day, machinery_ids, '
-          'published_at, '
+          'id, display_number, title, address, latitude, longitude, '
+          'date_from, date_to, time_from, time_to, exact_date, whole_day, '
+          'machinery_ids, published_at, '
           'customer:profiles!orders_customer_id_fkey('
           'id, name, avatar_url, rating_as_customer, review_count_as_customer)',
         )
@@ -189,6 +189,8 @@ class CatalogService {
       displayNumber: r['display_number'] as int,
       title: r['title'] as String,
       address: r['address'] as String,
+      latitude: (r['latitude'] as num?)?.toDouble(),
+      longitude: (r['longitude'] as num?)?.toDouble(),
       dateFrom: DateTime.parse(r['date_from'] as String),
       dateTo: r['date_to'] == null
           ? null

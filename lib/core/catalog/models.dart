@@ -77,6 +77,8 @@ class OrderListItem {
     required this.displayNumber,
     required this.title,
     required this.address,
+    this.latitude,
+    this.longitude,
     required this.dateFrom,
     required this.dateTo,
     required this.timeFrom,
@@ -92,6 +94,12 @@ class OrderListItem {
   final int displayNumber;
   final String title;
   final String address;
+  /// Координаты адреса заказа из DaData (заполняются при создании заказа
+  /// в приложении заказчика). null для старых заказов, созданных до
+  /// подключения DaData — на карте такие маркеры разлетаются по
+  /// детерминированному моку (см. `mockMoscowCoordsForId`).
+  final double? latitude;
+  final double? longitude;
   final DateTime dateFrom;
   final DateTime? dateTo;
   final String? timeFrom;

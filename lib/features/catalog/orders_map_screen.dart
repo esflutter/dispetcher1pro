@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:latlong2/latlong.dart';
@@ -5,6 +7,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:dispatcher_1/core/catalog/catalog_service.dart';
 import 'package:dispatcher_1/core/catalog/format.dart';
 import 'package:dispatcher_1/core/catalog/models.dart';
+import 'package:dispatcher_1/core/dadata/dadata_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
 import 'package:dispatcher_1/core/utils/mock_coords.dart';
@@ -14,33 +17,45 @@ import 'package:dispatcher_1/features/catalog/order_detail_screen.dart';
 import 'package:dispatcher_1/features/catalog/widgets/applied_filter_chips.dart';
 import 'package:dispatcher_1/features/catalog/widgets/catalog_search_bar.dart';
 
-/// Карта со списком заказов в виде маркеров. Координаты заказов сейчас
-/// мокаются из их id вокруг центра Москвы (`mockMoscowCoordsForId`),
-/// потому что DaData ещё не подключён и в `orders.address` нет реальных
-/// координат. После подключения подсказок DaData координаты будут
-/// браться из `orders.geo_lat`/`orders.geo_lon`.
+/// Один маркер на карте: id заказа + опциональные координаты из БД.
+/// Если координат нет (старые заказы созданные до подключения DaData),
+/// используется детерминированный мок-разлёт вокруг центра Москвы.
+class OrderMarkerData {
+  const OrderMarkerData({required this.id, this.lat, this.lon});
+  final String id;
+  final double? lat;
+  final double? lon;
+}
+
+/// Карта со списком заказов в виде маркеров. Берёт реальные координаты
+/// из `orders.latitude`/`orders.longitude` (заполнены при создании заказа
+/// через DaData Suggest API). Если координат нет — fallback на детермини-
+/// рованный мок (`mockMoscowCoordsForId`), чтобы старые заказы тоже что-то
+/// показывали и UI не выглядел сломанно.
 class OrdersMapScreen extends StatelessWidget {
   const OrdersMapScreen({
     super.key,
-    this.orderIds = const <String>[],
+    this.markers = const <OrderMarkerData>[],
     this.initialCenter,
     this.initialZoom = 11,
   });
 
-  final List<String> orderIds;
+  final List<OrderMarkerData> markers;
   final LatLng? initialCenter;
   final double initialZoom;
 
   @override
   Widget build(BuildContext context) {
-    final List<OpenFreeMapMarker> markers = orderIds
-        .map((String id) => OpenFreeMapMarker(
-              id: id,
-              point: mockMoscowCoordsForId(id),
+    final List<OpenFreeMapMarker> mapMarkers = markers
+        .map((OrderMarkerData m) => OpenFreeMapMarker(
+              id: m.id,
+              point: (m.lat != null && m.lon != null)
+                  ? LatLng(m.lat!, m.lon!)
+                  : mockMoscowCoordsForId(m.id),
             ))
         .toList();
     return OpenFreeMapView(
-      markers: markers,
+      markers: mapMarkers,
       initialCenter: initialCenter,
       initialZoom: initialZoom,
     );
@@ -124,6 +139,8 @@ class _OrdersMapFullScreenState extends State<OrdersMapFullScreen> {
               rentDate: formatRentDate(o),
               address: o.address,
               publishedAgo: formatPublishedAgo(o.publishedAt),
+              latitude: o.latitude,
+              longitude: o.longitude,
             ))
         .toList();
   }
@@ -187,7 +204,13 @@ class _OrdersMapFullScreenState extends State<OrdersMapFullScreen> {
             children: <Widget>[
               Positioned.fill(
                 child: OrdersMapScreen(
-                  orderIds: orders.map((_MapOrder o) => o.id).toList(),
+                  markers: orders
+                      .map((_MapOrder o) => OrderMarkerData(
+                            id: o.id,
+                            lat: o.latitude,
+                            lon: o.longitude,
+                          ))
+                      .toList(),
                 ),
               ),
               Positioned(
@@ -239,6 +262,7 @@ class _OrdersMapFullScreenState extends State<OrdersMapFullScreen> {
                   left: 16.w,
                   right: 16.w,
                   child: _AddressSuggestions(
+                    query: _query,
                     onSelect: (String address) {
                       _searchCtrl.text = address;
                       setState(() {
@@ -440,6 +464,8 @@ class _MapOrder {
     required this.rentDate,
     required this.address,
     required this.publishedAgo,
+    this.latitude,
+    this.longitude,
   });
   final String id;
   final String equipment;
@@ -447,21 +473,69 @@ class _MapOrder {
   final String rentDate;
   final String address;
   final String publishedAgo;
+  final double? latitude;
+  final double? longitude;
 }
 
-class _AddressSuggestions extends StatelessWidget {
-  const _AddressSuggestions({required this.onSelect});
+/// Дроп-даун подсказок DaData под строкой поиска на карте. Сам подписан
+/// на изменения `query` — родителю достаточно перерисовать виджет с
+/// новым `query`, debounce и сетевые запросы здесь свои.
+class _AddressSuggestions extends StatefulWidget {
+  const _AddressSuggestions({
+    required this.query,
+    required this.onSelect,
+  });
 
+  final String query;
   final ValueChanged<String> onSelect;
 
-  static const List<String> _all = <String>[
-    'Московская область, Москва, ул. Ленина, д. 10',
-    'Московская область, Москва, ул. Пушкина, д. 25',
-    'Московская область, Москва, пр. Мира, д. 3',
-  ];
+  @override
+  State<_AddressSuggestions> createState() => _AddressSuggestionsState();
+}
+
+class _AddressSuggestionsState extends State<_AddressSuggestions> {
+  Timer? _debounce;
+  List<DadataAddress> _suggestions = const <DadataAddress>[];
+
+  @override
+  void initState() {
+    super.initState();
+    _scheduleFetch(widget.query);
+  }
+
+  @override
+  void didUpdateWidget(covariant _AddressSuggestions old) {
+    super.didUpdateWidget(old);
+    if (old.query != widget.query) _scheduleFetch(widget.query);
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    super.dispose();
+  }
+
+  void _scheduleFetch(String q) {
+    _debounce?.cancel();
+    final String trimmed = q.trim();
+    if (trimmed.isEmpty) {
+      setState(() => _suggestions = const <DadataAddress>[]);
+      return;
+    }
+    _debounce = Timer(const Duration(milliseconds: 300), () => _fetch(trimmed));
+  }
+
+  Future<void> _fetch(String query) async {
+    final List<DadataAddress> res =
+        await DadataService.instance.suggest(query);
+    if (!mounted) return;
+    if (widget.query.trim() != query) return;
+    setState(() => _suggestions = res);
+  }
 
   @override
   Widget build(BuildContext context) {
+    if (_suggestions.isEmpty) return const SizedBox.shrink();
     return Material(
       elevation: 4,
       borderRadius: BorderRadius.circular(12.r),
@@ -469,7 +543,7 @@ class _AddressSuggestions extends StatelessWidget {
       child: ListView.separated(
         shrinkWrap: true,
         padding: EdgeInsets.symmetric(vertical: 8.h),
-        itemCount: _all.length,
+        itemCount: _suggestions.length,
         separatorBuilder: (_, _) => Divider(
           height: 1,
           thickness: 0.5,
@@ -478,8 +552,9 @@ class _AddressSuggestions extends StatelessWidget {
           color: AppColors.divider,
         ),
         itemBuilder: (BuildContext context, int i) {
+          final DadataAddress a = _suggestions[i];
           return InkWell(
-            onTap: () => onSelect(_all[i]),
+            onTap: () => widget.onSelect(a.value),
             child: Padding(
               padding:
                   EdgeInsets.symmetric(horizontal: 16.w, vertical: 12.h),
@@ -490,7 +565,7 @@ class _AddressSuggestions extends StatelessWidget {
                   SizedBox(width: 10.w),
                   Expanded(
                     child: Text(
-                      _all[i],
+                      a.value,
                       style: AppTextStyles.bodyMRegular.copyWith(
                         color: AppColors.textPrimary,
                         fontSize: 14.sp,
