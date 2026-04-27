@@ -1,43 +1,48 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:latlong2/latlong.dart';
 
 import 'package:dispatcher_1/core/catalog/catalog_service.dart';
 import 'package:dispatcher_1/core/catalog/format.dart';
 import 'package:dispatcher_1/core/catalog/models.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
+import 'package:dispatcher_1/core/utils/mock_coords.dart';
+import 'package:dispatcher_1/core/widgets/openfreemap_view.dart';
 import 'package:dispatcher_1/features/catalog/catalog_filter_screen.dart';
 import 'package:dispatcher_1/features/catalog/order_detail_screen.dart';
 import 'package:dispatcher_1/features/catalog/widgets/applied_filter_chips.dart';
 import 'package:dispatcher_1/features/catalog/widgets/catalog_search_bar.dart';
 
-/// Плейсхолдер карты со списком заказов. Используется как контент таба
-/// «На карте» внутри `OrderFeedScreen`. Реальная карта подключится позже.
-class OrdersMapScreen extends StatefulWidget {
-  const OrdersMapScreen({super.key, this.showSearchBar = false});
+/// Карта со списком заказов в виде маркеров. Координаты заказов сейчас
+/// мокаются из их id вокруг центра Москвы (`mockMoscowCoordsForId`),
+/// потому что DaData ещё не подключён и в `orders.address` нет реальных
+/// координат. После подключения подсказок DaData координаты будут
+/// браться из `orders.geo_lat`/`orders.geo_lon`.
+class OrdersMapScreen extends StatelessWidget {
+  const OrdersMapScreen({
+    super.key,
+    this.orderIds = const <String>[],
+    this.initialCenter,
+    this.initialZoom = 11,
+  });
 
-  /// Если true — рисует поверх собственный поиск+фильтр (когда экран
-  /// открыт отдельным маршрутом, а не как таб).
-  final bool showSearchBar;
-
-  @override
-  State<OrdersMapScreen> createState() => _OrdersMapScreenState();
-}
-
-class _OrdersMapScreenState extends State<OrdersMapScreen> {
-  @override
-  void initState() {
-    super.initState();
-  }
+  final List<String> orderIds;
+  final LatLng? initialCenter;
+  final double initialZoom;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox.expand(
-      child: Image.asset(
-        'assets/images/map_placeholder.webp',
-        fit: BoxFit.cover,
-        alignment: Alignment.center,
-      ),
+    final List<OpenFreeMapMarker> markers = orderIds
+        .map((String id) => OpenFreeMapMarker(
+              id: id,
+              point: mockMoscowCoordsForId(id),
+            ))
+        .toList();
+    return OpenFreeMapView(
+      markers: markers,
+      initialCenter: initialCenter,
+      initialZoom: initialZoom,
     );
   }
 }
@@ -180,7 +185,11 @@ class _OrdersMapFullScreenState extends State<OrdersMapFullScreen> {
           final int idx = orders.isEmpty ? 0 : _current % orders.length;
           return Stack(
             children: <Widget>[
-              const Positioned.fill(child: OrdersMapScreen()),
+              Positioned.fill(
+                child: OrdersMapScreen(
+                  orderIds: orders.map((_MapOrder o) => o.id).toList(),
+                ),
+              ),
               Positioned(
                 top: MediaQuery.of(context).padding.top + 8,
                 left: 8.w,

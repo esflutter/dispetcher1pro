@@ -406,9 +406,11 @@ class _OrdersMapWithCardState extends State<_OrdersMapWithCard> {
     final OrderListItem o = widget.orders[idx];
     final String firstMachinery =
         o.machineryTitles.isEmpty ? '' : o.machineryTitles.first;
+    final List<String> orderIds =
+        widget.orders.map((OrderListItem o) => o.id).toList();
     return Stack(
       children: <Widget>[
-        const Positioned.fill(child: OrdersMapScreen()),
+        Positioned.fill(child: OrdersMapScreen(orderIds: orderIds)),
         Positioned(
           left: 0,
           right: 0,

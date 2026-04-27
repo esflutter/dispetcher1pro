@@ -26,6 +26,14 @@ dependencies:
   supabase_flutter: ^2.8.0
   cached_network_image: ^3.4.1
   flutter_image_compress: ^2.4.0
+  # Карты на 2 экранах каталога. flutter_map — pure-Flutter map widget.
+  # vector_map_tiles — рендерит векторные тайлы (OpenFreeMap).
+  # OpenFreeMap бесплатен для коммерческого использования, без API-ключей,
+  # но без SLA — risk: проект одного автора, может пропасть. На MVP хватит,
+  # потом мигрировать на self-hosted PMTiles в Yandex Object Storage.
+  flutter_map: ^7.0.2
+  vector_map_tiles: ^8.0.0
+  latlong2: ^0.9.1
 
 dev_dependencies:
   flutter_test:

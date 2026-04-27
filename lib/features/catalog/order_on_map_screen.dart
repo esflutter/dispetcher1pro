@@ -3,6 +3,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
+import 'package:dispatcher_1/core/utils/mock_coords.dart';
 import 'package:dispatcher_1/features/catalog/order_detail_screen.dart';
 import 'package:dispatcher_1/features/catalog/orders_map_screen.dart';
 
@@ -19,7 +20,13 @@ class OrderOnMapScreen extends StatelessWidget {
       backgroundColor: AppColors.background,
       body: Stack(
         children: <Widget>[
-          const Positioned.fill(child: OrdersMapScreen()),
+          Positioned.fill(
+            child: OrdersMapScreen(
+              orderIds: <String>[orderId],
+              initialCenter: mockMoscowCoordsForId(orderId),
+              initialZoom: 14,
+            ),
+          ),
           Positioned(
             top: MediaQuery.of(context).padding.top + 8,
             left: 8.w,
