@@ -46,6 +46,10 @@ class _CatalogFilterScreenState extends State<CatalogFilterScreen> {
   TimeOfDay? _timeTo;
   int? _radiusKm; // 10/20/50
   String? _address;
+  /// Координаты выбранного адреса фильтра. Заполняются вместе с `_address`
+  /// при выборе из подсказок DaData. Без них фильтр радиуса не работает.
+  double? _addressLat;
+  double? _addressLng;
 
   /// Якорь на раскрываемый пикер даты/времени. После открытия скроллим
   /// SingleChildScrollView так, чтобы этот блок оказался примерно в
@@ -70,6 +74,8 @@ class _CatalogFilterScreenState extends State<CatalogFilterScreen> {
     _wholeDay = AppliedFilter.wholeDay;
     _radiusKm = AppliedFilter.radiusKm;
     _address = AppliedFilter.address;
+    _addressLat = AppliedFilter.addressLat;
+    _addressLng = AppliedFilter.addressLng;
 
     final List<MachineryRef>? mc = CatalogService.instance.cachedMachinery;
     final List<CategoryRef>? cc = CatalogService.instance.cachedCategories;
@@ -119,6 +125,8 @@ class _CatalogFilterScreenState extends State<CatalogFilterScreen> {
     AppliedFilter.wholeDay = _wholeDay;
     AppliedFilter.radiusKm = _radiusKm;
     AppliedFilter.address = _address;
+    AppliedFilter.addressLat = _addressLat;
+    AppliedFilter.addressLng = _addressLng;
     AppliedFilter.revision.value = AppliedFilter.revision.value + 1;
     Navigator.of(context).pop(true);
   }
@@ -376,6 +384,8 @@ class _CatalogFilterScreenState extends State<CatalogFilterScreen> {
                           if (result != null) {
                             setState(() {
                               _address = result.value;
+                              _addressLat = result.lat;
+                              _addressLng = result.lon;
                               // Радиус поиска по умолчанию — 10 км.
                               // Искать строго в точке адреса почти
                               // бессмысленно (мало совпадений), но ручной
@@ -1415,42 +1425,66 @@ class AddressBottomSheetState extends State<AddressBottomSheet> {
                       busy: _resolvingLocation,
                       onTap: _onMyLocationTap,
                     ),
-                    if (_suggestions.isEmpty)
-                      _EmptyHint(
-                        query: _ctrl.text.trim(),
-                        loading: _loading,
-                      )
-                    else
-                      ..._suggestions.map((DadataAddress a) {
-                        return InkWell(
-                          onTap: () => Navigator.of(context).pop(a),
-                          child: Padding(
-                            padding: EdgeInsets.symmetric(vertical: 14.h),
-                            child: Row(
-                              children: <Widget>[
-                                Image.asset(
-                                  'assets/icons/ui/location.webp',
-                                  width: 20.r,
-                                  height: 20.r,
-                                  fit: BoxFit.contain,
-                                ),
-                                SizedBox(width: 12.w),
-                                Expanded(
-                                  child: Text(
-                                    a.value,
-                                    style: AppTextStyles.bodyMRegular
-                                        .copyWith(
-                                      fontSize: 16.sp,
-                                      fontWeight: FontWeight.w500,
-                                      color: AppColors.textPrimary,
+                    ..._suggestions.map((DadataAddress a) {
+                      // Двустрочная разбивка для близости к Figma:
+                      // первая запятая делит «город/регион» (title)
+                      // и «улица/дом» (subtitle). Если запятой нет —
+                      // показываем одной строкой.
+                      final int comma = a.value.indexOf(',');
+                      final String title = comma > 0
+                          ? a.value.substring(0, comma).trim()
+                          : a.value;
+                      final String? subtitle = comma > 0 &&
+                              comma < a.value.length - 1
+                          ? a.value.substring(comma + 1).trim()
+                          : null;
+                      return InkWell(
+                        onTap: () => Navigator.of(context).pop(a),
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(vertical: 14.h),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: <Widget>[
+                              Image.asset(
+                                'assets/icons/ui/location.webp',
+                                width: 20.r,
+                                height: 20.r,
+                                fit: BoxFit.contain,
+                              ),
+                              SizedBox(width: 12.w),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                  children: <Widget>[
+                                    Text(
+                                      title,
+                                      style: AppTextStyles.bodyMRegular
+                                          .copyWith(
+                                        fontSize: 16.sp,
+                                        fontWeight: FontWeight.w500,
+                                        color: AppColors.textPrimary,
+                                      ),
                                     ),
-                                  ),
+                                    if (subtitle != null) ...<Widget>[
+                                      SizedBox(height: 2.h),
+                                      Text(
+                                        subtitle,
+                                        style: AppTextStyles.bodyMRegular
+                                            .copyWith(
+                                          fontSize: 13.sp,
+                                          color: AppColors.textTertiary,
+                                        ),
+                                      ),
+                                    ],
+                                  ],
                                 ),
-                              ],
-                            ),
+                              ),
+                            ],
                           ),
-                        );
-                      }),
+                        ),
+                      );
+                    }),
                   ],
                 ),
               ),
@@ -1465,7 +1499,9 @@ class AddressBottomSheetState extends State<AddressBottomSheet> {
 /// Первая строка дроп-листа: «Моё местоположение». При тапе родитель
 /// запрашивает разрешения, считает GPS, делает reverse-geocode через
 /// DaData и закрывает шит. Пока процесс идёт — иконка заменяется на
-/// маленький спиннер, повторные тапы игнорируются.
+/// маленький спиннер, повторные тапы игнорируются. Чтобы строка
+/// визуально не выпадала из списка ниже, иконка — тот же оранжевый
+/// pin-webp, что и у DaData-айтемов (а не material `my_location`).
 class _MyLocationTile extends StatelessWidget {
   const _MyLocationTile({required this.busy, required this.onTap});
 
@@ -1490,10 +1526,11 @@ class _MyLocationTile extends StatelessWidget {
                 ),
               )
             else
-              Icon(
-                Icons.my_location_rounded,
-                size: 20.r,
-                color: AppColors.primary,
+              Image.asset(
+                'assets/icons/ui/location.webp',
+                width: 20.r,
+                height: 20.r,
+                fit: BoxFit.contain,
               ),
             SizedBox(width: 12.w),
             Expanded(
@@ -1502,38 +1539,11 @@ class _MyLocationTile extends StatelessWidget {
                 style: AppTextStyles.bodyMRegular.copyWith(
                   fontSize: 16.sp,
                   fontWeight: FontWeight.w500,
-                  color: AppColors.primary,
+                  color: AppColors.textPrimary,
                 ),
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-/// Подсказка под пустым полем поиска или над пустым результатом DaData.
-class _EmptyHint extends StatelessWidget {
-  const _EmptyHint({required this.query, required this.loading});
-
-  final String query;
-  final bool loading;
-
-  @override
-  Widget build(BuildContext context) {
-    if (loading) return const SizedBox.shrink();
-    final String text = query.isEmpty
-        ? 'Начните вводить адрес — появятся подсказки'
-        : 'Адрес не найден. Уточните запрос.';
-    return Padding(
-      padding: EdgeInsets.symmetric(horizontal: 24.w, vertical: 24.h),
-      child: Text(
-        text,
-        textAlign: TextAlign.center,
-        style: AppTextStyles.bodyMRegular.copyWith(
-          color: AppColors.textTertiary,
-          fontSize: 14.sp,
         ),
       ),
     );
@@ -1555,6 +1565,11 @@ class AppliedFilter {
   static bool wholeDay = false;
   static int? radiusKm;
   static String? address;
+  /// Координаты адреса фильтра — нужны для серверного/клиентского фильтра
+  /// «в радиусе N км». Пишутся вместе с [address] при выборе подсказки
+  /// из DaData; null означает «адрес введён вручную или не выбран».
+  static double? addressLat;
+  static double? addressLng;
 
   static final ValueNotifier<int> revision = ValueNotifier<int>(0);
 
@@ -1569,6 +1584,8 @@ class AppliedFilter {
     wholeDay = false;
     radiusKm = null;
     address = null;
+    addressLat = null;
+    addressLng = null;
     revision.value = revision.value + 1;
   }
 }

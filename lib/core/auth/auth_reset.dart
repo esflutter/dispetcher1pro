@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:dispatcher_1/features/auth/photo_crop_screen.dart';
 import 'package:dispatcher_1/features/catalog/catalog_filter_screen.dart';
 import 'package:dispatcher_1/features/executor_card/executor_card_screen.dart';
+import 'package:dispatcher_1/features/orders/order_detail_screen.dart';
 import 'package:dispatcher_1/features/profile/account_block.dart';
 import 'package:dispatcher_1/features/profile/widgets/verification_badge.dart';
 import 'package:dispatcher_1/features/services/my_services_screen.dart';
@@ -53,6 +54,11 @@ void _clearAll() {
 
   // Заказы исполнителя локально не кэшируются — экран дёргает
   // listMine() из БД при каждом showtime, ничего сбрасывать не нужно.
+  // Но локальная метка «уже оставил отзыв» (по orderNumber) живёт в
+  // static Set, и без этого сброса следующий пользователь на том же
+  // устройстве не увидел бы кнопку отзыва на заказах с совпадающим
+  // display_number.
+  MyOrderDetailScreen.resetReviewedOrders();
 
   // История чата с ассистентом — иначе у следующего пользователя
   // на устройстве осталась бы переписка предыдущего.

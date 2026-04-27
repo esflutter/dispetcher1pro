@@ -94,6 +94,16 @@ class _ScheduledOrder {
     required this.customerName,
     required this.matchId,
     required this.orderId,
+    required this.orderDisplayNumber,
+    required this.categoryTitles,
+    required this.description,
+    required this.works,
+    required this.photos,
+    required this.customerRating,
+    required this.customerReviewCount,
+    this.agreedPricePerHour,
+    this.agreedPricePerDay,
+    this.serviceMachineryTitle,
     this.customerPhone = '',
     this.customerEmail,
   });
@@ -105,6 +115,27 @@ class _ScheduledOrder {
   final String customerId;
   final String customerName;
   final String customerPhone;
+
+  /// Поля заказа, нужные в `MyOrderDetailScreen` (категории, описание,
+  /// спецификация работ, фото). Без них детальный экран рисовался
+  /// «беднее»: блоки «Категория», «Описание», «Фото» были скрыты,
+  /// даже когда у заказа есть данные.
+  final int orderDisplayNumber;
+  final List<String> categoryTitles;
+  final String description;
+  final List<String> works;
+  final List<String> photos;
+
+  /// Рейтинг и количество отзывов о заказчике. Раньше передавались
+  /// нулями, и в шапке карточки в деталях стоял прочерк.
+  final double customerRating;
+  final int customerReviewCount;
+
+  /// Snapshot цены из `order_matches`. Нужен для блока «Цена» в деталях,
+  /// если открывать заказ из графика (раньше блок не рисовался).
+  final double? agreedPricePerHour;
+  final double? agreedPricePerDay;
+  final String? serviceMachineryTitle;
 
   /// Почта заказчика. Показывается на странице деталей только если
   /// задана — иначе блок «Электронная почта» не отображается.
@@ -130,6 +161,16 @@ class _ScheduledOrder {
         customerEmail: customerEmail,
         matchId: matchId,
         orderId: orderId,
+        orderDisplayNumber: orderDisplayNumber,
+        categoryTitles: categoryTitles,
+        description: description,
+        works: works,
+        photos: photos,
+        customerRating: customerRating,
+        customerReviewCount: customerReviewCount,
+        agreedPricePerHour: agreedPricePerHour,
+        agreedPricePerDay: agreedPricePerDay,
+        serviceMachineryTitle: serviceMachineryTitle,
       );
 }
 
@@ -273,6 +314,16 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
             customerEmail: c?.email,
             matchId: m.matchId,
             orderId: m.orderId,
+            orderDisplayNumber: m.orderDisplayNumber,
+            categoryTitles: m.orderCategoryTitles,
+            description: m.orderDescription,
+            works: m.orderWorks,
+            photos: m.orderPhotos,
+            customerRating: m.customerRating,
+            customerReviewCount: m.customerReviewCount,
+            agreedPricePerHour: m.agreedPricePerHour,
+            agreedPricePerDay: m.agreedPricePerDay,
+            serviceMachineryTitle: m.serviceMachineryTitle,
           ));
         }
         _acceptingOrders = _acceptingFor(_selectedDate);
@@ -464,13 +515,10 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       _dayStates[key] = DayState.dayOff;
       _acceptingOrders = false;
     });
-    // Override: «нерабочий день» → accepting=false.
-    try {
-      await ScheduleService.instance.upsertOverride(
-        day: _selectedDate,
-        accepting: false,
-      );
-    } catch (_) {/* silent */}
+    // Override: «нерабочий день» → accepting=false. Сохраняем все
+    // остальные параметры дня (время/радиус/техника/локация), чтобы
+    // при возврате на «рабочий» пользователь не потерял настройки.
+    await _persistOverride(_selectedDate, accepting: false);
   }
 
   Future<void> _toggleAcceptance(bool value) async {
@@ -484,10 +532,46 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       _updateAccepting(key, value);
     });
     // Зелёный тумблер: если он переключён — это уже override от дефолта.
+    // Передаём остальные параметры дня (время/техника/локация), чтобы
+    // UPSERT не затёр их null'ами.
+    await _persistOverride(_selectedDate, accepting: value);
+  }
+
+  /// Записывает override на дату с сохранением всех ранее настроенных
+  /// параметров (время работы, whole_day, радиус, локация, техника,
+  /// категории). Раньше [_toggleDayOff] и [_toggleAcceptance] вызывали
+  /// `upsertOverride(day: x, accepting: y)` без остальных полей —
+  /// UPSERT молча затирал их в БД.
+  Future<void> _persistOverride(DateTime day, {required bool accepting}) async {
+    final DaySettings? s = _daySettings[_dateKey(day)];
+    final TimeOfDay? from = s?.timeFrom;
+    final TimeOfDay? to = s?.timeTo;
+    String? hm(TimeOfDay? t) => t == null
+        ? null
+        : '${t.hour.toString().padLeft(2, '0')}:'
+            '${t.minute.toString().padLeft(2, '0')}';
+    int? radiusKm;
+    switch (s?.radiusIndex) {
+      case 0:
+        radiusKm = 10;
+      case 1:
+        radiusKm = 20;
+      case 2:
+        radiusKm = 50;
+      default:
+        radiusKm = null;
+    }
     try {
       await ScheduleService.instance.upsertOverride(
-        day: _selectedDate,
-        accepting: value,
+        day: day,
+        accepting: accepting,
+        timeFrom: hm(from),
+        timeTo: hm(to),
+        wholeDay: s?.allDay ?? false,
+        radiusKm: radiusKm,
+        locationAddress: s?.location,
+        machineryTitles: s?.machinery.toList() ?? const <String>[],
+        categoryTitles: s?.categories.toList() ?? const <String>[],
       );
     } catch (_) {/* silent */}
   }
@@ -802,20 +886,40 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   }
 
   /// Подтверждение заказа — статус меняется с `pendingConfirmation`
-  /// на `accepted`. Помимо локального state шлём UPDATE в БД, чтобы
-  /// заказчик увидел смену статуса.
-  Future<void> _confirmOrder(_ScheduledOrder order) async {
+  /// на `accepted`. Сначала ждём ответа БД и только при успехе
+  /// меняем локальный state. Иначе при гонке (заказчик одновременно
+  /// выбрал другого) пользователь увидел бы «Подтверждено» в UI,
+  /// хотя в БД мэтч остался невыбранным.
+  Future<bool> _confirmOrder(_ScheduledOrder order) async {
     final List<_ScheduledOrder>? list =
         _ordersByDate[_dateKey(_selectedDate)];
-    if (list == null) return;
+    if (list == null) return false;
     final int idx = list.indexOf(order);
-    if (idx < 0) return;
+    if (idx < 0) return false;
+    try {
+      await MyOrdersService.instance.acceptMatch(order.matchId);
+    } on MatchAlreadyTakenException {
+      if (!mounted) return false;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Заказчик уже выбрал другого исполнителя.'),
+        ),
+      );
+      // Заказ больше не наш — убираем из списка дня.
+      setState(() => list.removeAt(idx));
+      return false;
+    } catch (_) {
+      if (!mounted) return false;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Не удалось подтвердить заказ.')),
+      );
+      return false;
+    }
+    if (!mounted) return true;
     setState(() {
       list[idx] = order.copyWith(status: MyOrderStatus.accepted);
     });
-    try {
-      await MyOrdersService.instance.acceptMatch(order.matchId);
-    } catch (_) {/* silent — статус локально уже updated */}
+    return true;
   }
 
   /// Удаление заказа из дня — вызывается при «Отклонить» /
@@ -898,9 +1002,11 @@ class _OrderCard extends StatelessWidget {
 
   String get _fullDate => '${date.day} ${_monthsGen[date.month]} · ${order.rentDate}';
 
-  /// Подтверждение заказа («Подтвердить» в деталях) — статус в графике
-  /// должен смениться на `accepted` («Свяжитесь с заказчиком»).
-  final VoidCallback onConfirm;
+  /// Подтверждение заказа («Подтвердить» в деталях). Возвращает true,
+  /// если БД успешно зафиксировала переход в `accepted`. Колбэк сам
+  /// обновляет локальный график; UI деталей опирается на результат,
+  /// чтобы не показывать «Подтверждено» при гонке с заказчиком.
+  final Future<bool> Function() onConfirm;
 
   /// Удаление заказа из графика — когда исполнитель «Отклонил» /
   /// «Отказался» / «Отозвал отклик».
@@ -924,6 +1030,10 @@ class _OrderCard extends StatelessWidget {
           builder: (_) => MyOrderDetailScreen(
             title: order.title,
             equipment: order.machinery,
+            workCategories: order.categoryTitles,
+            workDescription: order.works,
+            description: order.description,
+            photos: order.photos,
             rentDate: _fullDate,
             address: order.address,
             state: detailState,
@@ -931,6 +1041,14 @@ class _OrderCard extends StatelessWidget {
             customerName: order.customerName,
             customerPhone: order.customerPhone,
             customerEmail: order.customerEmail,
+            customerRating: order.customerRating,
+            customerReviews: order.customerReviewCount,
+            orderNumber:
+                '№${order.orderDisplayNumber.toString().padLeft(8, '0')}',
+            matchId: order.matchId,
+            agreedPricePerHour: order.agreedPricePerHour,
+            agreedPricePerDay: order.agreedPricePerDay,
+            serviceMachineryTitle: order.serviceMachineryTitle,
             onConfirm: onConfirm,
             onDecline: onRemove,
             onRefuse: onRemove,

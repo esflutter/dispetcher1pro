@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:dispatcher_1/core/catalog/catalog_service.dart';
+import 'package:dispatcher_1/core/catalog/format.dart';
 import 'package:dispatcher_1/core/catalog/machinery_visual.dart';
 import 'package:dispatcher_1/core/catalog/models.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
@@ -28,57 +31,19 @@ class CatalogCategoriesScreen extends StatefulWidget {
 class _CatalogCategoriesScreenState extends State<CatalogCategoriesScreen> {
   late Future<List<MachineryRef>> _machineryFuture;
 
-  static const List<_SearchableOrder> _allOrders = <_SearchableOrder>[
-    _SearchableOrder(
-      id: '1',
-      title: 'Нужен экскаватор для копки траншеи',
-      address: 'Московская область, Москва, Улица1, д 144',
-      rentDate: '15 июня · 09:00–18:00',
-      publishedAgo: '2 часа назад',
-      equipment: <String>['Экскаватор'],
-    ),
-    _SearchableOrder(
-      id: '2',
-      title: 'Земляные работы',
-      address: 'Московская область, Москва, Улица1, д 144',
-      rentDate: '15 июня · 09:00–18:00',
-      publishedAgo: 'Сегодня в 11:30',
-      equipment: <String>['Автокран', 'Экскаватор'],
-    ),
-    _SearchableOrder(
-      id: '3',
-      title: 'Разработка котлована под фундамент',
-      address: 'Московская область, Москва, Улица1, д 144',
-      rentDate: '15 июня · 09:00–18:00',
-      publishedAgo: 'Сегодня в 11:30',
-      equipment: <String>[
-        'Экскаватор',
-        'Автокран',
-        'Эвакуатор',
-        'Манипулятор',
-        'Автовышка',
-      ],
-    ),
-    _SearchableOrder(
-      id: '4',
-      title: 'Погрузка и вывоз строительного мусора',
-      address: 'Московская область, Москва, Улица1, д 144',
-      rentDate: '16 июня · 09:00–18:00',
-      publishedAgo: 'Сегодня в 09:10',
-      equipment: <String>['Самосвал', 'Погрузчик'],
-    ),
-    _SearchableOrder(
-      id: '5',
-      title: 'Монтаж вентиляции на крыше',
-      address: 'Московская область, Москва, Улица1, д 144',
-      rentDate: '17 июня · 09:00–18:00',
-      publishedAgo: 'Вчера',
-      equipment: <String>['Автовышка'],
-    ),
-  ];
-
   final TextEditingController _searchCtrl = TextEditingController();
   String _query = '';
+
+  /// Последний запрос, по которому уже улетел или летит fetch. Чтобы
+  /// не плодить параллельные запросы при каждом нажатии клавиши,
+  /// поиск дебаунсится на 300 мс.
+  Timer? _debounce;
+
+  /// Текущий результат поиска. `null` — запрос ещё не отправляли
+  /// (пустая строка либо первая отрисовка); пустой список — запрос
+  /// вернулся без результатов.
+  List<OrderListItem>? _results;
+  bool _loading = false;
 
   @override
   void initState() {
@@ -88,21 +53,49 @@ class _CatalogCategoriesScreenState extends State<CatalogCategoriesScreen> {
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _searchCtrl.dispose();
     super.dispose();
   }
 
-  List<_SearchableOrder> get _filtered {
-    final String q = _query.trim().toLowerCase();
-    if (q.isEmpty) return const <_SearchableOrder>[];
-    return _allOrders.where((_SearchableOrder o) {
-      if (o.title.toLowerCase().contains(q)) return true;
-      if (o.address.toLowerCase().contains(q)) return true;
-      for (final String e in o.equipment) {
-        if (e.toLowerCase().contains(q)) return true;
-      }
-      return false;
-    }).toList();
+  void _onQueryChanged(String v) {
+    setState(() => _query = v);
+    _debounce?.cancel();
+    final String trimmed = v.trim();
+    if (trimmed.isEmpty) {
+      setState(() {
+        _results = null;
+        _loading = false;
+      });
+      return;
+    }
+    setState(() => _loading = true);
+    _debounce = Timer(
+      const Duration(milliseconds: 300),
+      () => _fetch(trimmed),
+    );
+  }
+
+  Future<void> _fetch(String query) async {
+    try {
+      final List<OrderListItem> rows =
+          await CatalogService.instance.listPublishedOrders(search: query);
+      if (!mounted) return;
+      // Защита от гонки: если пока летел запрос, пользователь ввёл
+      // что-то ещё — игнорируем результат.
+      if (_query.trim() != query) return;
+      setState(() {
+        _results = rows;
+        _loading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      if (_query.trim() != query) return;
+      setState(() {
+        _results = const <OrderListItem>[];
+        _loading = false;
+      });
+    }
   }
 
   @override
@@ -114,7 +107,7 @@ class _CatalogCategoriesScreenState extends State<CatalogCategoriesScreen> {
         children: <Widget>[
           _CatalogHeader(
             controller: _searchCtrl,
-            onChanged: (String v) => setState(() => _query = v),
+            onChanged: _onQueryChanged,
           ),
           Expanded(
             child: searching
@@ -187,13 +180,16 @@ class _CatalogCategoriesScreenState extends State<CatalogCategoriesScreen> {
   }
 
   Widget _buildSearchResults() {
-    final List<_SearchableOrder> results = _filtered;
+    if (_loading && _results == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    final List<OrderListItem> results = _results ?? const <OrderListItem>[];
     if (results.isEmpty) {
       return Center(
         child: Padding(
           padding: EdgeInsets.all(AppSpacing.md),
           child: Text(
-            'Ничего не найдено',
+            _loading ? 'Поиск...' : 'Ничего не найдено',
             style: AppTextStyles.bodyMRegular
                 .copyWith(color: AppColors.textTertiary),
           ),
@@ -209,19 +205,19 @@ class _CatalogCategoriesScreenState extends State<CatalogCategoriesScreen> {
         color: AppColors.divider,
       ),
       itemBuilder: (BuildContext context, int i) {
-        final _SearchableOrder o = results[i];
+        final OrderListItem o = results[i];
         return OrderCard(
           title: o.title,
           address: o.address,
-          rentDate: o.rentDate,
-          publishedAgo: o.publishedAgo,
-          equipment: o.equipment,
+          rentDate: formatRentDate(o),
+          publishedAgo: formatPublishedAgo(o.publishedAt),
+          equipment: o.machineryTitles,
           onTap: () => Navigator.of(context).push(
             MaterialPageRoute<void>(
               builder: (_) => OrderDetailScreen(
                 orderId: o.id,
                 initialTitle: o.title,
-                multipleEquipment: o.equipment.length > 1,
+                multipleEquipment: o.machineryTitles.length > 1,
               ),
             ),
           ),
@@ -379,19 +375,3 @@ class _CatalogLoadError extends StatelessWidget {
   }
 }
 
-class _SearchableOrder {
-  const _SearchableOrder({
-    required this.id,
-    required this.title,
-    required this.address,
-    required this.rentDate,
-    required this.publishedAgo,
-    required this.equipment,
-  });
-  final String id;
-  final String title;
-  final String address;
-  final String rentDate;
-  final String publishedAgo;
-  final List<String> equipment;
-}

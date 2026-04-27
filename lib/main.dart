@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -10,6 +11,13 @@ import 'core/config/env.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // В release-сборке без `--dart-define` ключей приложение раньше
+  // молча запускалось «в моки» — пользователь получал сломанные
+  // авторизацию/storage без объяснения. Падаем на старте, чтобы баг
+  // увидели сразу, а не после первого запроса в БД.
+  if (kReleaseMode) {
+    Env.assertConfigured();
+  }
   SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
   ]);

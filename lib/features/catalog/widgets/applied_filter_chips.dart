@@ -89,6 +89,8 @@ class AppliedFilterChips extends StatelessWidget {
       chips.add(_ChipSpec('В радиусе ${AppliedFilter.radiusKm} км', () {
         AppliedFilter.radiusKm = null;
         AppliedFilter.address = null;
+        AppliedFilter.addressLat = null;
+        AppliedFilter.addressLng = null;
         _bump();
       }));
     }

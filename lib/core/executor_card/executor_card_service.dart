@@ -40,12 +40,24 @@ class ExecutorCardService {
 
   /// UPSERT в executor_cards + UPDATE profiles. Публиковать карточку
   /// (`is_published=true`) можно только когда заполнен радиус — БД CHECK.
+  ///
+  /// Поля карточки опциональные; если их не передали (null), они НЕ
+  /// записываются в БД — иначе UPSERT молча затирал бы ранее сохранённые
+  /// `location_*`/`radius_km`/`is_published` при сохранении только
+  /// «о себе» или статуса. Поле `isPublished` тоже nullable, чтобы
+  /// «снять с публикации» оставалось явным действием — вызывающий код
+  /// передаёт `false`/`true` только когда меняет публичность карточки.
+  ///
+  /// Чтобы UPSERT мог сработать впервые (когда строки в БД ещё нет),
+  /// мы предварительно подгружаем существующую запись и подменяем
+  /// отсутствующие поля её значениями. Если строки нет — используем
+  /// безопасные дефолты.
   Future<void> upsert({
     String? locationAddress,
     double? locationLat,
     double? locationLng,
     int? radiusKm,
-    bool isPublished = false,
+    bool? isPublished,
     String? about,
     String? legalStatus,
     int? experienceYears,
@@ -54,13 +66,24 @@ class ExecutorCardService {
     if (user == null) {
       throw const AuthException('Нет активной сессии');
     }
+    final Map<String, dynamic>? existing = await _client
+        .from('executor_cards')
+        .select(
+          'location_address, location_lat, location_lng, radius_km, is_published',
+        )
+        .eq('user_id', user.id)
+        .maybeSingle();
     await _client.from('executor_cards').upsert(<String, dynamic>{
       'user_id': user.id,
-      'location_address': locationAddress,
-      'location_lat': locationLat,
-      'location_lng': locationLng,
-      'radius_km': radiusKm,
-      'is_published': isPublished,
+      'location_address':
+          locationAddress ?? existing?['location_address'],
+      'location_lat':
+          locationLat ?? (existing?['location_lat'] as num?)?.toDouble(),
+      'location_lng':
+          locationLng ?? (existing?['location_lng'] as num?)?.toDouble(),
+      'radius_km': radiusKm ?? existing?['radius_km'],
+      'is_published':
+          isPublished ?? (existing?['is_published'] as bool?) ?? false,
     });
     final Map<String, dynamic> profilePatch = <String, dynamic>{
       'about': ?about,

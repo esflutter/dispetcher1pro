@@ -61,6 +61,17 @@ class _EditExecutorCardScreenState extends State<EditExecutorCardScreen> {
   String? _selectedStatus;
   int _radiusIndex = -1;
 
+  /// Координаты выбранного адреса. Изначально null; при init асинхронно
+  /// подтягиваются из БД (чтобы не затереть сохранённое значение, если
+  /// пользователь не трогал адрес). При выборе нового адреса через
+  /// `AddressBottomSheet` перезаписываются `result.lat`/`result.lon`.
+  /// Без этих полей `executor_cards.location_lat/location_lng` остались
+  /// бы null навсегда — и фильтр радиуса в каталоге не работал бы для
+  /// карточек исполнителей.
+  double? _locationLat;
+  double? _locationLng;
+  bool _userPickedNewAddress = false;
+
   static const _radiusOptions = [
     'В радиусе 10 км',
     'В радиусе 20 км',
@@ -91,6 +102,12 @@ class _EditExecutorCardScreenState extends State<EditExecutorCardScreen> {
     final savedRadius = ExecutorCardData.radius;
     _radiusIndex = savedRadius != null ? _radiusOptions.indexOf(savedRadius) : -1;
     if (_radiusIndex < 0) _radiusIndex = -1;
+
+    // Подтягиваем сохранённые координаты адреса. Если пользователь
+    // выберет новый адрес до того, как ответит БД, наш fetch проиграет
+    // выбору и не перетрёт его (флаг `_userPickedNewAddress`).
+    // ignore: discarded_futures
+    _loadSavedCoords();
 
     _nameFocus.addListener(() {
       if (!_nameFocus.hasFocus) {
@@ -132,14 +149,37 @@ class _EditExecutorCardScreenState extends State<EditExecutorCardScreen> {
     });
   }
 
+  Future<void> _loadSavedCoords() async {
+    try {
+      final MyExecutorCard? card =
+          await ExecutorCardService.instance.loadMine();
+      if (!mounted || card == null) return;
+      if (_userPickedNewAddress) return;
+      setState(() {
+        _locationLat = card.locationLat;
+        _locationLng = card.locationLng;
+      });
+    } catch (_) {/* silent — не критично для UI */}
+  }
+
   @override
   void dispose() {
-    // На случай, если пользователь ушёл со экрана, не сняв фокус.
+    // На случай, если пользователь ушёл с экрана не снимая фокус.
+    // Раньше save в БД был повешен только на focus-blur listener;
+    // если пользователь меняет имя/email и сразу жмёт «Сохранить» или
+    // «Назад», листенер не срабатывал и в БД оставалось старое.
+    // Дублируем запись здесь (fire-and-forget — экран размонтирован).
     final String name = _nameCtrl.text.trim();
-    if (name.isNotEmpty) ExecutorCardData.name = name;
+    if (name.isNotEmpty && name != ExecutorCardData.name) {
+      ExecutorCardData.name = name;
+      // ignore: discarded_futures
+      ProfileService.instance.update(name: name).catchError((_) {});
+    }
     final String email = _emailCtrl.text.trim();
-    if (isValidEmail(email)) {
+    if (isValidEmail(email) && email != CropResult.userEmail) {
       CropResult.userEmail = email;
+      // ignore: discarded_futures
+      ProfileService.instance.updatePrivateEmail(email).catchError((_) {});
     }
     _location.dispose();
     _experience.dispose();
@@ -236,7 +276,12 @@ class _EditExecutorCardScreenState extends State<EditExecutorCardScreen> {
                     builder: (_) => const AddressBottomSheet(),
                   );
                   if (result != null) {
-                    setState(() => _location.text = result.value);
+                    setState(() {
+                      _location.text = result.value;
+                      _locationLat = result.lat;
+                      _locationLng = result.lon;
+                      _userPickedNewAddress = true;
+                    });
                   }
                 },
                 child: Container(
@@ -422,6 +467,8 @@ class _EditExecutorCardScreenState extends State<EditExecutorCardScreen> {
                       locationAddress: _location.text.trim().isEmpty
                           ? null
                           : _location.text.trim(),
+                      locationLat: _locationLat,
+                      locationLng: _locationLng,
                       radiusKm: radiusKm,
                       isPublished: radiusKm != null,
                       about: _about.text.trim().isEmpty

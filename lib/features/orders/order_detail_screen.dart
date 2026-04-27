@@ -44,6 +44,17 @@ enum MyOrderDetailState {
 
 /// Детали моего заказа (НЕ путать с публичной карточкой из features/catalog).
 class MyOrderDetailScreen extends StatefulWidget {
+  /// Локальная метка «уже оставил отзыв» по `orderNumber`. Сохраняется
+  /// между переходами между экранами в одной сессии. Сбрасывается через
+  /// [resetReviewedOrders] при logout/delete account.
+  static final Set<String> _reviewedOrders = <String>{};
+
+  /// Сбрасывает локальную метку «уже оставил отзыв». Вызывается из
+  /// `auth_reset._clearAll()` при logout — иначе следующий пользователь
+  /// на том же устройстве не увидит кнопку «Оставить отзыв» на заказах
+  /// с совпадающим `display_number`.
+  static void resetReviewedOrders() => MyOrderDetailScreen._reviewedOrders.clear();
+
   const MyOrderDetailScreen({
     super.key,
     required this.state,
@@ -110,10 +121,14 @@ class MyOrderDetailScreen extends StatefulWidget {
   /// Колбэк «Отказаться от заказа» (исполнитель уже подтвердил).
   final VoidCallback? onRefuse;
 
-  /// Колбэк «Подтвердить» (исполнитель принимает заказ) — обычно
-  /// parent переносит заказ из «Новые» в «Принятые» со статусом
-  /// `accepted` и закрывает экран.
-  final VoidCallback? onConfirm;
+  /// Колбэк «Подтвердить» (исполнитель принимает заказ). Возвращает
+  /// `true`, если БД успешно зафиксировала переход в `accepted`.
+  /// `false` — если, например, заказчик одновременно выбрал другого
+  /// (UNIQUE-индекс `order_matches_single_accepted`). UI не должен
+  /// переходить в состояние confirmed раньше, чем БД ответила, иначе
+  /// исполнитель видит «Подтверждено» и контакты заказчика, хотя
+  /// в БД мэтч остался в `awaiting_executor` или ушёл в rejected.
+  final Future<bool> Function()? onConfirm;
 
   /// Колбэк «Отозвать отклик» (заказчик ещё не ответил) — обычно
   /// parent переносит заказ из «Новые» в «Не принятые» со статусом
@@ -141,7 +156,6 @@ class MyOrderDetailScreen extends StatefulWidget {
 }
 
 class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
-  static final Set<String> _reviewedOrders = {};
 
   late MyOrderDetailState _state;
   late MyOrderStatus _rejectedStatus;
@@ -164,7 +178,7 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
     super.initState();
     _state = widget.state;
     _rejectedStatus = widget.rejectedStatus;
-    _reviewLeft = _reviewedOrders.contains(widget.orderNumber);
+    _reviewLeft = MyOrderDetailScreen._reviewedOrders.contains(widget.orderNumber);
     if (_state == MyOrderDetailState.confirmed ||
         _state == MyOrderDetailState.completed) {
       _loadContacts();
@@ -557,7 +571,12 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
                   );
                   if (picked == null || picked.isEmpty || !mounted) return;
                 }
-                widget.onConfirm?.call();
+                // Ждём результат БД-запроса до смены UI-state. Если
+                // заказчик одновременно выбрал другого, БД отвергнет
+                // переход — нельзя показывать «Подтверждено» и контакты.
+                final bool ok = await (widget.onConfirm?.call() ??
+                    Future<bool>.value(true));
+                if (!ok || !mounted) return;
                 setState(() => _state = MyOrderDetailState.confirmed);
                 // Мэтч: заказ подтверждён — показываем попап с подсказкой
                 // связаться с заказчиком. Контакты уже открылись на
@@ -618,7 +637,7 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
               ),
             );
             if (submitted == true && mounted) {
-              _reviewedOrders.add(widget.orderNumber);
+              MyOrderDetailScreen._reviewedOrders.add(widget.orderNumber);
               setState(() => _reviewLeft = true);
             }
           },
@@ -648,6 +667,7 @@ class _PhotosGrid extends StatelessWidget {
                 builder: (_) => PhotoGalleryScreen(
                   photos: photos,
                   initialIndex: i,
+                  bucket: 'order-photos',
                 ),
               ),
             ),

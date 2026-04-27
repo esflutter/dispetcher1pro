@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:dispatcher_1/core/dadata/dadata_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_spacing.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
@@ -53,19 +54,20 @@ class _DaySettingsScreenState extends State<DaySettingsScreen> {
 
   static const List<String> _radiusOptions = DaySettings.radiusOptions;
 
-  List<String> get _machinery {
-    final List<ServiceMock> src = ServiceData.services.isNotEmpty
-        ? ServiceData.services
-        : ServiceData.presets;
-    return src.expand((ServiceMock s) => s.machinery).toSet().toList();
-  }
+  /// Чипы спецтехники собираем из РЕАЛЬНЫХ услуг исполнителя. Если у
+  /// него ещё нет ни одной — список пустой (показываем hint, см. ниже).
+  /// Раньше тут был fallback на `ServiceData.presets` (3 фейк-услуги:
+  /// Экскаватор/Самосвал/Автовышка) — после миграции он попадал на
+  /// экран «Параметры дня» и предлагал чужую технику.
+  List<String> get _machinery => ServiceData.services
+      .expand((ServiceMock s) => s.machinery)
+      .toSet()
+      .toList();
 
-  List<String> get _categories {
-    final List<ServiceMock> src = ServiceData.services.isNotEmpty
-        ? ServiceData.services
-        : ServiceData.presets;
-    return src.expand((ServiceMock s) => s.categories).toSet().toList();
-  }
+  List<String> get _categories => ServiceData.services
+      .expand((ServiceMock s) => s.categories)
+      .toSet()
+      .toList();
 
   @override
   void initState() {
@@ -308,25 +310,34 @@ class _DaySettingsScreenState extends State<DaySettingsScreen> {
       Text('Спецтехника',
           style: AppTextStyles.bodyL.copyWith(fontWeight: FontWeight.w700)),
       SizedBox(height: 12.h),
-      _buildChipGrid(_machinery, _selMach),
+      if (_machinery.isEmpty)
+        _NoServicesHint()
+      else
+        _buildChipGrid(_machinery, _selMach),
       SizedBox(height: 24.h),
       Text('Категории услуг',
           style: AppTextStyles.bodyL.copyWith(fontWeight: FontWeight.w700)),
       SizedBox(height: 12.h),
-      _buildChipGrid(_categories, _selCat),
+      if (_categories.isEmpty)
+        _NoServicesHint()
+      else
+        _buildChipGrid(_categories, _selCat),
       SizedBox(height: 24.h),
       Text('Местоположение',
           style: AppTextStyles.bodyL.copyWith(fontWeight: FontWeight.w700)),
       SizedBox(height: 12.h),
       GestureDetector(
         onTap: () async {
-          final String? result = await showModalBottomSheet<String>(
+          final DadataAddress? result =
+              await showModalBottomSheet<DadataAddress>(
             context: context,
             isScrollControlled: true,
             backgroundColor: Colors.transparent,
             builder: (_) => const AddressBottomSheet(),
           );
-          if (result != null) setState(() => _location = result);
+          if (result != null && mounted) {
+            setState(() => _location = result.value);
+          }
         },
         child: Container(
           height: 44.h,
@@ -433,6 +444,28 @@ class _DaySettingsScreenState extends State<DaySettingsScreen> {
             Text(label, style: AppTextStyles.body),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Подсказка вместо чип-сетки, когда у исполнителя нет ни одной услуги.
+/// Раньше на этом месте показывались фейк-услуги из `ServiceData.presets`
+/// (Экскаватор/Самосвал/Автовышка) — пользователь мог их выбрать, но
+/// они не имели отношения к его реальному прайсу.
+class _NoServicesHint extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: EdgeInsets.all(12.w),
+      decoration: BoxDecoration(
+        color: AppColors.fieldFill,
+        borderRadius: BorderRadius.circular(12.r),
+      ),
+      child: Text(
+        'Сначала добавьте услуги в разделе «Мои услуги» — '
+        'из них соберутся доступные техника и категории.',
+        style: AppTextStyles.body.copyWith(color: AppColors.textTertiary),
       ),
     );
   }

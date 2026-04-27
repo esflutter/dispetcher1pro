@@ -17,27 +17,54 @@ String _fmtHm(String time) {
   return time;
 }
 
-String formatRentDate(OrderListItem o) {
+String formatRentDate(OrderListItem o) => _formatRentDateRaw(
+      dateFrom: o.dateFrom,
+      dateTo: o.dateTo,
+      timeFrom: o.timeFrom,
+      timeTo: o.timeTo,
+      exactDate: o.exactDate,
+      wholeDay: o.wholeDay,
+    );
+
+/// Тот же контракт, что и [formatRentDate], но принимает [OrderDetail].
+/// Переиспользуется на экране «Заказ на карте», где у нас есть только
+/// деталка, а не строка ленты.
+String formatRentDateFromDetail(OrderDetail o) => _formatRentDateRaw(
+      dateFrom: o.dateFrom,
+      dateTo: o.dateTo,
+      timeFrom: o.timeFrom,
+      timeTo: o.timeTo,
+      exactDate: o.exactDate,
+      wholeDay: o.wholeDay,
+    );
+
+String _formatRentDateRaw({
+  required DateTime dateFrom,
+  required DateTime? dateTo,
+  required String? timeFrom,
+  required String? timeTo,
+  required bool exactDate,
+  required bool wholeDay,
+}) {
   final String datePart;
-  if (o.exactDate || o.dateTo == null || o.dateTo == o.dateFrom) {
-    datePart = _fmtDay(o.dateFrom);
+  if (exactDate || dateTo == null || dateTo == dateFrom) {
+    datePart = _fmtDay(dateFrom);
   } else {
-    final DateTime to = o.dateTo!;
-    if (o.dateFrom.month == to.month) {
-      // Один месяц: "12–14 июня"
-      datePart = '${o.dateFrom.day}–${to.day} ${_monthsRuGenitive[to.month]}';
+    if (dateFrom.month == dateTo.month) {
+      datePart =
+          '${dateFrom.day}–${dateTo.day} ${_monthsRuGenitive[dateTo.month]}';
     } else {
-      datePart = '${_fmtDay(o.dateFrom)} – ${_fmtDay(to)}';
+      datePart = '${_fmtDay(dateFrom)} – ${_fmtDay(dateTo)}';
     }
   }
 
   final String timePart;
-  if (o.wholeDay || o.timeFrom == null) {
+  if (wholeDay || timeFrom == null) {
     timePart = 'Весь день';
-  } else if (o.timeTo == null) {
-    timePart = 'c ${_fmtHm(o.timeFrom!)}';
+  } else if (timeTo == null) {
+    timePart = 'c ${_fmtHm(timeFrom)}';
   } else {
-    timePart = '${_fmtHm(o.timeFrom!)}–${_fmtHm(o.timeTo!)}';
+    timePart = '${_fmtHm(timeFrom)}–${_fmtHm(timeTo)}';
   }
 
   return '$datePart · $timePart';

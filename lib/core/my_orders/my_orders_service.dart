@@ -29,14 +29,17 @@ class MyOrdersService {
 
     await CatalogService.instance.listActiveMachinery();
 
+    await CatalogService.instance.listActiveCategories();
+
     final List<Map<String, dynamic>> rows = await _client
         .from('order_matches')
         .select(
           'id, order_id, status, created_at, '
           'agreed_price_per_hour, agreed_price_per_day, agreed_min_hours, '
           'order:orders!order_matches_order_id_fkey('
-          'id, display_number, title, address, date_from, date_to, '
-          'time_from, time_to, exact_date, whole_day, machinery_ids, '
+          'id, display_number, title, description, address, '
+          'date_from, date_to, time_from, time_to, exact_date, whole_day, '
+          'machinery_ids, category_ids, works, photos, '
           'customer:profiles!orders_customer_id_fkey('
           'id, name, rating_as_customer, review_count_as_customer)), '
           'service:services!order_matches_service_id_fkey(machinery_ids)',
@@ -118,11 +121,37 @@ class MyOrdersService {
     final Map<int, String> machineryById = <int, String>{
       for (final MachineryRef m in cache) m.id: m.title,
     };
+    final List<CategoryRef> catCache =
+        CatalogService.instance.cachedCategories ?? const <CategoryRef>[];
+    final Map<int, String> categoryById = <int, String>{
+      for (final CategoryRef c in catCache) c.id: c.title,
+    };
     final List<int> machineryIds =
         List<int>.from(order['machinery_ids'] as List);
     final List<String> machineryTitles = machineryIds
         .map((int id) => machineryById[id] ?? '')
         .where((String t) => t.isNotEmpty)
+        .toList();
+    final List<int> categoryIds =
+        List<int>.from((order['category_ids'] as List?) ?? const <dynamic>[]);
+    final List<String> categoryTitles = categoryIds
+        .map((int id) => categoryById[id] ?? '')
+        .where((String t) => t.isNotEmpty)
+        .toList();
+
+    // `orders.works` — jsonb-массив `{name, volume?, unit?}`. На UI
+    // нужен набор строк типа «Выемка грунта — 40 м³». Юниты в БД
+    // ASCII-формат (`m`/`m2`/`m3`); рендерим в кириллицу.
+    final List<dynamic> worksRaw =
+        (order['works'] as List<dynamic>?) ?? const <dynamic>[];
+    final List<String> works = worksRaw
+        .whereType<Map<String, dynamic>>()
+        .map(_formatWorkLine)
+        .where((String s) => s.isNotEmpty)
+        .toList();
+
+    final List<String> photos = ((order['photos'] as List?) ?? const <dynamic>[])
+        .whereType<String>()
         .toList();
 
     // Та техника, по которой шёл отклик (одна на услугу) — нужна для
@@ -159,6 +188,10 @@ class MyOrdersService {
       orderExactDate: order['exact_date'] as bool,
       orderWholeDay: order['whole_day'] as bool,
       orderMachineryTitles: machineryTitles,
+      orderCategoryTitles: categoryTitles,
+      orderDescription: (order['description'] as String?) ?? '',
+      orderWorks: works,
+      orderPhotos: photos,
       serviceMachineryTitle: serviceMachineryTitle,
       customerId: customer['id'] as String,
       customerName: (customer['name'] as String?) ?? 'Пользователь',
@@ -172,5 +205,25 @@ class MyOrdersService {
     if (v == null) return null;
     if (v is num) return v.toDouble();
     return double.tryParse(v.toString());
+  }
+
+  /// Один элемент `orders.works` → строка для UI. Совместим с
+  /// аналогичной функцией в `customer_orders_service.dart` у заказчика.
+  static String _formatWorkLine(Map<String, dynamic> w) {
+    final String name = (w['name'] as String?)?.trim() ?? '';
+    if (name.isEmpty) return '';
+    final num? volume = w['volume'] as num?;
+    final String? unit = w['unit'] as String?;
+    if (volume == null) return name;
+    final String unitUi = switch (unit) {
+      'm' => 'м',
+      'm2' => 'м²',
+      'm3' => 'м³',
+      _ => '',
+    };
+    final String volStr = volume == volume.toInt()
+        ? volume.toInt().toString()
+        : volume.toString();
+    return '$name — $volStr $unitUi'.trim();
   }
 }

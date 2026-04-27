@@ -206,6 +206,10 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
                     builder: (_) => MyOrderDetailScreen(
                       title: m.orderTitle,
                       equipment: m.orderMachineryTitles,
+                      workCategories: m.orderCategoryTitles,
+                      workDescription: m.orderWorks,
+                      description: m.orderDescription,
+                      photos: m.orderPhotos,
                       rentDate: rentDate,
                       address: m.orderAddress,
                       publishedAgo: formatPublishedAgo(m.createdAt),
@@ -226,7 +230,8 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
                       onWithdraw: () => _doAction(
                           () => MyOrdersService.instance.withdraw(m.matchId)),
                       onConfirm: () => _doAction(
-                          () => MyOrdersService.instance.acceptMatch(m.matchId)),
+                            () => MyOrdersService.instance.acceptMatch(m.matchId),
+                          ),
                       onDecline: () => _doAction(
                           () => MyOrdersService.instance.declineMatch(m.matchId)),
                       onRefuse: () => _doAction(
@@ -256,30 +261,31 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
   /// пользователя он ничего лишнего не делал.
   bool _busy = false;
 
-  Future<void> _doAction(Future<void> Function() op) async {
-    if (_busy) return;
+  Future<bool> _doAction(Future<void> Function() op) async {
+    if (_busy) return false;
     _busy = true;
     try {
       await op();
     } on MatchAlreadyTakenException {
-      if (!mounted) return;
+      if (!mounted) return false;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Заказчик уже выбрал другого исполнителя.'),
         ),
       );
       _refresh();
-      return;
+      return false;
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted) return false;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Не удалось обновить статус: $e')),
       );
-      return;
+      return false;
     } finally {
       _busy = false;
     }
     _refresh();
+    return true;
   }
 
   MyOrderStatus _uiStatus(MyMatchStatus s) {

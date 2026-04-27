@@ -97,6 +97,8 @@ class _OrdersMapFullScreenState extends State<OrdersMapFullScreen> {
   late final bool _savedWholeDay;
   late final int? _savedRadiusKm;
   late final String? _savedAddress;
+  late final double? _savedAddressLat;
+  late final double? _savedAddressLng;
 
   @override
   void initState() {
@@ -111,6 +113,8 @@ class _OrdersMapFullScreenState extends State<OrdersMapFullScreen> {
     _savedWholeDay = AppliedFilter.wholeDay;
     _savedRadiusKm = AppliedFilter.radiusKm;
     _savedAddress = AppliedFilter.address;
+    _savedAddressLat = AppliedFilter.addressLat;
+    _savedAddressLng = AppliedFilter.addressLng;
 
     AppliedFilter.categories.clear();
     AppliedFilter.equipment.clear();
@@ -122,14 +126,29 @@ class _OrdersMapFullScreenState extends State<OrdersMapFullScreen> {
     AppliedFilter.wholeDay = false;
     AppliedFilter.radiusKm = null;
     AppliedFilter.address = null;
+    AppliedFilter.addressLat = null;
+    AppliedFilter.addressLng = null;
 
     AppliedFilter.revision.addListener(_onFilterChanged);
     _ordersFuture = _fetchOrders();
   }
 
   Future<List<_MapOrder>> _fetchOrders() async {
+    final bool radiusActive = AppliedFilter.radiusKm != null &&
+        AppliedFilter.addressLat != null &&
+        AppliedFilter.addressLng != null;
     final List<OrderListItem> orders =
-        await CatalogService.instance.listPublishedOrders();
+        await CatalogService.instance.listPublishedOrders(
+      machineryTitles: AppliedFilter.equipment,
+      categoryTitles: AppliedFilter.categories,
+      dateFrom: AppliedFilter.dateFrom,
+      dateTo: AppliedFilter.exactDate ? null : AppliedFilter.dateTo,
+      addressContains: radiusActive ? null : AppliedFilter.address,
+      wholeDay: AppliedFilter.wholeDay ? true : null,
+      originLat: radiusActive ? AppliedFilter.addressLat : null,
+      originLng: radiusActive ? AppliedFilter.addressLng : null,
+      radiusKm: radiusActive ? AppliedFilter.radiusKm : null,
+    );
     return orders
         .map((OrderListItem o) => _MapOrder(
               id: o.id,
@@ -146,9 +165,18 @@ class _OrdersMapFullScreenState extends State<OrdersMapFullScreen> {
   }
 
   void _onFilterChanged() {
-    if (mounted) setState(() => _current = 0);
+    if (!mounted) return;
+    setState(() {
+      _current = 0;
+      _ordersFuture = _fetchOrders();
+    });
   }
 
+  /// Без аргументов: вызов из build, оставлен для совместимости с
+  /// существующими местами использования. Теперь, когда `_fetchOrders`
+  /// сам учитывает фильтры, дополнительная клиентская фильтрация по
+  /// equipment не нужна — но оставляем как защиту, если на карте
+  /// активен старый список (до прихода нового future).
   List<_MapOrder> _filterOrders(List<_MapOrder> all) {
     if (AppliedFilter.equipment.isEmpty) return all;
     return all
@@ -182,6 +210,8 @@ class _OrdersMapFullScreenState extends State<OrdersMapFullScreen> {
     AppliedFilter.wholeDay = _savedWholeDay;
     AppliedFilter.radiusKm = _savedRadiusKm;
     AppliedFilter.address = _savedAddress;
+    AppliedFilter.addressLat = _savedAddressLat;
+    AppliedFilter.addressLng = _savedAddressLng;
     AppliedFilter.revision.value = AppliedFilter.revision.value + 1;
     _searchCtrl.dispose();
     super.dispose();

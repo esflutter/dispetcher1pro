@@ -1,5 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:dispatcher_1/core/utils/geo_distance.dart';
+
 import 'models.dart';
 
 /// Чтение каталога из Supabase: справочники, лента заказов,
@@ -100,6 +102,9 @@ class CatalogService {
     String? timeFrom,
     String? timeTo,
     bool? wholeDay,
+    double? originLat,
+    double? originLng,
+    int? radiusKm,
     int limit = 50,
   }) async {
     await _primeDirectories();
@@ -161,7 +166,21 @@ class CatalogService {
 
     final List<Map<String, dynamic>> rows =
         await q.order('published_at', ascending: false).limit(limit);
-    return rows.map(_orderListItemFromRow).toList();
+    List<OrderListItem> items =
+        rows.map(_orderListItemFromRow).toList();
+
+    // Клиентский фильтр радиуса (haversine). Серверный нужен PostGIS,
+    // которого пока нет — для текущего объёма заказов клиентская
+    // фильтрация после ограничения LIMIT работает приемлемо.
+    if (originLat != null && originLng != null && radiusKm != null) {
+      items = items.where((OrderListItem o) {
+        if (o.latitude == null || o.longitude == null) return false;
+        final double d = haversineKm(
+            originLat, originLng, o.latitude!, o.longitude!);
+        return d <= radiusKm;
+      }).toList();
+    }
+    return items;
   }
 
   String _isoDate(DateTime d) =>

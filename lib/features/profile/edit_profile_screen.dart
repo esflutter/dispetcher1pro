@@ -91,15 +91,23 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
   @override
   void dispose() {
-    // Фикс значения на случай, если пользователь ушёл со экрана
-    // не снимая фокус (например, кнопкой назад). Невалидные значения
-    // просто не попадают в [CropResult] — там остаётся последнее
-    // сохранённое валидное.
+    // Фикс значения на случай, если пользователь ушёл с экрана не
+    // снимая фокус (например, кнопкой «Назад»). Раньше save в БД был
+    // повешен только на focus-blur listener, и при тапе по back в
+    // момент когда фокус всё ещё на поле — listener не срабатывал,
+    // в БД оставалось старое значение. Дублируем запись в БД здесь
+    // (fire-and-forget — экран уже размонтирован, ждать ответа негде).
     final String name = _nameCtrl.text.trim();
-    if (name.isNotEmpty) CropResult.userName = name;
+    if (name.isNotEmpty && name != CropResult.userName) {
+      CropResult.userName = name;
+      // ignore: discarded_futures
+      ProfileService.instance.update(name: name).catchError((_) {});
+    }
     final String email = _emailCtrl.text.trim();
-    if (isValidEmail(email)) {
+    if (isValidEmail(email) && email != CropResult.userEmail) {
       CropResult.userEmail = email;
+      // ignore: discarded_futures
+      ProfileService.instance.updatePrivateEmail(email).catchError((_) {});
     }
     _nameCtrl.dispose();
     _emailCtrl.dispose();

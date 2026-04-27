@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:dispatcher_1/core/catalog/catalog_service.dart';
 import 'package:dispatcher_1/core/catalog/models.dart' as cat;
+import 'package:dispatcher_1/core/dadata/dadata_service.dart';
 import 'package:dispatcher_1/core/my_services/models.dart';
 import 'package:dispatcher_1/core/my_services/my_services_service.dart';
 import 'package:dispatcher_1/core/storage/storage_service.dart';
@@ -91,6 +92,12 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
   /// true пока подгружаем полную запись услуги из БД (только в edit).
   /// Кнопка «Сохранить» в это время бесполезна, форма пуста.
   bool _loadingDetail = false;
+
+  /// true пока идёт upload фото и INSERT/UPDATE услуги. Без этого
+  /// флага двойной тап по «Создать» успевал отправить два INSERT'а
+  /// и создать две одинаковых услуги (фото медленные, в окне между
+  /// upload и insert второй тап не блокировался).
+  bool _saving = false;
 
   @override
   void initState() {
@@ -296,26 +303,32 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
   }
 
   Future<void> _onCreateTap() async {
-    // Paywall оплачен до этой формы (в `my_services_screen`).
-    final bool ok = await _save();
-    if (!ok || !mounted) return;
-    // Оплаченный слот израсходован. Следующее создание услуги потребует
-    // новой оплаты.
-    ServiceData.hasUnusedPaidSlot = false;
-    await showServicePublishedDialog(context);
-    if (!mounted) return;
-    Navigator.of(context).pop();
+    if (_saving) return;
+    setState(() => _saving = true);
+    try {
+      // Paywall оплачен до этой формы (в `my_services_screen`).
+      final bool ok = await _save();
+      if (!ok || !mounted) return;
+      // Оплаченный слот израсходован. Следующее создание услуги потребует
+      // новой оплаты.
+      ServiceData.hasUnusedPaidSlot = false;
+      await showServicePublishedDialog(context);
+      if (!mounted) return;
+      Navigator.of(context).pop();
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
   Future<void> _openAddressSheet() async {
-    final result = await showModalBottomSheet<String>(
+    final DadataAddress? result = await showModalBottomSheet<DadataAddress>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => const AddressBottomSheet(),
     );
     if (result != null && mounted) {
-      setState(() => _address = result);
+      setState(() => _address = result.value);
     }
   }
 
@@ -575,8 +588,8 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
           ]),
           builder: (_, _) => PrimaryButton(
             label: 'Создать',
-            enabled: _canCreate,
-            onPressed: _canCreate ? _onCreateTap : null,
+            enabled: _canCreate && !_saving,
+            onPressed: _canCreate && !_saving ? _onCreateTap : null,
           ),
         ),
         SizedBox(height: 8.h),

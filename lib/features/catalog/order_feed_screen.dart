@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:dispatcher_1/core/catalog/catalog_service.dart';
 import 'package:dispatcher_1/core/catalog/format.dart';
 import 'package:dispatcher_1/core/catalog/models.dart';
+import 'package:dispatcher_1/core/dadata/dadata_service.dart';
 import 'package:dispatcher_1/core/location_permission.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
@@ -61,16 +62,25 @@ class _OrderFeedScreenState extends State<OrderFeedScreen> {
   }
 
   Future<List<OrderListItem>> _fetchOrders() {
+    // Радиус-фильтр работает только при наличии координат адреса (выбран
+    // из подсказок DaData). Если пользователь ввёл адрес вручную — фильтр
+    // деградирует до текстового `addressContains`.
+    final bool radiusActive = AppliedFilter.radiusKm != null &&
+        AppliedFilter.addressLat != null &&
+        AppliedFilter.addressLng != null;
     return CatalogService.instance.listPublishedOrders(
       machineryTitles: AppliedFilter.equipment,
       categoryTitles: AppliedFilter.categories,
       search: _query.trim().isEmpty ? null : _query,
       dateFrom: AppliedFilter.dateFrom,
       dateTo: AppliedFilter.exactDate ? null : AppliedFilter.dateTo,
-      addressContains: AppliedFilter.address,
+      addressContains: radiusActive ? null : AppliedFilter.address,
       timeFrom: _hhmm(AppliedFilter.timeFrom),
       timeTo: _hhmm(AppliedFilter.timeTo),
       wholeDay: AppliedFilter.wholeDay ? true : null,
+      originLat: radiusActive ? AppliedFilter.addressLat : null,
+      originLng: radiusActive ? AppliedFilter.addressLng : null,
+      radiusKm: radiusActive ? AppliedFilter.radiusKm : null,
     );
   }
 
@@ -580,9 +590,10 @@ class _MapCardLine extends StatelessWidget {
   }
 }
 
-/// Выпадающий список моковых адресов для вкладки «На карте».
-/// Пока статический список — подключение геокодера это отдельная задача.
-class _AddressSuggestions extends StatelessWidget {
+/// Дроп-даун подсказок DaData под строкой поиска во вкладке «На карте».
+/// Сам подписан на изменения `query` — родителю достаточно перерисовать
+/// виджет с новым `query`, debounce и сетевые запросы здесь свои.
+class _AddressSuggestions extends StatefulWidget {
   const _AddressSuggestions({
     required this.query,
     required this.onSelect,
@@ -591,14 +602,54 @@ class _AddressSuggestions extends StatelessWidget {
   final String query;
   final ValueChanged<String> onSelect;
 
-  static const List<String> _all = <String>[
-    'Московская область, Москва, ул. Ленина, д. 10',
-    'Московская область, Москва, ул. Пушкина, д. 25',
-    'Московская область, Москва, пр. Мира, д. 3',
-  ];
+  @override
+  State<_AddressSuggestions> createState() => _AddressSuggestionsState();
+}
+
+class _AddressSuggestionsState extends State<_AddressSuggestions> {
+  Timer? _debounce;
+  List<DadataAddress> _suggestions = const <DadataAddress>[];
+
+  @override
+  void initState() {
+    super.initState();
+    _scheduleFetch(widget.query);
+  }
+
+  @override
+  void didUpdateWidget(covariant _AddressSuggestions old) {
+    super.didUpdateWidget(old);
+    if (old.query != widget.query) _scheduleFetch(widget.query);
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    super.dispose();
+  }
+
+  void _scheduleFetch(String q) {
+    _debounce?.cancel();
+    final String trimmed = q.trim();
+    if (trimmed.isEmpty) {
+      setState(() => _suggestions = const <DadataAddress>[]);
+      return;
+    }
+    _debounce =
+        Timer(const Duration(milliseconds: 300), () => _fetch(trimmed));
+  }
+
+  Future<void> _fetch(String query) async {
+    final List<DadataAddress> res =
+        await DadataService.instance.suggest(query);
+    if (!mounted) return;
+    if (widget.query.trim() != query) return;
+    setState(() => _suggestions = res);
+  }
 
   @override
   Widget build(BuildContext context) {
+    if (_suggestions.isEmpty) return const SizedBox.shrink();
     return Material(
       elevation: 4,
       borderRadius: BorderRadius.circular(12.r),
@@ -606,7 +657,7 @@ class _AddressSuggestions extends StatelessWidget {
       child: ListView.separated(
         shrinkWrap: true,
         padding: EdgeInsets.symmetric(vertical: 8.h),
-        itemCount: _all.length,
+        itemCount: _suggestions.length,
         separatorBuilder: (_, _) => Divider(
           height: 1,
           thickness: 0.5,
@@ -615,11 +666,12 @@ class _AddressSuggestions extends StatelessWidget {
           color: AppColors.divider,
         ),
         itemBuilder: (BuildContext context, int i) {
+          final DadataAddress a = _suggestions[i];
           return InkWell(
-            onTap: () => onSelect(_all[i]),
+            onTap: () => widget.onSelect(a.value),
             child: Padding(
-              padding: EdgeInsets.symmetric(
-                  horizontal: 16.w, vertical: 12.h),
+              padding:
+                  EdgeInsets.symmetric(horizontal: 16.w, vertical: 12.h),
               child: Row(
                 children: <Widget>[
                   Icon(Icons.location_on_outlined,
@@ -627,7 +679,7 @@ class _AddressSuggestions extends StatelessWidget {
                   SizedBox(width: 10.w),
                   Expanded(
                     child: Text(
-                      _all[i],
+                      a.value,
                       style: AppTextStyles.bodyMRegular.copyWith(
                         color: AppColors.textPrimary,
                         fontSize: 14.sp,

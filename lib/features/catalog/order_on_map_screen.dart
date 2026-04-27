@@ -3,6 +3,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:latlong2/latlong.dart';
 
 import 'package:dispatcher_1/core/catalog/catalog_service.dart';
+import 'package:dispatcher_1/core/catalog/format.dart';
 import 'package:dispatcher_1/core/catalog/models.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
@@ -108,33 +109,57 @@ class _OrderOnMapScreenState extends State<OrderOnMapScreen> {
                             OrderDetailScreen(orderId: widget.orderId),
                       ),
                     ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: <Widget>[
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: <Widget>[
-                            Text('Экскаватор',
-                                style: AppTextStyles.caption.copyWith(
-                                    color: AppColors.textTertiary)),
-                            Text('2 часа назад',
-                                style: AppTextStyles.caption.copyWith(
-                                    color: AppColors.textTertiary)),
-                          ],
-                        ),
-                        SizedBox(height: 6.h),
-                        Text('Нужен экскаватор для копки траншеи',
-                            style: AppTextStyles.titleS
-                                .copyWith(fontWeight: FontWeight.w700)),
-                        SizedBox(height: 8.h),
-                        _Line(label: 'Дата аренды:',
-                            value: '15-19 июня · 09:00–18:00'),
-                        SizedBox(height: 2.h),
-                        _Line(label: 'Адрес:',
-                            value: 'Московская область, Москва, Улица1, д 144'),
-                      ],
-                    ),
+                    child: d == null
+                        ? SizedBox(
+                            height: 96.h,
+                            child: const Center(
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          )
+                        : Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: <Widget>[
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: <Widget>[
+                                  Expanded(
+                                    child: Text(
+                                      d.machineryTitles.isEmpty
+                                          ? 'Заказ'
+                                          : d.machineryTitles.join(', '),
+                                      style: AppTextStyles.caption.copyWith(
+                                          color: AppColors.textTertiary),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  SizedBox(width: 8.w),
+                                  Text(
+                                    formatPublishedAgo(d.publishedAt),
+                                    style: AppTextStyles.caption.copyWith(
+                                        color: AppColors.textTertiary),
+                                  ),
+                                ],
+                              ),
+                              SizedBox(height: 6.h),
+                              Text(
+                                d.title,
+                                style: AppTextStyles.titleS
+                                    .copyWith(fontWeight: FontWeight.w700),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              SizedBox(height: 8.h),
+                              _Line(
+                                label: 'Дата аренды:',
+                                value: formatRentDateFromDetail(d),
+                              ),
+                              SizedBox(height: 2.h),
+                              _Line(label: 'Адрес:', value: d.address),
+                            ],
+                          ),
                   ),
                 ),
               ),

@@ -68,6 +68,10 @@ class MyOrderMatch {
     required this.orderExactDate,
     required this.orderWholeDay,
     required this.orderMachineryTitles,
+    required this.orderCategoryTitles,
+    required this.orderDescription,
+    required this.orderWorks,
+    required this.orderPhotos,
     required this.serviceMachineryTitle,
     // Заказчик:
     required this.customerId,
@@ -99,6 +103,22 @@ class MyOrderMatch {
   final bool orderExactDate;
   final bool orderWholeDay;
   final List<String> orderMachineryTitles;
+
+  /// Категории услуг заказа (резолвлены title из `categories`). Нужны
+  /// в деталях, чтобы исполнитель видел вид работ (например,
+  /// «Земляные работы», «Демонтаж»).
+  final List<String> orderCategoryTitles;
+
+  /// Текстовое описание заказа из формы заказчика. Пустое — блок
+  /// в деталях не показывается.
+  final String orderDescription;
+
+  /// Спецификация работ заказа (`orders.works` jsonb-массив):
+  /// строки уже отформатированы для UI («Выемка грунта — 40 м³»).
+  final List<String> orderWorks;
+
+  /// URL фото заказа из storage. Пустой — блок «Фото» скрыт.
+  final List<String> orderPhotos;
 
   /// Техника услуги, по которой шёл отклик. Одна на мэтч (правило
   /// «1 услуга = 1 техника»). Используется как подпись к блоку «Цена»

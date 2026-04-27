@@ -4,6 +4,10 @@
 	<dict>
 		<key>NSLocationWhenInUseUsageDescription</key>
 		<string>Приложение использует ваше местоположение, чтобы показать заказы и технику поблизости на карте.</string>
+		<key>NSPhotoLibraryUsageDescription</key>
+		<string>Приложение запрашивает доступ к фотографиям, чтобы прикреплять их к услугам и обновлять аватар профиля.</string>
+		<key>NSCameraUsageDescription</key>
+		<string>Приложение использует камеру, чтобы вы могли сделать новое фото для услуги или аватара профиля.</string>
 		<key>CFBundleDevelopmentRegion</key>
 		<string>$(DEVELOPMENT_LANGUAGE)</string>
 		<key>CFBundleDisplayName</key>
