@@ -2,12 +2,14 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import 'package:dispatcher_1/core/catalog/catalog_service.dart';
 import 'package:dispatcher_1/core/catalog/models.dart';
 import 'package:dispatcher_1/core/dadata/dadata_service.dart';
+import 'package:dispatcher_1/core/location_permission.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
@@ -1222,6 +1224,11 @@ class AddressBottomSheetState extends State<AddressBottomSheet> {
   List<DadataAddress> _suggestions = const <DadataAddress>[];
   bool _loading = false;
 
+  /// true пока считаем GPS-координаты + reverse-geocode. Кнопка «Моё
+  /// местоположение» в это время недоступна, чтобы повторное нажатие
+  /// не запустило параллельный запрос.
+  bool _resolvingLocation = false;
+
   @override
   void initState() {
     super.initState();
@@ -1260,6 +1267,73 @@ class AddressBottomSheetState extends State<AddressBottomSheet> {
       _suggestions = res;
       _loading = false;
     });
+  }
+
+  /// Кнопка «Моё местоположение». Шаги:
+  /// 1) Запрашиваем разрешение на геолокацию (если ещё не выдано).
+  ///    Если пользователь отказал или системный сервис выключен —
+  ///    показываем снэкбар, шит остаётся открытым.
+  /// 2) Берём текущие координаты через `Geolocator.getCurrentPosition`.
+  /// 3) Reverse-geocode через DaData → адрес-строка + те же `lat/lon`
+  ///    в результате (DaData может слегка скорректировать, привязав
+  ///    к ФИАС-точке дома).
+  /// 4) Закрываем шит, возвращая `DadataAddress` родителю.
+  Future<void> _onMyLocationTap() async {
+    if (_resolvingLocation) return;
+    setState(() => _resolvingLocation = true);
+    try {
+      final bool granted = await ensureLocationPermission();
+      if (!mounted) return;
+      if (!granted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Нет доступа к геолокации. Разрешите его в настройках, '
+              'чтобы определить адрес автоматически.',
+            ),
+            duration: Duration(seconds: 3),
+          ),
+        );
+        return;
+      }
+
+      // `low`-точность хватает для reverse-geocode в радиусе ~100 м.
+      // GPS-fix на high занимает 5–15 секунд, low отдаёт по сотовой
+      // сети мгновенно — UX важнее последних 50 метров погрешности.
+      final Position pos = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.low,
+          timeLimit: Duration(seconds: 8),
+        ),
+      );
+      if (!mounted) return;
+
+      final DadataAddress? a = await DadataService.instance
+          .geolocateByCoords(lat: pos.latitude, lon: pos.longitude);
+      if (!mounted) return;
+
+      if (a == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content:
+                Text('Адрес по координатам не найден. Введите вручную.'),
+            duration: Duration(seconds: 3),
+          ),
+        );
+        return;
+      }
+      Navigator.of(context).pop(a);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Не удалось определить местоположение.'),
+          duration: Duration(seconds: 3),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _resolvingLocation = false);
+    }
   }
 
   @override
@@ -1333,52 +1407,108 @@ class AddressBottomSheetState extends State<AddressBottomSheet> {
               ),
               SizedBox(height: 8.h),
               Expanded(
-                child: _suggestions.isEmpty
-                    ? _EmptyHint(
+                child: ListView(
+                  controller: scrollCtrl,
+                  padding: EdgeInsets.symmetric(horizontal: 16.w),
+                  children: <Widget>[
+                    _MyLocationTile(
+                      busy: _resolvingLocation,
+                      onTap: _onMyLocationTap,
+                    ),
+                    if (_suggestions.isEmpty)
+                      _EmptyHint(
                         query: _ctrl.text.trim(),
                         loading: _loading,
                       )
-                    : ListView.builder(
-                        controller: scrollCtrl,
-                        padding: EdgeInsets.symmetric(horizontal: 16.w),
-                        itemCount: _suggestions.length,
-                        itemBuilder: (BuildContext context, int i) {
-                          final DadataAddress a = _suggestions[i];
-                          return InkWell(
-                            onTap: () => Navigator.of(context).pop(a),
-                            child: Padding(
-                              padding: EdgeInsets.symmetric(vertical: 14.h),
-                              child: Row(
-                                children: <Widget>[
-                                  Image.asset(
-                                    'assets/icons/ui/location.webp',
-                                    width: 20.r,
-                                    height: 20.r,
-                                    fit: BoxFit.contain,
-                                  ),
-                                  SizedBox(width: 12.w),
-                                  Expanded(
-                                    child: Text(
-                                      a.value,
-                                      style: AppTextStyles.bodyMRegular
-                                          .copyWith(
-                                        fontSize: 16.sp,
-                                        fontWeight: FontWeight.w500,
-                                        color: AppColors.textPrimary,
-                                      ),
+                    else
+                      ..._suggestions.map((DadataAddress a) {
+                        return InkWell(
+                          onTap: () => Navigator.of(context).pop(a),
+                          child: Padding(
+                            padding: EdgeInsets.symmetric(vertical: 14.h),
+                            child: Row(
+                              children: <Widget>[
+                                Image.asset(
+                                  'assets/icons/ui/location.webp',
+                                  width: 20.r,
+                                  height: 20.r,
+                                  fit: BoxFit.contain,
+                                ),
+                                SizedBox(width: 12.w),
+                                Expanded(
+                                  child: Text(
+                                    a.value,
+                                    style: AppTextStyles.bodyMRegular
+                                        .copyWith(
+                                      fontSize: 16.sp,
+                                      fontWeight: FontWeight.w500,
+                                      color: AppColors.textPrimary,
                                     ),
                                   ),
-                                ],
-                              ),
+                                ),
+                              ],
                             ),
-                          );
-                        },
-                      ),
+                          ),
+                        );
+                      }),
+                  ],
+                ),
               ),
             ],
           ),
         );
       },
+    );
+  }
+}
+
+/// Первая строка дроп-листа: «Моё местоположение». При тапе родитель
+/// запрашивает разрешения, считает GPS, делает reverse-geocode через
+/// DaData и закрывает шит. Пока процесс идёт — иконка заменяется на
+/// маленький спиннер, повторные тапы игнорируются.
+class _MyLocationTile extends StatelessWidget {
+  const _MyLocationTile({required this.busy, required this.onTap});
+
+  final bool busy;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: busy ? null : onTap,
+      child: Padding(
+        padding: EdgeInsets.symmetric(vertical: 14.h),
+        child: Row(
+          children: <Widget>[
+            if (busy)
+              SizedBox(
+                width: 20.r,
+                height: 20.r,
+                child: const CircularProgressIndicator(
+                  color: AppColors.primary,
+                  strokeWidth: 2,
+                ),
+              )
+            else
+              Icon(
+                Icons.my_location_rounded,
+                size: 20.r,
+                color: AppColors.primary,
+              ),
+            SizedBox(width: 12.w),
+            Expanded(
+              child: Text(
+                'Моё местоположение',
+                style: AppTextStyles.bodyMRegular.copyWith(
+                  fontSize: 16.sp,
+                  fontWeight: FontWeight.w500,
+                  color: AppColors.primary,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

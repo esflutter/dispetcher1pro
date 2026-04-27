@@ -66,6 +66,11 @@ class DadataService {
   static const String _suggestUrl =
       'https://suggestions.dadata.ru/suggestions/api/4_1/rs/suggest/address';
 
+  /// Reverse-geocoding: координаты → ближайший почтовый адрес. Тот же
+  /// Token, что и для suggest, в кабинете DaData отдельно квотируется.
+  static const String _geolocateUrl =
+      'https://suggestions.dadata.ru/suggestions/api/4_1/rs/geolocate/address';
+
   /// Дефолтный таймаут — 4 секунды. DaData обычно отвечает за 100–300 мс,
   /// 4 сек — запас на медленный мобильный интернет.
   static const Duration _timeout = Duration(seconds: 4);
@@ -127,6 +132,59 @@ class DadataService {
       return const <DadataAddress>[];
     } catch (_) {
       return const <DadataAddress>[];
+    }
+  }
+
+  /// Reverse-geocoding: по GPS-координатам находит ближайший адрес.
+  /// Используется кнопкой «Моё местоположение» в `AddressBottomSheet` —
+  /// `geolocator` возвращает только `lat/lon`, а в форму нам нужна
+  /// строка адреса.
+  ///
+  /// `radius_meters` оставляем дефолт (100 м): DaData возвращает только
+  /// адреса с привязкой к ФИАС в этом радиусе. Если в радиусе нет
+  /// зарегистрированных адресов — возвращает null, UI покажет «Адрес
+  /// по координатам не найден».
+  ///
+  /// Любая ошибка (сеть, таймаут, нет ключа, нет адреса в радиусе) →
+  /// null. UI отличает «нет ключа» от «нет адреса» по [Env.hasDadataConfig].
+  Future<DadataAddress?> geolocateByCoords({
+    required double lat,
+    required double lon,
+  }) async {
+    if (!Env.hasDadataConfig) return null;
+    try {
+      final http.Response response = await http
+          .post(
+            Uri.parse(_geolocateUrl),
+            headers: <String, String>{
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+              'Authorization': 'Token ${Env.dadataApiKey}',
+            },
+            body: jsonEncode(<String, dynamic>{
+              'lat': lat,
+              'lon': lon,
+              'count': 1,
+            }),
+          )
+          .timeout(_timeout);
+
+      if (response.statusCode != 200) return null;
+
+      final Map<String, dynamic> body =
+          jsonDecode(response.body) as Map<String, dynamic>;
+      final List<dynamic> raw =
+          (body['suggestions'] as List<dynamic>?) ?? const <dynamic>[];
+      if (raw.isEmpty) return null;
+      final Map<String, dynamic>? first = raw.first is Map<String, dynamic>
+          ? raw.first as Map<String, dynamic>
+          : null;
+      if (first == null) return null;
+      return DadataAddress.fromJson(first);
+    } on TimeoutException {
+      return null;
+    } catch (_) {
+      return null;
     }
   }
 }
