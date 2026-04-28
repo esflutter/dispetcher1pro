@@ -212,9 +212,27 @@ class _OrderFeedScreenState extends State<OrderFeedScreen> {
                     return IndexedStack(
                       index: _tab,
                       children: <Widget>[
-                        orders.isEmpty
-                            ? const _EmptyOrdersState()
-                            : _OrderList(orders: orders),
+                        RefreshIndicator(
+                          color: AppColors.primary,
+                          onRefresh: () async {
+                            final Future<List<OrderListItem>> next =
+                                _fetchOrders();
+                            setState(() => _ordersFuture = next);
+                            await next;
+                          },
+                          child: orders.isEmpty
+                              ? ListView(
+                                  // Пустой ListView, чтобы pull-to-refresh
+                                  // работал даже когда заказов нет — иначе
+                                  // обычный _EmptyOrdersState не скроллится.
+                                  physics:
+                                      const AlwaysScrollableScrollPhysics(),
+                                  children: const <Widget>[
+                                    _EmptyOrdersState(),
+                                  ],
+                                )
+                              : _OrderList(orders: orders),
+                        ),
                         _OrdersMapWithCard(orders: orders),
                       ],
                     );
@@ -257,6 +275,7 @@ class _OrderList extends StatelessWidget {
       context: context,
       removeTop: true,
       child: ListView.separated(
+        physics: const AlwaysScrollableScrollPhysics(),
         padding: EdgeInsets.fromLTRB(16.w, 0, 16.w, 16.h),
         itemCount: orders.length,
         separatorBuilder: (_, _) => SizedBox(height: 16.h),

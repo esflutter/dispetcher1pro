@@ -4,6 +4,12 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:dispatcher_1/core/payments/models.dart';
 
+/// Таймаут на одиночный вызов YooKassa Edge Function. На реальной сети
+/// функция возвращает ответ за 1-3 сек; 20 сек — потолок при медленном
+/// мобильном инете. Без таймаута зависшая функция замораживала кнопку
+/// «Оплатить» на минуту+, и пользователь успевал закрыть приложение.
+const Duration _kPaymentTimeout = Duration(seconds: 20);
+
 /// Клиент для платёжных Edge Functions YooKassa.
 ///
 /// Все методы требуют активной Supabase-сессии (анон-юзеру оплаты не
@@ -42,10 +48,17 @@ class PaymentService {
       'return_url': ?returnUrl,
     };
 
-    final FunctionResponse resp = await _client.functions.invoke(
-      'yookassa-create-payment',
-      body: body,
-    );
+    final FunctionResponse resp = await _client.functions
+        .invoke(
+          'yookassa-create-payment',
+          body: body,
+        )
+        .timeout(_kPaymentTimeout, onTimeout: () {
+      throw const PaymentError(
+        'timeout',
+        'Платёжный сервис не отвечает. Проверьте интернет и попробуйте снова.',
+      );
+    });
     final dynamic data = resp.data;
     if (data is! Map) {
       throw const PaymentError('bad_response',
@@ -65,10 +78,17 @@ class PaymentService {
 
   /// Список активных сохранённых карт текущего юзера.
   Future<List<SavedCard>> listCards() async {
-    final FunctionResponse resp = await _client.functions.invoke(
-      'yookassa-list-cards',
-      method: HttpMethod.get,
-    );
+    final FunctionResponse resp = await _client.functions
+        .invoke(
+          'yookassa-list-cards',
+          method: HttpMethod.get,
+        )
+        .timeout(_kPaymentTimeout, onTimeout: () {
+      throw const PaymentError(
+        'timeout',
+        'Сервис платежей недоступен. Попробуйте позже.',
+      );
+    });
     final dynamic data = resp.data;
     if (data is! Map) return const <SavedCard>[];
     final List<dynamic>? rows = data['cards'] as List<dynamic>?;
@@ -80,10 +100,17 @@ class PaymentService {
 
   /// «Удалить» сохранённую карту — помечает у нас `is_active=false`.
   Future<void> deleteCard(String paymentMethodId) async {
-    final FunctionResponse resp = await _client.functions.invoke(
-      'yookassa-delete-card',
-      body: <String, dynamic>{'payment_method_id': paymentMethodId},
-    );
+    final FunctionResponse resp = await _client.functions
+        .invoke(
+          'yookassa-delete-card',
+          body: <String, dynamic>{'payment_method_id': paymentMethodId},
+        )
+        .timeout(_kPaymentTimeout, onTimeout: () {
+      throw const PaymentError(
+        'timeout',
+        'Не удалось удалить карту: сервис платежей не отвечает.',
+      );
+    });
     final dynamic data = resp.data;
     if (data is Map && data['error'] != null) {
       throw PaymentError('server', (data['error'] as Object?).toString());

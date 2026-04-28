@@ -170,14 +170,33 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
     );
   }
 
+  Future<void> _onRefresh() async {
+    final Future<_MyOrdersData> next = _fetch();
+    setState(() => _future = next);
+    await next;
+  }
+
   Widget _buildList(List<MyOrderMatch> items, Map<String, String?> phones) {
     if (items.isEmpty) {
-      return _EmptyOrders(onGoToCatalog: widget.onGoToCatalog);
+      return RefreshIndicator(
+        color: AppColors.primary,
+        onRefresh: _onRefresh,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          children: <Widget>[
+            _EmptyOrders(onGoToCatalog: widget.onGoToCatalog),
+          ],
+        ),
+      );
     }
-    return MediaQuery.removePadding(
+    return RefreshIndicator(
+      color: AppColors.primary,
+      onRefresh: _onRefresh,
+      child: MediaQuery.removePadding(
       context: context,
       removeTop: true,
       child: ListView.builder(
+        physics: const AlwaysScrollableScrollPhysics(),
         padding: EdgeInsets.zero,
         itemCount: items.length,
         itemBuilder: (BuildContext context, int i) {
@@ -243,13 +262,15 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
                 onContact: canCall ? () => dialPhone(context, phone) : null,
               ),
               if (!isLast)
-                Container(
-                  height: 1 / MediaQuery.of(context).devicePixelRatio,
+                const Divider(
+                  height: 1,
+                  thickness: 0.5,
                   color: AppColors.primary,
                 ),
             ],
           );
         },
+      ),
       ),
     );
   }

@@ -105,7 +105,7 @@ class CatalogService {
     double? originLat,
     double? originLng,
     int? radiusKm,
-    int limit = 50,
+    int limit = 200,
   }) async {
     await _primeDirectories();
     // При активном радиус-фильтре расширяем серверный LIMIT, потому что
@@ -318,7 +318,7 @@ class CatalogService {
     Set<String> machineryTitles = const <String>{},
     Set<String> categoryTitles = const <String>{},
     String? search,
-    int limit = 50,
+    int limit = 200,
   }) async {
     await _primeDirectories();
 
@@ -542,7 +542,7 @@ class CatalogService {
   /// Заказы конкретного заказчика — для списка на его карточке.
   /// По умолчанию только `published` (чтобы не утекали черновики/архив).
   Future<List<OrderListItem>> listCustomerOrders(String userId,
-      {int limit = 50}) async {
+      {int limit = 100}) async {
     await _primeDirectories();
     final List<Map<String, dynamic>> rows = await _client
         .from('orders')
