@@ -23,15 +23,25 @@ enum VerificationStatus {
   /// Подписка на изменения статуса верификации.
   static ValueNotifier<VerificationStatus> get notifier => _notifier;
 
-  /// Глобальный флаг активной подписки (до появления бэкенда).
-  /// `true` — подписка включена; `false` — приостановлена или неактивна,
-  /// различаются по наличию [subscriptionPaidUntilText].
-  static bool hasSubscription = false;
+  /// Глобальный флаг активной подписки. Реактивный — подписаться можно
+  /// через [hasSubscriptionNotifier], при изменении значения все
+  /// слушатели получат уведомление, даже если изменение пришло с
+  /// другого экрана. Геттер/сеттер `hasSubscription` сохраняет
+  /// обратную совместимость со старым кодом.
+  static final ValueNotifier<bool> hasSubscriptionNotifier =
+      ValueNotifier<bool>(false);
+  static bool get hasSubscription => hasSubscriptionNotifier.value;
+  static set hasSubscription(bool v) => hasSubscriptionNotifier.value = v;
 
   /// Дата, до которой оплачен текущий платёжный период подписки
   /// (текстом, как его выдаст бэкенд, например «15 июля»).
   /// `null` — не оплачено, платёжного «хвоста» нет.
-  static String? subscriptionPaidUntilText;
+  static final ValueNotifier<String?> subscriptionPaidUntilTextNotifier =
+      ValueNotifier<String?>(null);
+  static String? get subscriptionPaidUntilText =>
+      subscriptionPaidUntilTextNotifier.value;
+  static set subscriptionPaidUntilText(String? v) =>
+      subscriptionPaidUntilTextNotifier.value = v;
 
   bool get isVerified => this == VerificationStatus.verified;
 
@@ -47,8 +57,8 @@ enum VerificationStatus {
   /// на этом устройстве не унаследовал чужой статус.
   static void clearAuthData() {
     _notifier.value = VerificationStatus.notVerified;
-    hasSubscription = false;
-    subscriptionPaidUntilText = null;
+    hasSubscriptionNotifier.value = false;
+    subscriptionPaidUntilTextNotifier.value = null;
   }
 }
 

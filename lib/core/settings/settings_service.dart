@@ -24,6 +24,11 @@ class SettingsService {
     }
   }
 
+  /// Прогревает кэш настроек на старте приложения. Вызывается из `main()`
+  /// fire-and-forget вместе с CatalogService.warmup() — после этого все
+  /// геттеры возвращают значения мгновенно, без сетевого запроса.
+  Future<void> warmup() => _load();
+
   Future<int> subscriptionMonthlyPriceRub() async {
     await _load();
     return (_cache!['subscription.monthly_price_rub'] as num?)?.toInt() ?? 1000;

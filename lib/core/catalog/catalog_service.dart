@@ -108,6 +108,15 @@ class CatalogService {
     int limit = 50,
   }) async {
     await _primeDirectories();
+    // При активном радиус-фильтре расширяем серверный LIMIT, потому что
+    // отсев по haversine на клиенте идёт ПОСЛЕ выборки. Без этого все 50
+    // последних заказов могут оказаться вне радиуса, и пользователь увидит
+    // пустую ленту, хотя в базе подходящие заказы есть. PostGIS пока нет,
+    // поэтому компенсируем большим LIMIT — ×6 даёт хороший шанс зацепить
+    // ближайшие к точке поиска при радиусе 10/20/50 км.
+    final bool radiusActive =
+        originLat != null && originLng != null && radiusKm != null;
+    final int effectiveLimit = radiusActive ? limit * 6 : limit;
 
     final List<int> machineryIds = machineryTitles
         .map((String t) => _machineryTitleToId[t])
@@ -164,21 +173,26 @@ class CatalogService {
       q = q.lte('time_to', '$timeTo:00');
     }
 
-    final List<Map<String, dynamic>> rows =
-        await q.order('published_at', ascending: false).limit(limit);
+    final List<Map<String, dynamic>> rows = await q
+        .order('published_at', ascending: false)
+        .limit(effectiveLimit);
     List<OrderListItem> items =
         rows.map(_orderListItemFromRow).toList();
 
     // Клиентский фильтр радиуса (haversine). Серверный нужен PostGIS,
-    // которого пока нет — для текущего объёма заказов клиентская
-    // фильтрация после ограничения LIMIT работает приемлемо.
-    if (originLat != null && originLng != null && radiusKm != null) {
+    // которого пока нет — поэтому выше при активном radius мы тянем в
+    // 6 раз больше строк, чтобы после отсева на клиенте лента не
+    // оказалась пустой при достаточном объёме данных в базе.
+    if (radiusActive) {
       items = items.where((OrderListItem o) {
         if (o.latitude == null || o.longitude == null) return false;
         final double d = haversineKm(
             originLat, originLng, o.latitude!, o.longitude!);
         return d <= radiusKm;
       }).toList();
+      // Возвращаем не больше пользовательского limit, чтобы UI не
+      // получал в 6 раз больше карточек, чем ожидает.
+      if (items.length > limit) items = items.sublist(0, limit);
     }
     return items;
   }
