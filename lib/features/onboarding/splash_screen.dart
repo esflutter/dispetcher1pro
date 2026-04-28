@@ -1,12 +1,12 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../core/profile/profile_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
+import '../profile/widgets/verification_badge.dart';
 
 /// Сплеш-экран приложения «Диспетчер №1».
 /// Через 1.5 секунды отправляем пользователя:
@@ -21,29 +21,61 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen> {
-  Timer? _timer;
+  bool _disposed = false;
 
   @override
   void initState() {
     super.initState();
-    _timer = Timer(const Duration(milliseconds: 1500), () {
-      if (!mounted) return;
-      // Supabase может быть не инициализирован, если запускаем без
-      // --dart-define ключей (URL/anonKey). Тогда сессии всё равно
-      // нет — отправляем на онбординг, чтобы не зависнуть на сплэше.
-      Session? session;
+    _bootstrap();
+  }
+
+  /// Пока на экране висит лого+спиннер (минимум 1.5 сек), параллельно:
+  /// — определяем, есть ли валидная Supabase-сессия;
+  /// — если есть, подгружаем приватную часть профиля и инициализируем
+  ///   VerificationStatus (подписка/верификация). Это нужно, чтобы при
+  ///   первом же тапе «Откликнуться» в каталоге paywall не открылся
+  ///   ошибочно из-за свежезагруженного `hasSubscription = false`.
+  Future<void> _bootstrap() async {
+    final Future<void> minDelay =
+        Future<void>.delayed(const Duration(milliseconds: 1500));
+
+    Session? session;
+    try {
+      session = Supabase.instance.client.auth.currentSession;
+    } catch (_) {
+      session = null;
+    }
+
+    if (session != null) {
       try {
-        session = Supabase.instance.client.auth.currentSession;
-      } catch (_) {
-        session = null;
-      }
-      context.go(session != null ? '/shell' : '/onboarding');
-    });
+        final MyPrivate? priv = await ProfileService.instance.loadMyPrivate();
+        final DateTime? paidUntil = priv?.subscriptionPaidUntil;
+        if (paidUntil != null) {
+          VerificationStatus.hasSubscription =
+              paidUntil.isAfter(DateTime.now().toUtc());
+          VerificationStatus.subscriptionPaidUntilText = _fmtDateRu(paidUntil);
+        }
+      } catch (_) {/* фоллбэк: подписку поднимет profile_screen */}
+    }
+
+    await minDelay;
+    if (_disposed || !mounted) return;
+    context.go(session != null ? '/shell' : '/onboarding');
+  }
+
+  static const List<String> _monthsRu = <String>[
+    'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
+    'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря',
+  ];
+
+  String _fmtDateRu(DateTime d) {
+    final DateTime local = d.toLocal();
+    return '${local.day} ${_monthsRu[local.month - 1]}';
   }
 
   @override
   void dispose() {
-    _timer?.cancel();
+    _disposed = true;
     super.dispose();
   }
 

@@ -1071,7 +1071,7 @@ class InlineTimePickerState extends State<InlineTimePicker> {
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
           SizedBox(
-            height: 229,
+            height: 229.h,
             child: Row(
               children: <Widget>[
                 Expanded(
@@ -1079,7 +1079,7 @@ class InlineTimePickerState extends State<InlineTimePicker> {
                     padding: EdgeInsets.only(left: 24.w),
                     child: ListWheelScrollView.useDelegate(
                       controller: _hourCtrl,
-                      itemExtent: 42,
+                      itemExtent: 42.h,
                       physics: const FixedExtentScrollPhysics(),
                       onSelectedItemChanged: (int i) {
                         _hour = i;
@@ -1105,7 +1105,7 @@ class InlineTimePickerState extends State<InlineTimePicker> {
                                 i.toString().padLeft(2, '0'),
                                 style: TextStyle(
                                   fontFamily: 'Roboto',
-                                  fontSize: 25,
+                                  fontSize: 25.sp,
                                   fontWeight:
                                       sel ? FontWeight.w600 : FontWeight.w400,
                                   color: sel
@@ -1134,7 +1134,7 @@ class InlineTimePickerState extends State<InlineTimePicker> {
                     padding: EdgeInsets.only(right: 24.w),
                     child: ListWheelScrollView.useDelegate(
                       controller: _minuteCtrl,
-                      itemExtent: 42,
+                      itemExtent: 42.h,
                       physics: const FixedExtentScrollPhysics(),
                       onSelectedItemChanged: (int i) {
                         _minute = i;
@@ -1160,7 +1160,7 @@ class InlineTimePickerState extends State<InlineTimePicker> {
                                 i.toString().padLeft(2, '0'),
                                 style: TextStyle(
                                   fontFamily: 'Roboto',
-                                  fontSize: 25,
+                                  fontSize: 25.sp,
                                   fontWeight:
                                       sel ? FontWeight.w600 : FontWeight.w400,
                                   color: sel

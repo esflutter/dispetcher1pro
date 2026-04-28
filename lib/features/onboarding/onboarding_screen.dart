@@ -97,7 +97,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   color: AppColors.surfaceVariant,
                   alignment: Alignment.center,
                   child: Icon(Icons.image_outlined,
-                      size: 80, color: AppColors.textTertiary),
+                      size: 80.r, color: AppColors.textTertiary),
                 ),
               ),
             ),
