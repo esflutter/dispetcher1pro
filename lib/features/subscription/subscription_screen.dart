@@ -33,49 +33,51 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   }
 
   Future<void> _openPaywall() async {
-    final bool? paid = await Navigator.of(context).push<bool>(
-      MaterialPageRoute<bool>(
+    // Paywall показывает рекламную карточку «Получите доступ к заказам»
+    // и при нажатии «Продолжить» сам уводит юзера в `/subscription/payment`.
+    // Когда юзер вернётся (через payment_result_screen → popUntil to root),
+    // `VerificationStatus.hasSubscription` уже обновлён реальным успехом.
+    // Перерисуем экран, чтобы пересчитать _status.
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
         fullscreenDialog: true,
         builder: (_) => const SubscriptionPaywall(),
       ),
     );
-    if (paid == true && mounted) {
-      // Дата оплаченного периода — now() + 30 дней (длительность одного
-      // оплаченного цикла подписки). После рестарта `loadMyPrivate`
-      // отдаст ту же дату из `profiles_private.subscription_paid_until`.
-      final DateTime paidUntil =
-          DateTime.now().add(const Duration(days: 30));
-      setState(() {
-        VerificationStatus.hasSubscription = true;
-        VerificationStatus.subscriptionPaidUntilText ??= '15 июля';
-      });
-      // ignore: discarded_futures
-      ProfileService.instance
-          .updateSubscription(paidUntil: paidUntil, autoRenew: true)
-          .catchError((_) {/* silent */});
-    }
+    if (mounted) setState(() {});
   }
 
   Future<void> _onToggle(bool value) async {
     if (!value && _status == SubscriptionStatus.active) {
       // Выключение активной — переводит в «Приостановлена»: флаг
       // подписки снимаем, но оплаченный период оставляем; в БД
-      // выключаем `subscription_auto_renew`.
+      // выключаем `subscription_auto_renew`. При ошибке откатываем
+      // локальный флаг, чтобы UI и БД не разошлись.
       final bool? ok = await _showDisableDialog();
       if (ok != true) return;
       setState(() => VerificationStatus.hasSubscription = false);
-      // ignore: discarded_futures
-      ProfileService.instance
-          .updateSubscription(autoRenew: false)
-          .catchError((_) {/* silent */});
+      try {
+        await ProfileService.instance.updateSubscription(autoRenew: false);
+      } catch (_) {
+        if (!mounted) return;
+        setState(() => VerificationStatus.hasSubscription = true);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Не удалось выключить авто-продление. Попробуйте ещё раз.')),
+        );
+      }
     } else if (value && _status == SubscriptionStatus.paused) {
       // Возврат из «Приостановлена» в «Активна» — без повторной оплаты,
       // т. к. платёжный период ещё не закончился.
       setState(() => VerificationStatus.hasSubscription = true);
-      // ignore: discarded_futures
-      ProfileService.instance
-          .updateSubscription(autoRenew: true)
-          .catchError((_) {/* silent */});
+      try {
+        await ProfileService.instance.updateSubscription(autoRenew: true);
+      } catch (_) {
+        if (!mounted) return;
+        setState(() => VerificationStatus.hasSubscription = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Не удалось включить авто-продление. Попробуйте ещё раз.')),
+        );
+      }
     } else if (value && _status == SubscriptionStatus.inactive) {
       if (!mounted) return;
       await _openPaywall();
@@ -214,10 +216,12 @@ class _StatusCard extends StatelessWidget {
         title = 'Подписка активна';
         subtitle = paidUntil != null
             ? 'Оплачено до $paidUntil'
-            : 'Бесплатный период до 15 июля';
+            : 'Авто-продление включено';
       case SubscriptionStatus.paused:
         title = 'Подписка приостановлена';
-        subtitle = 'Оплачено до ${paidUntil ?? '15 июля'}';
+        subtitle = paidUntil != null
+            ? 'Оплачено до $paidUntil'
+            : 'Авто-продление выключено';
       case SubscriptionStatus.inactive:
         title = 'Подписка неактивна';
         subtitle =

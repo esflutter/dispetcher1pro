@@ -1,9 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:go_router/go_router.dart';
 
+import 'package:dispatcher_1/core/settings/settings_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
 
+/// Маркетинговый paywall: фоновое фото + карточка с буллетами и
+/// кнопкой «Продолжить». Кнопка закрывает paywall и уводит в реальный
+/// экран оплаты подписки (`/subscription/payment`). Оплата идёт через
+/// YooKassa Edge Function, сюда юзер уже не возвращается.
 class SubscriptionPaywall extends StatefulWidget {
   const SubscriptionPaywall({super.key});
 
@@ -11,45 +17,27 @@ class SubscriptionPaywall extends StatefulWidget {
   State<SubscriptionPaywall> createState() => _SubscriptionPaywallState();
 }
 
-class _SubscriptionPaywallState extends State<SubscriptionPaywall>
-    with SingleTickerProviderStateMixin {
-  bool _showPayment = false;
-  final List<String> _cards = <String>[];
-  int? _selectedIndex;
-  late AnimationController _anim;
-  late Animation<double> _slideUp;
-  late Animation<double> _fadeOut;
+class _SubscriptionPaywallState extends State<SubscriptionPaywall> {
+  int? _priceRub;
 
   @override
   void initState() {
     super.initState();
-    _anim = AnimationController(vsync: this, duration: const Duration(milliseconds: 350));
-    _slideUp = Tween<double>(begin: 1.0, end: 0.0).animate(
-      CurvedAnimation(parent: _anim, curve: Curves.easeOut),
-    );
-    _fadeOut = Tween<double>(begin: 1.0, end: 0.0).animate(
-      CurvedAnimation(parent: _anim, curve: const Interval(0.9, 1.0)),
-    );
+    _loadPrice();
   }
 
-  @override
-  void dispose() {
-    _anim.dispose();
-    super.dispose();
+  Future<void> _loadPrice() async {
+    try {
+      final int p = await SettingsService.instance.subscriptionMonthlyPriceRub();
+      if (!mounted) return;
+      setState(() => _priceRub = p);
+    } catch (_) {/* fallback в build */}
   }
 
-  void _addCard() {
-    if (_cards.length >= 30) return;
-    setState(() {
-      final int last4 = 1234 + _cards.length * 1111;
-      _cards.add('**** ${last4.toString().padLeft(4, '0').substring(0, 4)}');
-      _selectedIndex = _cards.length - 1;
-    });
-  }
-
-  void _onContinue() {
-    setState(() => _showPayment = true);
-    _anim.forward();
+  void _onContinue(BuildContext context) {
+    final GoRouter router = GoRouter.of(context);
+    Navigator.of(context).pop();
+    router.push('/subscription/payment');
   }
 
   @override
@@ -82,34 +70,35 @@ class _SubscriptionPaywallState extends State<SubscriptionPaywall>
             left: 0,
             right: 0,
             bottom: 0,
-            child: _showPayment
-                ? FadeTransition(opacity: _fadeOut, child: _buildPaywall(context))
-                : _buildPaywall(context),
-          ),
-          if (_showPayment)
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: ListenableBuilder(
-                listenable: _anim,
-                builder: (context, child) {
-                  return Transform.translate(
-                    offset: Offset(0, _slideUp.value * cardHeight),
-                    child: child,
-                  );
-                },
-                child: _buildPayment(context),
-              ),
+            child: _PaywallCard(
+              priceRub: _priceRub,
+              onContinue: () => _onContinue(context),
             ),
+          ),
         ],
       ),
     );
   }
+}
 
-  Widget _buildPaywall(BuildContext context) {
+class _PaywallCard extends StatelessWidget {
+  const _PaywallCard({required this.priceRub, required this.onContinue});
+  final int? priceRub;
+  final VoidCallback onContinue;
+
+  String _fmtPrice(int v) {
+    final String s = v.toString();
+    final StringBuffer b = StringBuffer();
+    for (int k = 0; k < s.length; k++) {
+      if (k > 0 && (s.length - k) % 3 == 0) b.write(' ');
+      b.write(s[k]);
+    }
+    return b.toString();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
-      key: const ValueKey('paywall'),
       height: MediaQuery.of(context).size.height * 0.47,
       decoration: BoxDecoration(
         color: AppColors.surface,
@@ -130,12 +119,14 @@ class _SubscriptionPaywallState extends State<SubscriptionPaywall>
             ),
           ),
           SizedBox(height: 13.h),
-          _BulletItem(text: 'Откликайтесь на заказы'),
-          _BulletItem(text: 'Попадайте в список исполнителей'),
-          _BulletItem(text: 'Получайте новые заявки'),
+          const _BulletItem(text: 'Откликайтесь на заказы'),
+          const _BulletItem(text: 'Попадайте в список исполнителей'),
+          const _BulletItem(text: 'Получайте новые заявки'),
           SizedBox(height: 20.h),
           Text(
-            'N дней бесплатно, затем N ₽/месяц',
+            priceRub == null
+                ? 'Стоимость подписки уточняется'
+                : '${_fmtPrice(priceRub!)} ₽ в месяц',
             style: TextStyle(
               fontFamily: 'Roboto',
               fontSize: 14.sp,
@@ -144,10 +135,7 @@ class _SubscriptionPaywallState extends State<SubscriptionPaywall>
             ),
           ),
           SizedBox(height: 12.h),
-          PrimaryButton(
-            label: 'Продолжить',
-            onPressed: _onContinue,
-          ),
+          PrimaryButton(label: 'Продолжить', onPressed: onContinue),
           SizedBox(height: 12.h),
           Text(
             'Условия использования  •  Политика конфиденциальности',
@@ -167,133 +155,6 @@ class _SubscriptionPaywallState extends State<SubscriptionPaywall>
               fontSize: 10.sp,
               fontWeight: FontWeight.w500,
               color: AppColors.textTertiary,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPayment(BuildContext context) {
-    return Container(
-      key: const ValueKey('payment'),
-      height: MediaQuery.of(context).size.height * 0.47,
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24.r)),
-      ),
-      child: Column(
-        children: <Widget>[
-          Padding(
-            padding: EdgeInsets.fromLTRB(16.w, 20.h, 16.w, 20.h),
-            child: Row(
-              children: <Widget>[
-                Expanded(
-                  child: Center(
-                    child: Text(
-                      'Способ оплаты',
-                      style: TextStyle(
-                        fontFamily: 'Roboto',
-                        fontSize: 18.sp,
-                        fontWeight: FontWeight.w600,
-                        height: 1.3,
-                      ),
-                    ),
-                  ),
-                ),
-                GestureDetector(
-                  onTap: () => Navigator.of(context).pop(),
-                  child: Icon(Icons.close, size: 22.r, color: AppColors.textTertiary),
-                ),
-              ],
-            ),
-          ),
-          Divider(height: 1, thickness: 0.5, color: Colors.grey.shade300),
-          Expanded(
-            child: ListView(
-              padding: EdgeInsets.fromLTRB(16.w, 16.h, 16.w, 0),
-              children: [
-                GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: _addCard,
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(vertical: 12.h),
-                    child: Row(
-                      children: <Widget>[
-                        Image.asset(
-                          'assets/images/catalog/card_add.webp',
-                          width: 28.r,
-                          height: 28.r,
-                        ),
-                        SizedBox(width: 12.w),
-                        Text(
-                          'Добавить карту',
-                          style: TextStyle(
-                            fontFamily: 'Roboto',
-                            fontSize: 16.sp,
-                            fontWeight: FontWeight.w400,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                for (int i = 0; i < _cards.length; i++)
-                  GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () => setState(() => _selectedIndex = i),
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(vertical: 12.h),
-                      child: Row(
-                        children: <Widget>[
-                          Container(
-                            width: 22.r,
-                            height: 22.r,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: _selectedIndex == i
-                                    ? AppColors.primary
-                                    : AppColors.border,
-                                width: 2,
-                              ),
-                            ),
-                            child: _selectedIndex == i
-                                ? Center(
-                                    child: Container(
-                                      width: 12.r,
-                                      height: 12.r,
-                                      decoration: const BoxDecoration(
-                                        color: AppColors.primary,
-                                        shape: BoxShape.circle,
-                                      ),
-                                    ),
-                                  )
-                                : null,
-                          ),
-                          SizedBox(width: 12.w),
-                          Text(
-                            _cards[i],
-                            style: TextStyle(
-                              fontFamily: 'Roboto',
-                              fontSize: 16.sp,
-                              fontWeight: FontWeight.w400,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          Padding(
-            padding: EdgeInsets.fromLTRB(16.w, 16.h, 16.w, 16.h + MediaQuery.of(context).padding.bottom),
-            child: PrimaryButton(
-              label: 'Оплатить',
-              onPressed: _selectedIndex != null
-                  ? () => Navigator.of(context).pop(true)
-                  : null,
             ),
           ),
         ],

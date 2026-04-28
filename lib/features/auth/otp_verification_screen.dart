@@ -267,7 +267,17 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
                               if (e164.isNotEmpty) {
                                 try {
                                   await AuthService.instance.sendOtp(e164);
-                                } catch (_) {/* swallow — повторная отправка best-effort */}
+                                } catch (_) {
+                                  if (!context.mounted) return;
+                                  setState(() => _codeResent = false);
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Не удалось отправить код. Проверьте соединение и попробуйте ещё раз.',
+                                      ),
+                                    ),
+                                  );
+                                }
                               }
                             },
                             child: RichText(

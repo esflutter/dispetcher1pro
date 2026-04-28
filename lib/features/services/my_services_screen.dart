@@ -11,7 +11,6 @@ import 'package:dispatcher_1/core/widgets/primary_button.dart';
 import 'package:dispatcher_1/features/catalog/widgets/catalog_search_bar.dart';
 
 import 'widgets/service_card.dart';
-import 'widgets/service_paywall.dart';
 
 /// Тонкий кэш-адаптер над [MyServicesService] для кода, который ещё
 /// не переписан напрямую на сервис (карточка исполнителя, детали заказа
@@ -31,11 +30,6 @@ class ServiceData {
   /// после refresh.
   static final ValueNotifier<int> revision = ValueNotifier<int>(0);
 
-  /// Оплаченный, но ещё не израсходованный слот для создания услуги.
-  /// В dev-режиме без реальной оплаты paywall ставит флаг в true мгновенно;
-  /// после успешного INSERT в БД — снимаем.
-  static bool hasUnusedPaidSlot = false;
-
   /// Полная перезагрузка из БД. Вызывается при открытии "Моих услуг",
   /// после create/update/archive, а также из мест, где старый код
   /// ждёт актуальный snapshot перед чтением (например, вычисление
@@ -53,7 +47,6 @@ class ServiceData {
   /// (они собственность executor_id = auth.uid() прошлой сессии).
   static void clear() {
     services.clear();
-    hasUnusedPaidSlot = false;
     revision.value = revision.value + 1;
   }
 
@@ -66,6 +59,7 @@ class ServiceData {
         pricePerDay: _formatPrice(s.pricePerDay),
         minOrder: s.minHours?.toString() ?? '',
         description: s.description ?? '',
+        isPaid: s.isPaid,
       );
 
   static String _formatPrice(double? v) {
@@ -140,6 +134,7 @@ class ServiceMock {
     this.photos = const [],
     this.address,
     this.radiusIndex = -1,
+    this.isPaid = true,
   });
   final String id;
   final String title;
@@ -152,6 +147,12 @@ class ServiceMock {
   final List<String> photos;
   final String? address;
   final int radiusIndex;
+
+  /// `false` для услуг, у которых ещё не прошла оплата `service_slot`.
+  /// Такие услуги не показываются в каталоге (`is_paid=true` фильтр) и
+  /// не съедают лимит [ServiceData.maxServices], но юзер видит их в
+  /// «Моих услугах» с подписью «не оплачена».
+  final bool isPaid;
 }
 
 /// Экран «Мои услуги» — список услуг исполнителя или пустое состояние.
@@ -223,8 +224,13 @@ class _MyServicesScreenState extends State<MyServicesScreen> {
                   child: PrimaryButton(
                     label: 'Создать услугу',
                     onPressed: () async {
-                      if (ServiceData.services.length >=
-                          ServiceData.maxServices) {
+                      // Лимит считаем только по оплаченным услугам:
+                      // неоплаченные занимают строку в БД, но не активны
+                      // в каталоге и не должны съедать слот.
+                      final int paidCount = ServiceData.services
+                          .where((ServiceMock s) => s.isPaid)
+                          .length;
+                      if (paidCount >= ServiceData.maxServices) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: Text(
@@ -235,17 +241,11 @@ class _MyServicesScreenState extends State<MyServicesScreen> {
                         );
                         return;
                       }
-                      if (!ServiceData.hasUnusedPaidSlot) {
-                        final bool? paid = await Navigator.of(context)
-                            .push<bool>(
-                          MaterialPageRoute<bool>(
-                            fullscreenDialog: true,
-                            builder: (_) => const ServicePaywall(),
-                          ),
-                        );
-                        if (paid != true || !context.mounted) return;
-                        ServiceData.hasUnusedPaidSlot = true;
-                      }
+                      // Сначала юзер заполняет форму, потом — оплата
+                      // конкретной услуги через `/subscription/payment`
+                      // с `kind=service_slot, serviceId=<id>`. Раньше тут
+                      // был ServicePaywall с моком — заглушка не списывала
+                      // деньги, услуга сразу шла в is_paid=true.
                       await context.push('/services/create');
                       if (mounted) await _reload();
                     },
@@ -303,7 +303,7 @@ class _ServicesList extends StatelessWidget {
         // (`AppColors.fieldFill`). Визуально делит список на «плитки»
         // — так же, как в приложении заказчика (`_ServiceTile` в
         // `catalog/order_detail_screen.dart`).
-        return Container(
+        final Widget card = Container(
           decoration: BoxDecoration(
             color: AppColors.fieldFill,
             borderRadius: BorderRadius.circular(14.r),
@@ -316,10 +316,48 @@ class _ServicesList extends StatelessWidget {
             pricePerHour: item.pricePerHour,
             pricePerDay: item.pricePerDay,
             onTap: () async {
+              if (!item.isPaid) {
+                // Неоплаченная услуга — сразу уводим на оплату
+                // конкретно этой строки, без редактирования.
+                await context.push(
+                  '/subscription/payment',
+                  extra: <String, Object?>{
+                    'kind': 'service_slot',
+                    'serviceId': item.id,
+                  },
+                );
+                onRefresh();
+                return;
+              }
               await context.push('/services/${item.id}');
               onRefresh();
             },
           ),
+        );
+        if (item.isPaid) return card;
+        // Полупрозрачная карточка + бейдж «Не активна — оплатите».
+        return Stack(
+          children: <Widget>[
+            Opacity(opacity: 0.55, child: card),
+            Positioned(
+              top: 8.h,
+              right: 8.w,
+              child: Container(
+                padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 4.h),
+                decoration: BoxDecoration(
+                  color: AppColors.error,
+                  borderRadius: BorderRadius.circular(100.r),
+                ),
+                child: Text(
+                  'Не оплачена',
+                  style: AppTextStyles.caption.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+          ],
         );
       },
     );

@@ -43,17 +43,31 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     setState(() => _submitting = true);
     try {
       // Грузим аватар в Storage ДО вызова completeRegistration, чтобы
-      // avatar_url сразу попал в UPDATE profiles одним запросом.
+      // avatar_url сразу попал в UPDATE profiles одним запросом. Если
+      // загрузка упала — продолжаем регистрацию без аватара, но
+      // показываем предупреждение, чтобы юзер мог потом поменять фото.
       String? avatarUrl;
+      bool avatarUploadFailed = false;
       final String? avatarPath = _cropResult?.imagePath;
       if (avatarPath != null && !avatarPath.startsWith('assets/')) {
         try {
           avatarUrl = await StorageService.instance
               .uploadAvatar(File(avatarPath));
-        } catch (_) {/* пропускаем неудачную загрузку */}
+        } catch (_) {
+          avatarUploadFailed = true;
+        }
       }
       await AuthService.instance
           .completeRegistration(name: name, avatarUrl: avatarUrl);
+      if (avatarUploadFailed && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Не удалось загрузить фото. Профиль сохранён без аватара — добавьте его позже в настройках.',
+            ),
+          ),
+        );
+      }
       if (!mounted) return;
       CropResult.saved = _cropResult;
       CropResult.userName = name;

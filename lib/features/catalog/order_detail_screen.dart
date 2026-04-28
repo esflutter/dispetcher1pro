@@ -133,14 +133,16 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
         if (go == true && mounted) context.push('/subscription');
         return;
       }
-      final bool? subscribed = await Navigator.of(context).push<bool>(
-        MaterialPageRoute<bool>(
+      // Paywall сам уводит юзера в реальный экран оплаты — отсюда
+      // действие («Откликнуться») всегда прерываем. После оплаты юзер
+      // вернётся в корень навигации, придёт сюда снова и нажмёт ещё раз.
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(
           fullscreenDialog: true,
           builder: (_) => const SubscriptionPaywall(),
         ),
       );
-      if (subscribed != true || !mounted) return;
-      VerificationStatus.hasSubscription = true;
+      return;
     }
 
     // 5. Карточка исполнителя должна быть создана.

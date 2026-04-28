@@ -26,11 +26,11 @@ import '../features/services/create_service_screen.dart';
 import '../features/services/my_services_screen.dart';
 import '../features/services/service_detail_screen.dart';
 import '../features/shell/main_shell.dart';
+import '../core/payments/models.dart';
 import '../features/subscription/add_card_screen.dart';
 import '../features/subscription/payment_result_screen.dart';
 import '../features/subscription/payment_screen.dart';
 import '../features/subscription/subscription_screen.dart';
-import '../features/subscription/tariffs_screen.dart';
 import '../features/support/chat_screen.dart';
 import '../features/support/support_home_screen.dart';
 
@@ -131,12 +131,31 @@ final GoRouter appRouter = GoRouter(
 
     // Подписка
     GoRoute(path: '/subscription', builder: (_, _) => const SubscriptionScreen()),
-    GoRoute(path: '/subscription/tariffs', builder: (_, _) => const TariffsScreen()),
-    GoRoute(path: '/subscription/card', builder: (_, _) => const AddCardScreen()),
-    GoRoute(path: '/subscription/payment', builder: (_, _) => const PaymentScreen()),
+    GoRoute(path: '/subscription/cards', builder: (_, _) => const CardsScreen()),
+    GoRoute(
+      path: '/subscription/payment',
+      builder: (_, GoRouterState state) {
+        // Поддерживаем два сценария:
+        //   - оплата подписки (по умолчанию, без extra)
+        //   - оплата публикации услуги (extra = {kind, serviceId})
+        final Object? extra = state.extra;
+        PaymentKind kind = PaymentKind.subscription;
+        String? serviceId;
+        if (extra is Map) {
+          if (extra['kind'] == 'service_slot') kind = PaymentKind.serviceSlot;
+          if (extra['serviceId'] is String) {
+            serviceId = extra['serviceId'] as String;
+          }
+        }
+        return PaymentScreen(kind: kind, serviceId: serviceId);
+      },
+    ),
     GoRoute(
       path: '/subscription/payment/result',
-      builder: (_, _) => const PaymentResultScreen(),
+      builder: (_, GoRouterState state) {
+        final String paymentId = state.uri.queryParameters['id'] ?? '';
+        return PaymentResultScreen(paymentId: paymentId);
+      },
     ),
 
     // ИИ-ассистент (бывшая «поддержка» — унифицировано под /assistant*)

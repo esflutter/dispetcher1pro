@@ -198,14 +198,18 @@ class _ExecutorCardScreenState extends State<ExecutorCardScreen> {
 
     if (VerificationStatus.current.isVerified) {
       if (!VerificationStatus.isSubscriptionValid) {
-        final bool? paid = await Navigator.of(context).push<bool>(
-          MaterialPageRoute<bool>(
+        // Paywall сам уведёт юзера в реальный экран оплаты подписки.
+        // После успешной оплаты он окажется в корне навигации, а
+        // VerificationStatus.hasSubscription будет уже true. Чтобы
+        // повторно нажать «Открыть карточку», юзер должен вернуться
+        // на этот экран — это нормальный паттерн «pay-then-retry».
+        await Navigator.of(context).push<void>(
+          MaterialPageRoute<void>(
             fullscreenDialog: true,
             builder: (_) => const ExecutorCardPaywall(),
           ),
         );
-        if (paid != true || !mounted) return;
-        VerificationStatus.hasSubscription = true;
+        return;
       }
       if (mounted) {
         await context.push('/executor-card/edit');

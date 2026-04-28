@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:dispatcher_1/core/catalog/catalog_service.dart';
@@ -241,6 +242,7 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
     // предыдущего черновика, они уже где-то отображаются и не
     // требуют загрузки).
     final List<String> uploadedUrls = <String>[];
+    int uploadFailed = 0;
     for (final String path in _photos) {
       if (path.startsWith('assets/') || path.startsWith('http')) {
         uploadedUrls.add(path);
@@ -250,7 +252,20 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
         final String url =
             await StorageService.instance.uploadServicePhoto(File(path));
         uploadedUrls.add(url);
-      } catch (_) {/* пропускаем неудачную загрузку */}
+      } catch (_) {
+        uploadFailed++;
+      }
+    }
+    if (uploadFailed > 0 && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            uploadFailed == 1
+                ? 'Не удалось загрузить 1 фото. Услуга сохранится без него.'
+                : 'Не удалось загрузить $uploadFailed фото. Услуга сохранится без них.',
+          ),
+        ),
+      );
     }
     final double? priceHour = _parsePrice(_priceHourCtrl.text);
     final double? priceDay = _parsePrice(_priceDayCtrl.text);
@@ -277,28 +292,32 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
     return double.tryParse(cleaned);
   }
 
-  Future<bool> _save() async {
+  /// Возвращает id сохранённой услуги (для create — новый, для edit —
+  /// существующий) либо null при ошибке (snackbar уже показан).
+  Future<String?> _save() async {
     final ServiceDraft draft = await _currentDraft();
     try {
+      String id;
       if (_isEdit) {
         await MyServicesService.instance.update(widget.serviceId!, draft);
+        id = widget.serviceId!;
       } else {
-        await MyServicesService.instance.create(draft);
+        id = await MyServicesService.instance.create(draft);
       }
       await ServiceData.refresh();
-      return true;
+      return id;
     } on PostgrestException catch (e) {
-      if (!mounted) return false;
+      if (!mounted) return null;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Ошибка сохранения: ${e.message}')),
       );
-      return false;
+      return null;
     } catch (_) {
-      if (!mounted) return false;
+      if (!mounted) return null;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Не удалось сохранить услугу.')),
       );
-      return false;
+      return null;
     }
   }
 
@@ -306,15 +325,29 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
     if (_saving) return;
     setState(() => _saving = true);
     try {
-      // Paywall оплачен до этой формы (в `my_services_screen`).
-      final bool ok = await _save();
-      if (!ok || !mounted) return;
-      // Оплаченный слот израсходован. Следующее создание услуги потребует
-      // новой оплаты.
-      ServiceData.hasUnusedPaidSlot = false;
-      await showServicePublishedDialog(context);
-      if (!mounted) return;
-      Navigator.of(context).pop();
+      final String? id = await _save();
+      if (id == null || !mounted) return;
+      if (_isEdit) {
+        // Редактирование — услуга уже была оплачена ранее, просто
+        // показываем подтверждение и закрываем экран.
+        await showServicePublishedDialog(context);
+        if (!mounted) return;
+        Navigator.of(context).pop();
+        return;
+      }
+      // Только что созданная услуга по умолчанию `is_paid=false` — она не
+      // видна в каталоге. Сразу уводим юзера на оплату со `service_id`,
+      // после успешной оплаты trigger `apply_payment_success` поставит
+      // `is_paid=true` и услуга появится в каталоге.
+      Navigator.of(context).pop(); // закрываем форму создания
+      // Передаём kind/serviceId через `extra` — наш роутер `/subscription/payment`
+      // умеет их разбирать (см. router.dart).
+      if (mounted) {
+        await context.push(
+          '/subscription/payment',
+          extra: <String, Object?>{'kind': 'service_slot', 'serviceId': id},
+        );
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -614,8 +647,8 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
         PrimaryButton(
           label: 'Сохранить',
           onPressed: () async {
-            final bool ok = await _save();
-            if (!ok || !mounted) return;
+            final String? id = await _save();
+            if (id == null || !mounted) return;
             Navigator.of(context).pop();
           },
         ),

@@ -51,8 +51,11 @@ class MyServicesService {
     return _detailFromRow(r);
   }
 
-  /// Создание новой услуги. На момент вызова пользователь уже "оплатил" слот
-  /// (в dev-режиме без реальной оплаты — is_paid ставится в true сразу).
+  /// Создание новой услуги. По умолчанию `is_paid=false` — услуга не
+  /// видна в каталоге, пока пользователь не оплатит её через
+  /// `/subscription/payment` с `kind=service_slot` и этим `service_id`.
+  /// После успешной оплаты webhook отметит платёж succeeded → триггер
+  /// `apply_payment_success` поставит `services.is_paid=true`.
   Future<String> create(ServiceDraft d) async {
     final User? user = _client.auth.currentUser;
     if (user == null) {
@@ -60,7 +63,6 @@ class MyServicesService {
     }
     final Map<String, dynamic> payload = await _draftToRow(d);
     payload['executor_id'] = user.id;
-    payload['is_paid'] = true;
     final Map<String, dynamic> row = await _client
         .from('services')
         .insert(payload)
