@@ -1,5 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:dispatcher_1/core/my_orders/my_orders_service.dart'
+    show MatchAlreadyTakenException;
 import 'package:dispatcher_1/core/utils/geo_distance.dart';
 
 import 'models.dart';
@@ -127,6 +129,91 @@ class CatalogService {
         .whereType<int>()
         .toList();
 
+    // Поиск работает не только по «title/address», но и по описанию,
+    // имени заказчика, названию техники и категории работ — заранее
+    // резолвим список order_id'ов несколькими источниками и фильтруем
+    // основной запрос по нему. PostgREST не умеет or-фильтр одновременно
+    // по embedded-ресурсу (имя заказчика) и по родительской таблице.
+    Set<String>? searchOrderIds;
+    final String? s = search?.trim();
+    if (s != null && s.isNotEmpty) {
+      final String esc = _escapeLike(s).replaceAll(',', ' ');
+      final String pattern = '%$esc%';
+      final int hardLimit = limit * 4;
+      final Set<String> orderIds = <String>{};
+
+      // (1) Прямые поля заказа: title / address / description.
+      final List<Map<String, dynamic>> own = await _client
+          .from('orders')
+          .select('id')
+          .eq('status', 'published')
+          .or('title.ilike.$pattern,address.ilike.$pattern,'
+              'description.ilike.$pattern')
+          .limit(hardLimit);
+      for (final Map<String, dynamic> r in own) {
+        orderIds.add(r['id'] as String);
+      }
+
+      // (2) Имя заказчика → его orders.
+      final List<Map<String, dynamic>> custIds = await _client
+          .from('profiles')
+          .select('id')
+          .ilike('name', pattern)
+          .limit(hardLimit);
+      if (custIds.isNotEmpty) {
+        final List<String> ids = <String>[
+          for (final Map<String, dynamic> r in custIds) r['id'] as String,
+        ];
+        final List<Map<String, dynamic>> byCust = await _client
+            .from('orders')
+            .select('id')
+            .eq('status', 'published')
+            .inFilter('customer_id', ids)
+            .limit(hardLimit);
+        for (final Map<String, dynamic> r in byCust) {
+          orderIds.add(r['id'] as String);
+        }
+      }
+
+      // (3) Совпадение со справочником: техника / категория работ.
+      final String sLower = s.toLowerCase();
+      final List<int> matchedMachIds = <int>[
+        for (final MapEntry<String, int> e in _machineryTitleToId.entries)
+          if (e.key.toLowerCase().contains(sLower)) e.value,
+      ];
+      final List<int> matchedCatIds = <int>[
+        for (final MapEntry<String, int> e in _categoryTitleToId.entries)
+          if (e.key.toLowerCase().contains(sLower)) e.value,
+      ];
+      if (matchedMachIds.isNotEmpty) {
+        final List<Map<String, dynamic>> r = await _client
+            .from('orders')
+            .select('id')
+            .eq('status', 'published')
+            .overlaps('machinery_ids', matchedMachIds)
+            .limit(hardLimit);
+        for (final Map<String, dynamic> x in r) {
+          orderIds.add(x['id'] as String);
+        }
+      }
+      if (matchedCatIds.isNotEmpty) {
+        final List<Map<String, dynamic>> r = await _client
+            .from('orders')
+            .select('id')
+            .eq('status', 'published')
+            .overlaps('category_ids', matchedCatIds)
+            .limit(hardLimit);
+        for (final Map<String, dynamic> x in r) {
+          orderIds.add(x['id'] as String);
+        }
+      }
+
+      if (orderIds.isEmpty) {
+        return <OrderListItem>[];
+      }
+      searchOrderIds = orderIds;
+    }
+
     // Собираем фильтр в PostgrestFilterBuilder (до .order/.limit), чтобы
     // можно было последовательно навешивать условия.
     PostgrestFilterBuilder<List<Map<String, dynamic>>> q = _client
@@ -147,13 +234,8 @@ class CatalogService {
       q = q.overlaps('category_ids', categoryIds);
     }
 
-    final String? s = search?.trim();
-    if (s != null && s.isNotEmpty) {
-      // Запятая ломает синтаксис or-фильтра PostgREST; `%` и `_` —
-      // wildcard-метасимволы LIKE/ILIKE: без экранирования юзер,
-      // ищущий «50%», ловит совпадения по любым строкам с «50».
-      final String esc = _escapeLike(s).replaceAll(',', ' ');
-      q = q.or('title.ilike.%$esc%,address.ilike.%$esc%');
+    if (searchOrderIds != null) {
+      q = q.inFilter('id', searchOrderIds.toList());
     }
     if (dateFrom != null) {
       q = q.gte('date_from', _isoDate(dateFrom));
@@ -647,6 +729,17 @@ class CatalogService {
   /// INSERT в `order_matches` (initiated_by='executor', status='awaiting_customer').
   /// Цена автоматически снапшотится триггером из `services(service_id)`.
   /// Возвращает id созданного мэтча.
+  ///
+  /// Бросает [MatchAlreadyTakenException], если:
+  ///   * заказ уже не публикуется (cancelled/archived/draft) — отклик
+  ///     бессмысленный, исполнителю просто покажем понятное сообщение;
+  ///   * по этому заказу уже зафиксирован `accepted` или
+  ///     `awaiting_executor` мэтч (заказчик уже выбрал кого-то или
+  ///     ждёт ответа от конкретного исполнителя — приём новых
+  ///     откликов остановлен);
+  ///   * этот же исполнитель уже откликался / был приглашён на этот
+  ///     заказ (UNIQUE-индекс `order_matches_non_completed_unique`
+  ///     вернёт 23505, который мы перехватываем).
   Future<String> respondToOrder({
     required String orderId,
     required String serviceId,
@@ -655,17 +748,51 @@ class CatalogService {
     if (user == null) {
       throw const AuthException('Нет активной сессии');
     }
-    final Map<String, dynamic> row = await _client
+
+    // (1) Заказ должен быть в `published`. cancelled/archived/draft —
+    // нельзя откликаться. На сервере RLS этого может не покрывать
+    // напрямую, поэтому проверяем явно.
+    final Map<String, dynamic>? order = await _client
+        .from('orders')
+        .select('status')
+        .eq('id', orderId)
+        .maybeSingle();
+    if (order == null || order['status'] != 'published') {
+      throw const MatchAlreadyTakenException();
+    }
+
+    // (2) Уже есть «активный» мэтч (accepted / awaiting_executor) — приём
+    // откликов закрыт, отклик создавать нельзя.
+    final List<Map<String, dynamic>> active = await _client
         .from('order_matches')
-        .insert(<String, dynamic>{
-          'order_id': orderId,
-          'executor_id': user.id,
-          'service_id': serviceId,
-          'initiated_by': 'executor',
-          'status': 'awaiting_customer',
-        })
         .select('id')
-        .single();
+        .eq('order_id', orderId)
+        .inFilter('status', <String>['awaiting_executor', 'accepted'])
+        .limit(1);
+    if (active.isNotEmpty) {
+      throw const MatchAlreadyTakenException();
+    }
+
+    final Map<String, dynamic> row;
+    try {
+      row = await _client
+          .from('order_matches')
+          .insert(<String, dynamic>{
+            'order_id': orderId,
+            'executor_id': user.id,
+            'service_id': serviceId,
+            'initiated_by': 'executor',
+            'status': 'awaiting_customer',
+          })
+          .select('id')
+          .single();
+    } on PostgrestException catch (e) {
+      if (e.code == '23505') {
+        // На пару (order_id, executor_id) уже есть не-completed мэтч.
+        throw const MatchAlreadyTakenException();
+      }
+      rethrow;
+    }
     return row['id'] as String;
   }
 

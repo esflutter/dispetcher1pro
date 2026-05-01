@@ -123,7 +123,16 @@ class _CatalogFilterScreenState extends State<CatalogFilterScreen> {
     AppliedFilter.timeFrom = _timeFrom;
     AppliedFilter.timeTo = _timeTo;
     AppliedFilter.wholeDay = _wholeDay;
-    AppliedFilter.radiusKm = _radiusKm;
+    // Радиус без адреса бессмысленен — сбрасываем оба. С адресом
+    // радиус сохраняем даже без geo_lat/lon (DaData не всегда
+    // возвращает координаты для регионов/областей): фильтр в
+    // `listPublishedOrders` деградирует до текстового ilike по
+    // `orders.address`, а чип «В радиусе X км» в выдаче сигнализирует
+    // пользователю об активном фильтре.
+    final bool radiusUsable = _radiusKm != null &&
+        _address != null &&
+        _address!.trim().isNotEmpty;
+    AppliedFilter.radiusKm = radiusUsable ? _radiusKm : null;
     AppliedFilter.address = _address;
     AppliedFilter.addressLat = _addressLat;
     AppliedFilter.addressLng = _addressLng;

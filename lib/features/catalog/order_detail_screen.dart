@@ -6,6 +6,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:dispatcher_1/core/catalog/catalog_service.dart';
 import 'package:dispatcher_1/core/catalog/format.dart';
 import 'package:dispatcher_1/core/catalog/models.dart';
+import 'package:dispatcher_1/core/my_orders/my_orders_service.dart'
+    show MatchAlreadyTakenException;
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
 import 'package:dispatcher_1/core/widgets/clickable_address.dart';
@@ -205,6 +207,21 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
         context: context,
         barrierColor: Colors.black.withValues(alpha: 0.35),
         builder: (_) => RespondModalDialog(verified: true),
+      );
+    } on MatchAlreadyTakenException {
+      if (!mounted) return;
+      setState(() {
+        _justResponded = true;
+        _responding = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Откликнуться на этот заказ нельзя: он уже снят с публикации '
+            'или заказчик уже выбрал исполнителя.',
+          ),
+          duration: Duration(seconds: 4),
+        ),
       );
     } on PostgrestException catch (e) {
       if (!mounted) return;

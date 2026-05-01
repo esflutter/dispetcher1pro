@@ -89,7 +89,10 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
   }
 
   void _refresh() {
-    if (mounted) setState(() {});
+    // На revision++ пересобираем future — просто setState без замены
+    // future перерисовывал тот же snapshot из FutureBuilder и новый
+    // отзыв так и не появлялся в списке до перезахода на экран.
+    if (mounted) setState(() => _futureDb = _loadFromDb());
   }
 
   Future<_ReviewsBundle?> _loadFromDb() async {

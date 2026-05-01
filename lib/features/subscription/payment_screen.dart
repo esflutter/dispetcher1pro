@@ -107,14 +107,27 @@ class _PaymentScreenState extends State<PaymentScreen> {
         '/subscription/payment/result?id=${Uri.encodeComponent(result.paymentId)}',
       );
       if (result.confirmationUrl != null) {
-        // Открываем форму YooKassa в системном браузере. Если браузер
-        // вернёт false (на эмуляторе без браузера) — пользователю
-        // покажется экран ожидания со таймаутом.
-        // ignore: discarded_futures
-        launchUrl(
+        // Открываем форму YooKassa в системном браузере. Раньше
+        // вызывали через discarded_futures — на устройстве без
+        // браузера пользователь видел только экран ожидания и
+        // через 90 секунд таймаут, не понимая что произошло.
+        // Сейчас ждём результат и при `false` возвращаем на экран
+        // оплаты с явным сообщением.
+        final bool ok = await launchUrl(
           Uri.parse(result.confirmationUrl!),
           mode: LaunchMode.externalApplication,
         );
+        if (!ok && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Не удалось открыть форму оплаты. Установите браузер '
+                'и попробуйте снова.',
+              ),
+              duration: Duration(seconds: 4),
+            ),
+          );
+        }
       }
     } on PaymentError catch (e) {
       if (!mounted) return;

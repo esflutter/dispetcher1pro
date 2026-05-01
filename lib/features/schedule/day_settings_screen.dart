@@ -44,6 +44,11 @@ class _DaySettingsScreenState extends State<DaySettingsScreen> {
   String? _openPicker;
   int _radiusIndex = -1;
   String? _location;
+  // Координаты выбранного через DaData адреса. Без них серверный
+  // radius-матчинг для этого дня не работает: `schedule_day_overrides
+  // .location_lat/lng` остаются NULL.
+  double? _locationLat;
+  double? _locationLng;
 
   /// Якорь на раскрываемый пикер времени — чтобы после открытия
   /// скроллить форму до центра вьюпорта и пикер не выпадал ниже.
@@ -79,6 +84,8 @@ class _DaySettingsScreenState extends State<DaySettingsScreen> {
     _allDay = widget.initial.allDay;
     _radiusIndex = widget.initial.radiusIndex;
     _location = widget.initial.location;
+    _locationLat = widget.initial.locationLat;
+    _locationLng = widget.initial.locationLng;
     _selMach.addAll(widget.initial.machinery);
     _selCat.addAll(widget.initial.categories);
   }
@@ -136,6 +143,8 @@ class _DaySettingsScreenState extends State<DaySettingsScreen> {
                         allDay: _allDay,
                         radiusIndex: _radiusIndex,
                         location: _location,
+                        locationLat: _locationLat,
+                        locationLng: _locationLng,
                         machinery: Set<String>.from(_selMach),
                         categories: Set<String>.from(_selCat),
                         clearDayOff: widget.initialState == DayState.dayOff,
@@ -338,6 +347,8 @@ class _DaySettingsScreenState extends State<DaySettingsScreen> {
           if (result != null && mounted) {
             setState(() {
               _location = result.value;
+              _locationLat = result.lat;
+              _locationLng = result.lon;
               // Дефолт 10 км — день уезжает в БД с осмысленной зоной
               // действия. Юзер может сменить чипом на 20/50.
               if (_radiusIndex < 0) _radiusIndex = 0;

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:dispatcher_1/core/payments/payment_service.dart';
 import 'package:dispatcher_1/core/profile/profile_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_spacing.dart';
@@ -24,6 +25,31 @@ class SubscriptionScreen extends StatefulWidget {
 }
 
 class _SubscriptionScreenState extends State<SubscriptionScreen> {
+  /// Есть ли у юзера сохранённые карты в YooKassa. Подгружается асинхронно
+  /// при открытии экрана и обновляется после возврата с `/subscription/cards`
+  /// (юзер мог удалить последнюю — тогда кнопку «Способы оплаты» нужно
+  /// скрыть). Ошибка загрузки трактуется как «карт нет», чтобы не показывать
+  /// мёртвую кнопку, ведущую на пустой экран.
+  bool _hasSavedCards = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCards();
+  }
+
+  Future<void> _loadCards() async {
+    try {
+      final List<dynamic> cards =
+          await PaymentService.instance.listCards();
+      if (!mounted) return;
+      setState(() => _hasSavedCards = cards.isNotEmpty);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _hasSavedCards = false);
+    }
+  }
+
   SubscriptionStatus get _status {
     if (VerificationStatus.hasSubscription) return SubscriptionStatus.active;
     if (VerificationStatus.subscriptionPaidUntilText != null) {
@@ -138,14 +164,23 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     );
   }
 
+  Future<void> _openCards() async {
+    await context.push<void>('/subscription/cards');
+    // После возврата перезагружаем список — юзер мог удалить последнюю
+    // карту, тогда кнопку «Способы оплаты» больше показывать не нужно.
+    if (mounted) await _loadCards();
+  }
+
   @override
   Widget build(BuildContext context) {
+    final bool showPayButton = _status == SubscriptionStatus.inactive;
+    final bool showCardsButton = _hasSavedCards;
+    final bool showAnyBottomButton = showPayButton || showCardsButton;
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: const DarkSubAppBar(title: 'Информация о подписке'),
       floatingActionButton: Padding(
-        padding: EdgeInsets.only(
-            bottom: _status == SubscriptionStatus.inactive ? 88.h : 24.h),
+        padding: EdgeInsets.only(bottom: showAnyBottomButton ? 88.h : 24.h),
         child: AiAssistantFab(onTap: () => context.push('/assistant/chat')),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
@@ -177,7 +212,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
               child: _StatusCard(status: _status),
             ),
             const Spacer(),
-            if (_status == SubscriptionStatus.inactive)
+            if (showAnyBottomButton)
               Container(
                 decoration: BoxDecoration(
                   color: AppColors.background,
@@ -190,9 +225,23 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                   ],
                 ),
                 padding: EdgeInsets.fromLTRB(16.w, 12.h, 16.w, 16.h),
-                child: PrimaryButton(
-                  label: 'Оплатить подписку',
-                  onPressed: _openPaywall,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (showPayButton)
+                      PrimaryButton(
+                        label: 'Оплатить подписку',
+                        onPressed: _openPaywall,
+                      ),
+                    if (showPayButton && showCardsButton)
+                      SizedBox(height: 8.h),
+                    if (showCardsButton)
+                      PrimaryButton(
+                        label: 'Способы оплаты',
+                        onPressed: _openCards,
+                      ),
+                  ],
                 ),
               ),
           ],

@@ -32,6 +32,8 @@ class DaySettings {
     this.allDay = false,
     this.radiusIndex = -1,
     this.location,
+    this.locationLat,
+    this.locationLng,
     this.machinery = const <String>{},
     this.categories = const <String>{},
     this.clearDayOff = false,
@@ -67,6 +69,14 @@ class DaySettings {
   final bool allDay;
   final int radiusIndex;
   final String? location;
+
+  /// Координаты адреса, выбранного через DaData в шторке адреса дня.
+  /// Раньше координаты не сохранялись — `upsertOverride` отправлял в
+  /// БД только строку, и `schedule_day_overrides.location_lat/lng`
+  /// оставались NULL. Серверный radius-матчинг для этого дня не
+  /// работал.
+  final double? locationLat;
+  final double? locationLng;
   final Set<String> machinery;
   final Set<String> categories;
   final bool clearDayOff;
@@ -78,6 +88,8 @@ class DaySettings {
         allDay: allDay,
         radiusIndex: radiusIndex,
         location: location,
+        locationLat: locationLat,
+        locationLng: locationLng,
         machinery: machinery,
         categories: categories,
       );
@@ -482,6 +494,8 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
         wholeDay: wholeDay,
         radiusKm: radiusKm,
         locationAddress: updated.location,
+        locationLat: updated.locationLat,
+        locationLng: updated.locationLng,
         machineryTitles: updated.machinery.toList(),
         categoryTitles: updated.categories.toList(),
       );
@@ -576,6 +590,8 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
         wholeDay: s?.allDay ?? false,
         radiusKm: radiusKm,
         locationAddress: s?.location,
+        locationLat: s?.locationLat,
+        locationLng: s?.locationLng,
         machineryTitles: s?.machinery.toList() ?? const <String>[],
         categoryTitles: s?.categories.toList() ?? const <String>[],
       );
@@ -929,19 +945,38 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   }
 
   /// Удаление заказа из дня — вызывается при «Отклонить» /
-  /// «Отказаться» / «Отозвать отклик». В БД мэтч уезжает в
-  /// `rejected_by_executor`.
+  /// «Отказаться» / «Отозвать отклик». В БД мэтч уезжает в терминал.
+  /// Раньше карточка убиралась из UI ДО ответа БД — при сетевой
+  /// ошибке заказ оставался в БД, но в UI его не было до перезагрузки;
+  /// при двойном тапе уходило два UPDATE подряд. Сейчас ждём БД, и
+  /// при ошибке возвращаем карточку обратно.
   Future<void> _removeOrder(_ScheduledOrder order) async {
     final List<_ScheduledOrder>? list =
         _ordersByDate[_dateKey(_selectedDate)];
     if (list == null) return;
-    setState(() => list.remove(order));
+    final int origIdx = list.indexOf(order);
+    if (origIdx < 0) return;
+    setState(() => list.removeAt(origIdx));
     try {
-      // Семантически и withdraw, и declineMatch в БД — это
-      // переход в `rejected_by_executor`. Сервисные методы делают
-      // одно и то же, разница лишь в стартовом статусе мэтча.
-      await MyOrdersService.instance.declineMatch(order.matchId);
-    } catch (_) {/* silent */}
+      if (order.status == MyOrderStatus.offerSent) {
+        // awaiting_customer → expired (FSM не разрешает прямой
+        // rejected_by_executor из awaiting_customer).
+        await MyOrdersService.instance.withdraw(order.matchId);
+      } else {
+        // awaiting_executor / accepted → rejected_by_executor
+        await MyOrdersService.instance.declineMatch(order.matchId);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      // Возвращаем карточку на место — БД отвергла переход или сеть
+      // упала. Без этого UI расходится с базой.
+      setState(() {
+        list.insert(origIdx.clamp(0, list.length), order);
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Не удалось обновить заказ: $e')),
+      );
+    }
   }
 }
 

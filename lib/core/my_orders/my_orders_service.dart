@@ -51,13 +51,22 @@ class MyOrdersService {
     return rows.map(_fromRow).toList();
   }
 
-  /// Отзывает отклик (`awaiting_customer` → `rejected_by_executor`).
-  /// Отказ после `accepted` запрещён FSM-триггером.
+  /// Исполнитель отзывает свой отклик из `awaiting_customer`. FSM-
+  /// триггер `validate_match_transition` НЕ разрешает прямой переход
+  /// `awaiting_customer → rejected_by_executor` (только в `accepted`/
+  /// `rejected_by_customer`/`expired`). Используем `expired` как
+  /// нейтральный терминал — иначе UPDATE молча отбивался триггером,
+  /// мэтч оставался `awaiting_customer`, заказчик продолжал видеть
+  /// отозванный отклик. `.select().single()` обязательна, чтобы
+  /// «не нашлось ни одной строки» (RLS отказал, FSM не пустил)
+  /// выбрасывало исключение, а не было silent no-op.
   Future<void> withdraw(String matchId) async {
     await _client
         .from('order_matches')
-        .update(<String, dynamic>{'status': 'rejected_by_executor'})
-        .eq('id', matchId);
+        .update(<String, dynamic>{'status': 'expired'})
+        .eq('id', matchId)
+        .select('id')
+        .single();
   }
 
   /// Подтвердить мэтч (`awaiting_executor` → `accepted`).
@@ -70,7 +79,9 @@ class MyOrdersService {
       await _client
           .from('order_matches')
           .update(<String, dynamic>{'status': 'accepted'})
-          .eq('id', matchId);
+          .eq('id', matchId)
+          .select('id')
+          .single();
     } on PostgrestException catch (e) {
       if (e.code == '23505') {
         throw const MatchAlreadyTakenException();
@@ -85,7 +96,9 @@ class MyOrdersService {
     await _client
         .from('order_matches')
         .update(<String, dynamic>{'status': 'rejected_by_executor'})
-        .eq('id', matchId);
+        .eq('id', matchId)
+        .select('id')
+        .single();
   }
 
   /// Контакты заказчика (телефон/email) — доступны только после
