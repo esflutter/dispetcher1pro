@@ -38,6 +38,8 @@ class CustomerHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final bool hasAvatar =
+        avatarUrl != null && avatarUrl!.trim().isNotEmpty;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: <Widget>[
@@ -46,14 +48,30 @@ class CustomerHeader extends StatelessWidget {
             onTap: onTap,
             child: Row(
               children: <Widget>[
-                CircleAvatar(
-                  radius: 28.r,
-                  backgroundColor: AppColors.primaryTint,
-                  backgroundImage: (avatarUrl != null &&
-                          avatarUrl!.trim().isNotEmpty)
-                      ? NetworkImage(avatarUrl!) as ImageProvider
-                      : const AssetImage(
-                          'assets/images/catalog/avatar_placeholder.webp'),
+                // Тот же стиль fallback-аватара, что в AvatarCircle и
+                // на экране регистрации: серый круг с нейтральным
+                // силуэтом человечка. Никаких моковых лиц.
+                Container(
+                  width: 56.r,
+                  height: 56.r,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFEAEAEA),
+                    shape: BoxShape.circle,
+                  ),
+                  clipBehavior: Clip.hardEdge,
+                  child: hasAvatar
+                      ? Image.network(
+                          avatarUrl!,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, _, _) => Image.asset(
+                            'assets/icons/ui/avatar.webp',
+                            fit: BoxFit.cover,
+                          ),
+                        )
+                      : Image.asset(
+                          'assets/icons/ui/avatar.webp',
+                          fit: BoxFit.cover,
+                        ),
                 ),
                 SizedBox(width: 10.w),
                 Expanded(
@@ -72,28 +90,32 @@ class CustomerHeader extends StatelessWidget {
                       SizedBox(height: 2.h),
                       Row(
                         children: <Widget>[
-                          Image.asset(
-                            'assets/images/catalog/star.webp',
-                            width: 20.r,
-                            height: 20.r,
-                            errorBuilder: (_, _, _) => Icon(
-                              Icons.star_rounded,
-                              size: 20.r,
-                              color: AppColors.ratingStar,
+                          // При нуле отзывов рейтинг бессмысленен —
+                          // звезду и число прячем.
+                          if (reviews > 0) ...<Widget>[
+                            Image.asset(
+                              'assets/images/catalog/star.webp',
+                              width: 20.r,
+                              height: 20.r,
+                              errorBuilder: (_, _, _) => Icon(
+                                Icons.star_rounded,
+                                size: 20.r,
+                                color: AppColors.ratingStar,
+                              ),
                             ),
-                          ),
-                          SizedBox(width: 4.w),
-                          Text(
-                            _fmtRating(rating),
-                            style: TextStyle(
-                              fontFamily: 'Roboto',
-                              fontSize: 16.sp,
-                              fontWeight: FontWeight.w400,
-                              height: 1.3,
-                              color: AppColors.textPrimary,
+                            SizedBox(width: 4.w),
+                            Text(
+                              _fmtRating(rating),
+                              style: TextStyle(
+                                fontFamily: 'Roboto',
+                                fontSize: 16.sp,
+                                fontWeight: FontWeight.w400,
+                                height: 1.3,
+                                color: AppColors.textPrimary,
+                              ),
                             ),
-                          ),
-                          SizedBox(width: 16.w),
+                            SizedBox(width: 16.w),
+                          ],
                           GestureDetector(
                             behavior: HitTestBehavior.opaque,
                             onTap: onReviewsTap,

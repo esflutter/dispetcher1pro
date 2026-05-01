@@ -183,14 +183,16 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
             final List<Review> reviews =
                 bundle?.reviews ?? const <Review>[];
             // Источник правды — БД-агрегат (`profiles.rating_as_*` /
-            // `review_count_as_*`). Берём в порядке: переданный из
-            // карточки → загруженный нами по targetId → фолбэк по
-            // выборке (расходится при >50 отзывах, но лучше показать
-            // что-то, чем 0).
+            // `review_count_as_*`), он подтягивается каждый раз при
+            // открытии экрана. Переданные `initialCount`/`initialRating`
+            // используем только как plug-in пока БД ещё не ответила —
+            // иначе устаревший 0 из родителя перекроет свежее значение,
+            // и после оставленного отзыва шапка показывала бы «0,0 / 0
+            // отзывов» рядом с уже видным внизу отзывом.
             final int count =
-                widget.initialCount ?? bundle?.totalCount ?? reviews.length;
-            final double aggregate = widget.initialRating ??
-                bundle?.aggregate ??
+                bundle?.totalCount ?? widget.initialCount ?? reviews.length;
+            final double aggregate = bundle?.aggregate ??
+                widget.initialRating ??
                 (reviews.isEmpty
                     ? 0
                     : reviews.fold<int>(0, (int s, Review r) => s + r.rating) /

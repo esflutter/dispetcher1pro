@@ -247,17 +247,19 @@ class _HeaderBlock extends StatelessWidget {
               SizedBox(height: 4.h),
               Row(
                 children: <Widget>[
-                  Image.asset(
-                    'assets/images/catalog/star.webp',
-                    width: 20.r,
-                    height: 20.r,
-                    errorBuilder: (_, _, _) => Icon(Icons.star_rounded,
-                        size: 20.r, color: AppColors.ratingStar),
-                  ),
-                  SizedBox(width: 4.w),
-                  Text(_fmtRating(profile.ratingAsCustomer),
-                      style: AppTextStyles.body),
-                  SizedBox(width: 16.w),
+                  if (profile.reviewCountAsCustomer > 0) ...<Widget>[
+                    Image.asset(
+                      'assets/images/catalog/star.webp',
+                      width: 20.r,
+                      height: 20.r,
+                      errorBuilder: (_, _, _) => Icon(Icons.star_rounded,
+                          size: 20.r, color: AppColors.ratingStar),
+                    ),
+                    SizedBox(width: 4.w),
+                    Text(_fmtRating(profile.ratingAsCustomer),
+                        style: AppTextStyles.body),
+                    SizedBox(width: 16.w),
+                  ],
                   GestureDetector(
                     behavior: HitTestBehavior.opaque,
                     onTap: () => Navigator.of(context).push(

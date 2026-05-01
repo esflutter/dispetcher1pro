@@ -55,6 +55,12 @@ class MyOrderDetailScreen extends StatefulWidget {
   /// с совпадающим `display_number`.
   static void resetReviewedOrders() => MyOrderDetailScreen._reviewedOrders.clear();
 
+  /// Проверка локальной метки «уже оставил отзыв» — нужна списку
+  /// заказов, чтобы текст пилюли «Завершён. Оставьте отзыв» сменить на
+  /// короткое «Завершён» сразу после возврата с экрана отзыва.
+  static bool isOrderReviewed(String orderNumber) =>
+      MyOrderDetailScreen._reviewedOrders.contains(orderNumber);
+
   const MyOrderDetailScreen({
     super.key,
     required this.state,
@@ -67,6 +73,7 @@ class MyOrderDetailScreen extends StatefulWidget {
     this.customerName = '',
     this.customerPhone = '',
     this.customerEmail,
+    this.customerAvatarUrl,
     this.customerRating = 0,
     this.customerReviews = 0,
     this.publishedAgo = '',
@@ -96,6 +103,7 @@ class MyOrderDetailScreen extends StatefulWidget {
   final String customerName;
   final String customerPhone;
   final String? customerEmail;
+  final String? customerAvatarUrl;
   final double customerRating;
   final int customerReviews;
   final String publishedAgo;
@@ -304,15 +312,27 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
           Expanded(
             child: SingleChildScrollView(
               controller: _scrollCtrl,
-              padding: EdgeInsets.fromLTRB(16.w, 16.h, 16.w,
-                  _hasBottomBar ? 16.h : 16.h + MediaQuery.of(context).padding.bottom),
+              // Нижний отступ зависит от наличия панели кнопок: если
+              // кнопки есть — отбиваемся от их верхнего края (16.h),
+              // т.к. сама панель уже учитывает системный safe-area.
+              // Если кнопок нет — добавляем safe-area сюда, иначе
+              // последняя секция уезжает под жесты/навбар.
+              padding: EdgeInsets.fromLTRB(
+                16.w,
+                16.h,
+                16.w,
+                _hasBottomBar
+                    ? 16.h
+                    : 16.h + MediaQuery.of(context).padding.bottom,
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  OrderStatusPill(status: _pillStatus),
+                  OrderStatusPill(status: _pillStatus, reviewLeft: _reviewLeft),
                   SizedBox(height: 12.h),
                   CustomerHeader(
                     name: widget.customerName,
+                    avatarUrl: widget.customerAvatarUrl,
                     rating: widget.customerRating,
                     reviews: widget.customerReviews,
                     onTap: widget.customerId == null

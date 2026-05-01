@@ -41,7 +41,7 @@ class MyOrdersService {
           'date_from, date_to, time_from, time_to, exact_date, whole_day, '
           'machinery_ids, category_ids, works, photos, '
           'customer:profiles!orders_customer_id_fkey('
-          'id, name, rating_as_customer, review_count_as_customer)), '
+          'id, name, avatar_url, rating_as_customer, review_count_as_customer)), '
           'service:services!order_matches_service_id_fkey(machinery_ids)',
         )
         .eq('executor_id', user.id)
@@ -195,6 +195,7 @@ class MyOrdersService {
       serviceMachineryTitle: serviceMachineryTitle,
       customerId: customer['id'] as String,
       customerName: (customer['name'] as String?) ?? 'Пользователь',
+      customerAvatarUrl: customer['avatar_url'] as String?,
       customerRating: _toDouble(customer['rating_as_customer']) ?? 0,
       customerReviewCount:
           (customer['review_count_as_customer'] as int?) ?? 0,
@@ -212,18 +213,23 @@ class MyOrdersService {
   static String _formatWorkLine(Map<String, dynamic> w) {
     final String name = (w['name'] as String?)?.trim() ?? '';
     if (name.isEmpty) return '';
-    final num? volume = w['volume'] as num?;
+    // volume хранится как string maxLength=10 после миграции
+    // `orders_works_volume_text_with_dimensions` (юзер вводит «40»
+    // или «10x30x5»). Старые записи могли быть числовыми — поддерживаем оба.
+    final dynamic vRaw = w['volume'];
+    final String? volStr = vRaw is String
+        ? (vRaw.isEmpty ? null : vRaw)
+        : vRaw is num
+            ? (vRaw == vRaw.toInt() ? vRaw.toInt().toString() : vRaw.toString())
+            : null;
     final String? unit = w['unit'] as String?;
-    if (volume == null) return name;
+    if (volStr == null) return name;
     final String unitUi = switch (unit) {
       'm' => 'м',
       'm2' => 'м²',
       'm3' => 'м³',
       _ => '',
     };
-    final String volStr = volume == volume.toInt()
-        ? volume.toInt().toString()
-        : volume.toString();
     return '$name — $volStr $unitUi'.trim();
   }
 }

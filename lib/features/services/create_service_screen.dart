@@ -56,6 +56,11 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
 
   int _radiusIndex = -1;
   String? _address;
+  /// Координаты выбранного из DaData адреса. Сохраняем рядом с `_address`,
+  /// чтобы при INSERT/UPDATE услуги пробросить их в БД (без них радиус-
+  /// фильтр у заказчика не найдёт услугу).
+  double? _addressLat;
+  double? _addressLng;
   final List<String> _photos = [];
 
   final Set<String> _selCat = {};
@@ -174,6 +179,8 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
           ..clear()
           ..addAll(d.photos);
         _address = d.locationAddress;
+        _addressLat = d.locationLat;
+        _addressLng = d.locationLng;
         _radiusIndex = switch (d.radiusKm) {
           10 => 0,
           20 => 1,
@@ -282,6 +289,8 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
       minHours: (minHours != null && minHours > 0) ? minHours : null,
       photos: uploadedUrls,
       locationAddress: _address,
+      locationLat: _addressLat,
+      locationLng: _addressLng,
       radiusKm: radiusKm,
     );
   }
@@ -361,7 +370,16 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
       builder: (_) => const AddressBottomSheet(),
     );
     if (result != null && mounted) {
-      setState(() => _address = result.value);
+      setState(() {
+        _address = result.value;
+        _addressLat = result.lat;
+        _addressLng = result.lon;
+        // Дефолт 10 км сразу после выбора адреса — иначе юзер ввёл
+        // локацию, не тапнул чип радиуса, и кнопка «Опубликовать»
+        // остаётся disabled (`_canCreate` требует _radiusIndex >= 0).
+        // Можно вручную поменять на 20/50.
+        if (_radiusIndex < 0) _radiusIndex = 0;
+      });
     }
   }
 

@@ -25,6 +25,7 @@ class PaymentResultScreen extends StatefulWidget {
 class _PaymentResultScreenState extends State<PaymentResultScreen> {
   PaymentStatus _status = PaymentStatus.pending;
   bool _polling = true;
+  bool _disposed = false;
 
   @override
   void initState() {
@@ -32,9 +33,25 @@ class _PaymentResultScreenState extends State<PaymentResultScreen> {
     _startPolling();
   }
 
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
+  }
+
   Future<void> _startPolling() async {
+    // Прямой заход на /subscription/payment/result без id (битый
+    // deep-link / ручная навигация) — 90 секунд поллить нечего.
+    if (widget.paymentId.isEmpty) {
+      setState(() {
+        _status = PaymentStatus.unknown;
+        _polling = false;
+      });
+      return;
+    }
     final PaymentStatus s = await PaymentService.instance.pollPaymentStatus(
       widget.paymentId,
+      isCancelled: () => _disposed,
     );
     if (!mounted) return;
     setState(() {
@@ -137,26 +154,31 @@ class _PaymentResultScreenState extends State<PaymentResultScreen> {
 
     final bool ok = _status == PaymentStatus.succeeded;
     final bool failed = _status == PaymentStatus.failed;
+    final bool unknown = _status == PaymentStatus.unknown;
     final IconData icon = ok
         ? Icons.check_circle_rounded
-        : failed
+        : (failed || unknown)
             ? Icons.cancel_rounded
             : Icons.access_time_rounded;
     final Color iconColor = ok
         ? AppColors.success
-        : failed
+        : (failed || unknown)
             ? AppColors.error
             : AppColors.textSecondary;
     final String title = ok
         ? 'Оплата прошла'
         : failed
             ? 'Платёж не прошёл'
-            : 'Платёж в обработке';
+            : unknown
+                ? 'Платёж не найден'
+                : 'Платёж в обработке';
     final String subtitle = ok
         ? 'Подписка активирована. Заказы доступны.'
         : failed
             ? 'Списание не прошло. Можно попробовать ещё раз.'
-            : 'Статус ещё не пришёл от банка. Загляните в подписку через минуту.';
+            : unknown
+                ? 'Не удалось получить данные о платеже. Проверьте статус подписки в профиле.'
+                : 'Статус ещё не пришёл от банка. Загляните в подписку через минуту.';
 
     return Column(
       children: <Widget>[

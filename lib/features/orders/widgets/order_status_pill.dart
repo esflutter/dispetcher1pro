@@ -28,6 +28,10 @@ enum MyOrderStatus {
 }
 
 extension MyOrderStatusX on MyOrderStatus {
+  /// Базовая подпись пилюли. Для [MyOrderStatus.completed] возвращает
+  /// дефолтный «Завершён. Оставьте отзыв» — т.е. как будто отзыв ещё не
+  /// оставлен. Когда отзыв уже оставлен, виджет [OrderStatusPill]
+  /// подменяет надпись на «Завершён» через параметр `reviewLeft`.
   String get label {
     switch (this) {
       case MyOrderStatus.offerSent:
@@ -37,7 +41,7 @@ extension MyOrderStatusX on MyOrderStatus {
       case MyOrderStatus.accepted:
         return 'Свяжитесь с заказчиком';
       case MyOrderStatus.completed:
-        return 'Завершён';
+        return 'Завершён. Оставьте отзыв';
       case MyOrderStatus.rejectedOther:
         return 'Выбран другой исполнитель';
       case MyOrderStatus.rejectedDeclined:
@@ -86,12 +90,24 @@ extension MyOrderStatusX on MyOrderStatus {
 /// Полноразмерная пилюля статуса (на всю ширину контейнера).
 /// Используется и в карточках списка, и в экране деталей.
 class OrderStatusPill extends StatelessWidget {
-  const OrderStatusPill({super.key, required this.status});
+  const OrderStatusPill({
+    super.key,
+    required this.status,
+    this.reviewLeft = false,
+  });
 
   final MyOrderStatus status;
 
+  /// Для [MyOrderStatus.completed]: если отзыв уже оставлен — показываем
+  /// короткое «Завершён» без призыва. По умолчанию `false`, т.е. дефолт
+  /// — «Завершён. Оставьте отзыв».
+  final bool reviewLeft;
+
   @override
   Widget build(BuildContext context) {
+    final String label = (status == MyOrderStatus.completed && reviewLeft)
+        ? 'Завершён'
+        : status.label;
     return Container(
       width: double.infinity,
       height: 25.h,
@@ -102,7 +118,7 @@ class OrderStatusPill extends StatelessWidget {
         borderRadius: BorderRadius.circular(100.r),
       ),
       child: Text(
-        status.label,
+        label,
         textAlign: TextAlign.center,
         style: TextStyle(
           fontFamily: 'Roboto',

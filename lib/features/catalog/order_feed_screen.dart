@@ -1,14 +1,17 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
+import 'package:latlong2/latlong.dart';
 
 import 'package:dispatcher_1/core/catalog/catalog_service.dart';
 import 'package:dispatcher_1/core/catalog/format.dart';
 import 'package:dispatcher_1/core/catalog/models.dart';
 import 'package:dispatcher_1/core/dadata/dadata_service.dart';
 import 'package:dispatcher_1/core/location_permission.dart';
+import 'package:dispatcher_1/core/utils/mock_coords.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
 import 'package:dispatcher_1/features/catalog/catalog_filter_screen.dart';
@@ -397,6 +400,7 @@ class _OrdersMapWithCard extends StatefulWidget {
 }
 
 class _OrdersMapWithCardState extends State<_OrdersMapWithCard> {
+  final MapController _mapController = MapController();
   int _current = 0;
   int _direction = 1;
 
@@ -424,12 +428,45 @@ class _OrdersMapWithCardState extends State<_OrdersMapWithCard> {
       _current = (_current + delta) % widget.orders.length;
       if (_current < 0) _current += widget.orders.length;
     });
+    _centerOnOrder(widget.orders[_current]);
+  }
+
+  /// Тап по маркеру — выбираем соответствующий заказ в карточке
+  /// и одновременно центрируем камеру (тот же UX, что на полноэкранной
+  /// карте `OrdersMapFullScreen`).
+  void _onMarkerTap(String id) {
+    final int idx =
+        widget.orders.indexWhere((OrderListItem o) => o.id == id);
+    if (idx < 0 || idx == _current) return;
+    setState(() {
+      _direction = idx > _current ? 1 : -1;
+      _current = idx;
+    });
+    _centerOnOrder(widget.orders[idx]);
+  }
+
+  /// Двигает камеру к маркеру заказа без изменения текущего zoom.
+  /// Если у заказа нет координат в БД — используем тот же fallback
+  /// `mockMoscowCoordsForId`, что использует [OrdersMapScreen] при
+  /// рендере маркеров: иначе камера не двигается, и юзер думает,
+  /// что свайп сломан.
+  void _centerOnOrder(OrderListItem o) {
+    final LatLng target = (o.latitude != null && o.longitude != null)
+        ? LatLng(o.latitude!, o.longitude!)
+        : mockMoscowCoordsForId(o.id);
+    try {
+      final double currentZoom = _mapController.camera.zoom;
+      _mapController.move(target, currentZoom);
+    } catch (_) {/* карта не успела отрендериться */}
   }
 
   @override
   Widget build(BuildContext context) {
     if (widget.orders.isEmpty) {
-      return const OrdersMapScreen();
+      return OrdersMapScreen(
+        mapController: _mapController,
+        showZoomControls: true,
+      );
     }
     final int idx = _current % widget.orders.length;
     final OrderListItem o = widget.orders[idx];
@@ -444,7 +481,15 @@ class _OrdersMapWithCardState extends State<_OrdersMapWithCard> {
         .toList();
     return Stack(
       children: <Widget>[
-        Positioned.fill(child: OrdersMapScreen(markers: markers)),
+        Positioned.fill(
+          child: OrdersMapScreen(
+            markers: markers,
+            mapController: _mapController,
+            showZoomControls: true,
+            selectedMarkerId: o.id,
+            onMarkerTap: _onMarkerTap,
+          ),
+        ),
         Positioned(
           left: 0,
           right: 0,

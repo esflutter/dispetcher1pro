@@ -117,14 +117,25 @@ class OrderListItem {
 class WorkItem {
   const WorkItem({required this.name, this.volume, this.unit});
   final String name;
-  final double? volume;
+  /// Свободный текст до 10 символов: «22», «30», «10x30x5» и т.п.
+  /// До миграции жил как `double?`; для legacy-данных fromJson
+  /// сконвертирует число в строку.
+  final String? volume;
   final String? unit; // 'm' / 'm2' / 'm3'
 
-  factory WorkItem.fromJson(Map<String, dynamic> j) => WorkItem(
-        name: (j['name'] as String?) ?? '',
-        volume: (j['volume'] as num?)?.toDouble(),
-        unit: j['unit'] as String?,
-      );
+  factory WorkItem.fromJson(Map<String, dynamic> j) {
+    final dynamic v = j['volume'];
+    final String? volStr = v is String
+        ? v
+        : v is num
+            ? (v == v.truncateToDouble() ? v.toInt().toString() : v.toString())
+            : null;
+    return WorkItem(
+      name: (j['name'] as String?) ?? '',
+      volume: volStr,
+      unit: j['unit'] as String?,
+    );
+  }
 }
 
 /// Полные детали одного заказа.

@@ -204,6 +204,8 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
           final bool isLast = i == items.length - 1;
           final MyOrderStatus uiStatus = _uiStatus(m.status);
           final String rentDate = _rentDate(m);
+          final String orderNumber =
+              '№${m.orderDisplayNumber.toString().padLeft(8, '0')}';
           // Телефон тянется только для accepted/completed мэтчей. У
           // остальных карточек звонить ещё рано — кнопка должна быть
           // визуально, но не выполнять никакого действия.
@@ -218,6 +220,8 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
                 rentDate: rentDate,
                 address: m.orderAddress,
                 publishedAgo: formatPublishedAgo(m.createdAt),
+                reviewLeft:
+                    MyOrderDetailScreen.isOrderReviewed(orderNumber),
                 customerName: m.customerName,
                 customerPhone: phone,
                 onTap: () => Navigator.of(context).push(
@@ -236,6 +240,7 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
                           '№${m.orderDisplayNumber.toString().padLeft(8, '0')}',
                       customerId: m.customerId,
                       customerName: m.customerName,
+                      customerAvatarUrl: m.customerAvatarUrl,
                       customerPhone: phone ?? '',
                       customerEmail: null,
                       customerRating: m.customerRating,

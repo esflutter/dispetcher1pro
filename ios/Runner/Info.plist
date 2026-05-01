@@ -53,5 +53,29 @@
 		<true/>
 		<key>UIStatusBarHidden</key>
 		<false/>
+		<!-- Deep link для возврата из браузерной формы YooKassa.
+		     dispatcher1pro://payment/result?id=... обрабатывается
+		     пакетом app_links и роутится на экран статуса платежа. -->
+		<!-- Без `yandexmaps` в LSApplicationQueriesSchemes canLaunchUrl
+		     для `yandexmaps://...` всегда возвращает false на iOS 9+,
+		     и наш «открыть в Яндекс Картах если установлены» молча
+		     падает в web-фолбэк даже когда приложение установлено. -->
+		<key>LSApplicationQueriesSchemes</key>
+		<array>
+			<string>yandexmaps</string>
+		</array>
+		<key>CFBundleURLTypes</key>
+		<array>
+			<dict>
+				<key>CFBundleTypeRole</key>
+				<string>Editor</string>
+				<key>CFBundleURLName</key>
+				<string>com.dispatcher1.pro.deeplink</string>
+				<key>CFBundleURLSchemes</key>
+				<array>
+					<string>dispatcher1pro</string>
+				</array>
+			</dict>
+		</array>
 	</dict>
 </plist>

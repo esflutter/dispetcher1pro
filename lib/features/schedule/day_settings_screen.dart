@@ -336,7 +336,12 @@ class _DaySettingsScreenState extends State<DaySettingsScreen> {
             builder: (_) => const AddressBottomSheet(),
           );
           if (result != null && mounted) {
-            setState(() => _location = result.value);
+            setState(() {
+              _location = result.value;
+              // Дефолт 10 км — день уезжает в БД с осмысленной зоной
+              // действия. Юзер может сменить чипом на 20/50.
+              if (_radiusIndex < 0) _radiusIndex = 0;
+            });
           }
         },
         child: Container(

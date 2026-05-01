@@ -24,6 +24,7 @@ import 'package:dispatcher_1/features/catalog/catalog_filter_screen.dart';
 import 'package:dispatcher_1/features/catalog/widgets/catalog_search_bar.dart';
 
 import 'executor_card_screen.dart';
+import 'widgets/executor_card_alerts.dart';
 
 /// Длинная форма создания / редактирования карточки исполнителя.
 /// Поля из Figma: ФИО, телефон, местоположение (радиус), спецтехника,
@@ -109,14 +110,22 @@ class _EditExecutorCardScreenState extends State<EditExecutorCardScreen> {
     // ignore: discarded_futures
     _loadSavedCoords();
 
-    _nameFocus.addListener(() {
+    _nameFocus.addListener(() async {
       if (!_nameFocus.hasFocus) {
         final String value = _nameCtrl.text.trim();
         if (value.isEmpty) {
           // Пустое имя не сохраняем — откатываем к последнему валидному.
           _nameCtrl.text = ExecutorCardData.name;
-        } else {
+        } else if (value != ExecutorCardData.name) {
+          // Оптимистично пишем в локальный кэш + UPDATE в БД. Email-фокус
+          // тут же ниже это уже делает; для имени раньше DB-запись была
+          // только на dispose, и при focus-blur новое имя могло стать
+          // локальным до выхода с экрана, а в БД не уйти, если юзер не
+          // покинул экран сам (например, тапнул Save сверху).
           ExecutorCardData.name = value;
+          try {
+            await ProfileService.instance.update(name: value);
+          } catch (_) {/* silent */}
         }
       }
     });
@@ -128,7 +137,10 @@ class _EditExecutorCardScreenState extends State<EditExecutorCardScreen> {
           setState(() => _emailError = null);
         }
       } else {
-        final String value = _emailCtrl.text.trim();
+        // Нормализуем регистр для хранения — иначе один и тот же ящик
+        // может оказаться в БД дважды («User@x.com» / «user@x.com»).
+        // Контроллер не трогаем — пусть юзер видит вариант «как ввёл».
+        final String value = _emailCtrl.text.trim().toLowerCase();
         final bool valid = isValidEmail(value);
         if (valid) {
           CropResult.userEmail = value;
@@ -169,17 +181,26 @@ class _EditExecutorCardScreenState extends State<EditExecutorCardScreen> {
     // если пользователь меняет имя/email и сразу жмёт «Сохранить» или
     // «Назад», листенер не срабатывал и в БД оставалось старое.
     // Дублируем запись здесь (fire-and-forget — экран размонтирован).
+    // Rollback при ошибке DB: иначе в локальном кэше окажется новое
+    // значение, а в БД — старое; следующий loadMine() тихо вернёт UI
+    // к старому имени/email и юзер потеряет правки без обратной связи.
     final String name = _nameCtrl.text.trim();
     if (name.isNotEmpty && name != ExecutorCardData.name) {
+      final String prev = ExecutorCardData.name;
       ExecutorCardData.name = name;
       // ignore: discarded_futures
-      ProfileService.instance.update(name: name).catchError((_) {});
+      ProfileService.instance.update(name: name).catchError((Object _) {
+        ExecutorCardData.name = prev;
+      });
     }
-    final String email = _emailCtrl.text.trim();
+    final String email = _emailCtrl.text.trim().toLowerCase();
     if (isValidEmail(email) && email != CropResult.userEmail) {
+      final String prev = CropResult.userEmail;
       CropResult.userEmail = email;
       // ignore: discarded_futures
-      ProfileService.instance.updatePrivateEmail(email).catchError((_) {});
+      ProfileService.instance.updatePrivateEmail(email).catchError((Object _) {
+        CropResult.userEmail = prev;
+      });
     }
     _location.dispose();
     _experience.dispose();
@@ -281,6 +302,12 @@ class _EditExecutorCardScreenState extends State<EditExecutorCardScreen> {
                       _locationLat = result.lat;
                       _locationLng = result.lon;
                       _userPickedNewAddress = true;
+                      // Если радиус ещё не выставлен — дефолт 10 км.
+                      // Иначе исполнитель ввёл адрес, не выбрал чип, и
+                      // карточка тихо не публикуется (CHECK требует
+                      // radius_km для is_published=true). Юзер может
+                      // сменить вручную на 20/50 км.
+                      if (_radiusIndex < 0) _radiusIndex = 0;
                     });
                   }
                 },
@@ -433,6 +460,19 @@ class _EditExecutorCardScreenState extends State<EditExecutorCardScreen> {
               child: PrimaryButton(
                 label: 'Сохранить',
                 onPressed: () async {
+                  // Без местоположения карточка не попадает в каталог —
+                  // матчинг работает по координатам + радиусу. Поэтому
+                  // явно предупреждаем юзера, чтобы он понимал
+                  // последствия. По «Вернуться» — выходим, ничего не
+                  // сохраняем (юзер увидит свой уже введённый текст в
+                  // полях, форма не сбрасывается).
+                  if (_location.text.trim().isEmpty) {
+                    final bool? proceed =
+                        await showSaveCardWithoutLocationAlert(context);
+                    if (proceed != true) return;
+                    if (!context.mounted) return;
+                  }
+
                   // Локальное обновление моковых сторов — чтобы экраны,
                   // которые ещё на них смотрят, сразу увидели новые данные.
                   ExecutorCardData.location = _location.text;
@@ -605,11 +645,13 @@ class _HeaderRowState extends State<_HeaderRow> {
               SizedBox(height: 4.h),
               Row(
                 children: [
-                  Image.asset('assets/images/catalog/star.webp',
-                      width: 20.r, height: 20.r),
-                  SizedBox(width: 4.w),
-                  Text(_fmtRating(_rating), style: AppTextStyles.body),
-                  SizedBox(width: 16.w),
+                  if (_reviewCount > 0) ...[
+                    Image.asset('assets/images/catalog/star.webp',
+                        width: 20.r, height: 20.r),
+                    SizedBox(width: 4.w),
+                    Text(_fmtRating(_rating), style: AppTextStyles.body),
+                    SizedBox(width: 16.w),
+                  ],
                   GestureDetector(
                     onTap: () => context.push('/profile/reviews'),
                     child: Text(

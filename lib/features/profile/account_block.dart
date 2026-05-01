@@ -69,6 +69,22 @@ class AccountBlock {
 
   static DateTime? get blockedUntil => isBlocked ? _until : null;
 
+  /// Дата снятия блока в формате «до 30 мая 2026» — для UI-плашек,
+  /// чтобы пользователь видел конкретный день, а не абстрактное «30 дней».
+  /// Возвращает null, если блок не активен; UI должен сначала проверять
+  /// `isBlocked` и показывать плашку только тогда.
+  static String? get blockedUntilText {
+    final DateTime? until = blockedUntil;
+    if (until == null) return null;
+    final DateTime local = until.toLocal();
+    return 'до ${local.day} ${_monthsRu[local.month - 1]} ${local.year} г.';
+  }
+
+  static const List<String> _monthsRu = <String>[
+    'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
+    'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря',
+  ];
+
   /// Сколько дней осталось до снятия (0 если блок не активен).
   static int get daysLeft {
     final DateTime? until = blockedUntil;

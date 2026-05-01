@@ -93,6 +93,76 @@ Future<bool?> showExecutorCardRequiredAlert(BuildContext context) {
   );
 }
 
+/// Алерт-предупреждение перед сохранением карточки исполнителя без
+/// выбранного местоположения. Без локации карточка не попадает в каталог
+/// (матчинг ищет по точке + радиусу), поэтому юзера лучше явно
+/// предупредить, а не молча сохранять «невидимую» запись.
+/// Возвращает `true` — юзер всё равно хочет сохранить, `false`/`null` —
+/// отменил, остаётся на экране редактирования.
+Future<bool?> showSaveCardWithoutLocationAlert(BuildContext context) {
+  return showDialog<bool>(
+    context: context,
+    barrierDismissible: true,
+    barrierColor: Colors.black.withValues(alpha: 0.35),
+    builder: (ctx) => Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: EdgeInsets.symmetric(horizontal: 16.w),
+      child: Container(
+        padding: EdgeInsets.fromLTRB(16.r, 14.r, 16.r, 22.r),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(20.r),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Align(
+              alignment: Alignment.centerRight,
+              child: GestureDetector(
+                onTap: () => Navigator.of(ctx).pop(false),
+                child: Icon(Icons.close_rounded,
+                    size: 22.r, color: AppColors.textTertiary),
+              ),
+            ),
+            SizedBox(height: 20.h),
+            Text(
+              'Сохранить карточку\nбез местоположения?',
+              textAlign: TextAlign.center,
+              style: AppTextStyles.titleL.copyWith(fontWeight: FontWeight.w700),
+            ),
+            SizedBox(height: AppSpacing.xs),
+            Text(
+              'Без выбранного местоположения\nваша карточка не будет\nотображаться в поиске.',
+              textAlign: TextAlign.center,
+              style: AppTextStyles.body
+                  .copyWith(color: AppColors.textSecondary),
+            ),
+            SizedBox(height: AppSpacing.lg),
+            PrimaryButton(
+              label: 'Сохранить',
+              onPressed: () => Navigator.of(ctx).pop(true),
+            ),
+            SizedBox(height: AppSpacing.lg),
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => Navigator.of(ctx).pop(false),
+              child: Center(
+                child: Text(
+                  'Вернуться',
+                  style: AppTextStyles.bodyMedium
+                      .copyWith(color: AppColors.textPrimary),
+                ),
+              ),
+            ),
+            SizedBox(height: 8.h),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
 /// Bottom-sheet алерт подтверждения удаления карточки исполнителя.
 Future<bool?> showDeleteExecutorCardAlert(BuildContext context) {
   return showDialog<bool>(

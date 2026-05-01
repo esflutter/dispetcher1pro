@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Чтение/запись моего профиля (`public.profiles` + `profiles_private`).
@@ -7,6 +8,12 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 class ProfileService {
   ProfileService._();
   static final ProfileService instance = ProfileService._();
+
+  /// Счётчик «профиль изменился». Инкрементится после любого успешного
+  /// update/updatePrivateEmail/updateSubscription. Экраны слушают и
+  /// сами дёргают loadMine/loadMyPrivate, чтобы UI не залипал на старых
+  /// данных после правок в дочерних экранах.
+  static final ValueNotifier<int> changeBeacon = ValueNotifier<int>(0);
 
   SupabaseClient get _client => Supabase.instance.client;
 
@@ -67,6 +74,7 @@ class ProfileService {
     };
     if (payload.isEmpty) return;
     await _client.from('profiles').update(payload).eq('id', user.id);
+    changeBeacon.value++;
   }
 
   /// UPDATE `profiles_private` — email.
@@ -79,6 +87,7 @@ class ProfileService {
         .from('profiles_private')
         .update(<String, dynamic>{'email': email.isEmpty ? null : email})
         .eq('id', user.id);
+    changeBeacon.value++;
   }
 
   /// UPDATE `profiles_private` — `subscription_paid_until` и
@@ -106,6 +115,7 @@ class ProfileService {
         .from('profiles_private')
         .update(payload)
         .eq('id', user.id);
+    changeBeacon.value++;
   }
 }
 

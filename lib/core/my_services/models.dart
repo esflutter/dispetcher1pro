@@ -83,6 +83,8 @@ class ServiceDraft {
     required this.minHours,
     required this.photos,
     required this.locationAddress,
+    required this.locationLat,
+    required this.locationLng,
     required this.radiusKm,
   });
 
@@ -95,5 +97,10 @@ class ServiceDraft {
   final int? minHours;
   final List<String> photos;
   final String? locationAddress;
+  /// Координаты адреса из DaData. null, если адрес введён вручную или
+  /// DaData не дал координат — без них радиус-фильтр у заказчика
+  /// (gist на `services_geo_idx`) услугу не найдёт.
+  final double? locationLat;
+  final double? locationLng;
   final int? radiusKm;
 }

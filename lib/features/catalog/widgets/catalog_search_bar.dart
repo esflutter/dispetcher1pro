@@ -16,6 +16,7 @@ class CatalogSearchBar extends StatelessWidget {
     this.onChanged,
     this.hintText = 'Поиск',
     this.showFilterBadge = false,
+    this.padding,
   });
 
   final VoidCallback onFilterTap;
@@ -24,13 +25,20 @@ class CatalogSearchBar extends StatelessWidget {
   final String hintText;
   final bool showFilterBadge;
 
+  /// Внешний padding бара. По умолчанию 16/16 как в ленте каталога.
+  /// На полноэкранной карте слева находится кнопка «Назад» с отступом
+  /// 8.w, поэтому правый padding принудительно ставится тоже 8.w —
+  /// иначе кнопка фильтра визуально «зависает» дальше от края, чем
+  /// стрелка «Назад» с другой стороны.
+  final EdgeInsets? padding;
+
   @override
   Widget build(BuildContext context) {
     return Padding(
       // Небольшой top: оставляем место, чтобы красная точка-бейдж
       // могла выступать за правый верхний угол кнопки фильтра
       // и не обрезалась по краю тёмной шапки.
-      padding: EdgeInsets.fromLTRB(16.w, 8.h, 16.w, 8.h),
+      padding: padding ?? EdgeInsets.fromLTRB(16.w, 8.h, 16.w, 8.h),
       child: Row(
         children: <Widget>[
           Expanded(

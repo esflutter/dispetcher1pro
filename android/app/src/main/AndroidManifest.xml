@@ -32,6 +32,17 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            <!-- Deep link для возврата из браузерной формы YooKassa.
+                 Когда юзер нажимает «Вернуться на сайт», YooKassa
+                 редиректит на dispatcher1pro://payment/result?id=...
+                 Android видит зарегистрированную схему и открывает
+                 это Activity, передаёт URL в Flutter через app_links. -->
+            <intent-filter android:autoVerify="false">
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="dispatcher1pro"/>
+            </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
@@ -70,9 +81,14 @@
             <action android:name="android.intent.action.VIEW"/>
             <data android:scheme="https"/>
         </intent>
+        <!-- geo: — стандартная Android-схема для адресов на карте.
+             Все картографические приложения (Яндекс Карты, Google Maps,
+             2ГИС, MAPS.ME и др.) объявляют intent-filter на эту схему,
+             поэтому при нажатии на адрес система сама показывает
+             chooser «Открыть с помощью». -->
         <intent>
             <action android:name="android.intent.action.VIEW"/>
-            <data android:scheme="yandexmaps"/>
+            <data android:scheme="geo"/>
         </intent>
     </queries>
 </manifest>

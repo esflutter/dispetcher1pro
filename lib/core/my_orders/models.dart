@@ -78,6 +78,7 @@ class MyOrderMatch {
     required this.customerName,
     required this.customerRating,
     required this.customerReviewCount,
+    this.customerAvatarUrl,
   });
 
   final String matchId;
@@ -129,4 +130,9 @@ class MyOrderMatch {
   final String customerName;
   final double customerRating;
   final int customerReviewCount;
+
+  /// URL аватара заказчика из `profiles.avatar_url`. `null`, если у
+  /// заказчика не загружено фото — в шапке исполнителя останется
+  /// дефолтный серый силуэт.
+  final String? customerAvatarUrl;
 }

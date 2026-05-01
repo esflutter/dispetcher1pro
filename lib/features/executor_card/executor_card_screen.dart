@@ -68,10 +68,15 @@ class _ExecutorCardScreenState extends State<ExecutorCardScreen> {
   /// модерации, а не показывать общий текст.
   String? _verificationRejectReason;
 
+  /// Карточка считается «заполненной», если она реально сохранена в БД
+  /// (`saved_at` выставлен — см. `_loadFromDb`) и юзер прошёл верификацию.
+  /// Активность подписки сюда НЕ входит специально: при истечении подписки
+  /// карточка не пропадает из БД, и UI должен продолжать показывать
+  /// сохранённые данные с кнопкой «Редактировать», а не «Создать».
+  /// Гейт публикации в каталог лежит на стороне БД (CHECK `is_published`).
   bool get _filled =>
       AccountBlock.isBlocked ||
       (VerificationStatus.current.isVerified &&
-          VerificationStatus.isSubscriptionValid &&
           ExecutorCardScreen.cardCreated);
 
   ExecutorCardStatus get _status {
@@ -95,7 +100,15 @@ class _ExecutorCardScreenState extends State<ExecutorCardScreen> {
     AccountBlock.notifier.addListener(_refresh);
     VerificationStatus.notifier.addListener(_refresh);
     ExecutorCardState.notifier.addListener(_refresh);
+    // Любая правка профиля в дочерних экранах (avatar/name/about/...) → бьёт
+    // по changeBeacon, перетягиваем DB чтобы шапка не залипала на старом.
+    ProfileService.changeBeacon.addListener(_onProfileChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) => _maybeShowStatusAlert());
+    _loadFromDb();
+  }
+
+  void _onProfileChanged() {
+    if (!mounted) return;
     _loadFromDb();
   }
 
@@ -117,7 +130,12 @@ class _ExecutorCardScreenState extends State<ExecutorCardScreen> {
         ExecutorCardData.about = c.about;
         ExecutorCardData.experience = c.experienceYears?.toString();
         ExecutorCardData.status = _legalStatusLabel(c.legalStatus);
-        ExecutorCardScreen.cardCreated = c.isPublished;
+        // Карточка считается созданной по факту первого «Сохранить»
+        // (saved_at != null). Поля внутри опциональные — гадать
+        // «filled» по `is_published` нельзя: радиус может быть не
+        // выбран, тогда CHECK не даёт is_published=true, и юзер
+        // вечно бы видел empty-state.
+        ExecutorCardScreen.cardCreated = c.savedAt != null;
       }
       // Параллельно тянем причину отказа модерации (если есть). Поле
       // живёт в profiles_private — RLS пропустит только владельца.
@@ -158,6 +176,7 @@ class _ExecutorCardScreenState extends State<ExecutorCardScreen> {
     AccountBlock.notifier.removeListener(_refresh);
     VerificationStatus.notifier.removeListener(_refresh);
     ExecutorCardState.notifier.removeListener(_refresh);
+    ProfileService.changeBeacon.removeListener(_onProfileChanged);
     super.dispose();
   }
 
@@ -589,11 +608,13 @@ class _HeaderRowState extends State<_HeaderRow> {
               SizedBox(height: 4.h),
               Row(
                 children: [
-                  Image.asset('assets/images/catalog/star.webp',
-                      width: 20.r, height: 20.r),
-                  SizedBox(width: 4.w),
-                  Text(_fmtRating(_rating), style: AppTextStyles.body),
-                  SizedBox(width: 16.w),
+                  if (_reviewCount > 0) ...[
+                    Image.asset('assets/images/catalog/star.webp',
+                        width: 20.r, height: 20.r),
+                    SizedBox(width: 4.w),
+                    Text(_fmtRating(_rating), style: AppTextStyles.body),
+                    SizedBox(width: 16.w),
+                  ],
                   GestureDetector(
                     onTap: () => context.push('/profile/reviews'),
                     child: Text(
@@ -704,7 +725,8 @@ Future<void> showExecutorCardStatusDialog(
     title = 'Ваши документы ещё\nна проверке';
     text = 'Вы получите уведомление, когда проверка завершится';
   } else if (status == ExecutorCardStatus.blocked) {
-    title = 'Ваш профиль заблокирован\nна 30 дней';
+    title =
+        'Ваш профиль заблокирован\n${AccountBlock.blockedUntilText ?? "на 30 дней"}';
     text = 'Во избежание дальнейших блокировок избегайте отзывов с низкой оценкой';
   } else {
     title = 'Документы не прошли\nпроверку';

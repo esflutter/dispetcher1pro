@@ -82,6 +82,12 @@ class _PaymentScreenState extends State<PaymentScreen> {
     if (_saving) return;
     setState(() => _saving = true);
     try {
+      // Deep link для возврата из браузерной формы YooKassa: схема
+      // dispatcher1pro:// зарегистрирована в AndroidManifest и Info.plist,
+      // в app_links мы её ловим и переводим на /subscription/payment/result.
+      // Без deep link YooKassa отправляла бы юзера на default URL
+      // (HTML-страница на нашем VPS), а не сразу в приложение.
+      const String returnDeeplink = 'dispatcher1pro://payment/result';
       final PaymentCreateResult result =
           await PaymentService.instance.createPayment(
         kind: widget.kind,
@@ -91,6 +97,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
         // карт для следующих оплат.
         paymentMethodId: _selectedPmId,
         saveCard: _selectedPmId == null,
+        returnUrl: returnDeeplink,
       );
       if (!mounted) return;
       // Сначала уходим на экран результата (он начинает поллинг сразу),
@@ -177,8 +184,13 @@ class _PaymentSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Минимальная высота шторки — чтобы на устройствах с большим экраном
+    // и одной опцией «Новая карта» она не выглядела ужатой. Кнопка
+    // оплаты прижимается к низу через Spacer.
+    final double minHeight = MediaQuery.of(context).size.height * 0.32;
     return Container(
       width: double.infinity,
+      constraints: BoxConstraints(minHeight: minHeight),
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.vertical(top: Radius.circular(20.r)),
@@ -192,7 +204,7 @@ class _PaymentSheet extends StatelessWidget {
       child: SafeArea(
         top: false,
         child: Column(
-          mainAxisSize: MainAxisSize.min,
+          mainAxisSize: MainAxisSize.max,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
             Row(
@@ -214,23 +226,28 @@ class _PaymentSheet extends StatelessWidget {
             ),
             SizedBox(height: AppSpacing.sm),
             Divider(height: 1.h, color: AppColors.divider),
-            SizedBox(height: AppSpacing.md),
+            SizedBox(height: AppSpacing.lg),
             if (loading)
               Padding(
                 padding: EdgeInsets.symmetric(vertical: AppSpacing.lg),
                 child: const Center(child: CircularProgressIndicator()),
               )
             else ...<Widget>[
-              ...cards.map((SavedCard c) => _CardOption(
-                    card: c,
-                    selected: selectedPmId == c.id,
-                    onTap: () => onSelect(c.id),
-                  )),
+              for (int i = 0; i < cards.length; i++) ...<Widget>[
+                if (i > 0) SizedBox(height: AppSpacing.md),
+                _CardOption(
+                  card: cards[i],
+                  selected: selectedPmId == cards[i].id,
+                  onTap: () => onSelect(cards[i].id),
+                ),
+              ],
+              if (cards.isNotEmpty) SizedBox(height: AppSpacing.md),
               _NewCardOption(
                 selected: selectedPmId == null,
                 onTap: () => onSelect(null),
               ),
             ],
+            const Spacer(),
             SizedBox(height: AppSpacing.xl),
             PrimaryButton(
               label: amount == null
@@ -272,33 +289,30 @@ class _CardOption extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
-      child: Padding(
-        padding: EdgeInsets.symmetric(vertical: AppSpacing.sm),
-        child: Row(
-          children: <Widget>[
-            Icon(
-              selected ? Icons.radio_button_checked : Icons.radio_button_off,
-              color: selected ? AppColors.primary : AppColors.textTertiary,
-              size: 22.r,
+      child: Row(
+        children: <Widget>[
+          Icon(
+            selected ? Icons.radio_button_checked : Icons.radio_button_off,
+            color: selected ? AppColors.primary : AppColors.textTertiary,
+            size: 22.r,
+          ),
+          SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  '${card.brand ?? 'Карта'} •••• ${card.displayLast4}',
+                  style: AppTextStyles.bodyMedium,
+                ),
+                if (card.displayExpiry.isNotEmpty)
+                  Text('до ${card.displayExpiry}',
+                      style: AppTextStyles.caption
+                          .copyWith(color: AppColors.textTertiary)),
+              ],
             ),
-            SizedBox(width: AppSpacing.sm),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(
-                    '${card.brand ?? 'Карта'} •••• ${card.displayLast4}',
-                    style: AppTextStyles.bodyMedium,
-                  ),
-                  if (card.displayExpiry.isNotEmpty)
-                    Text('до ${card.displayExpiry}',
-                        style: AppTextStyles.caption
-                            .copyWith(color: AppColors.textTertiary)),
-                ],
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -314,35 +328,32 @@ class _NewCardOption extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
-      child: Padding(
-        padding: EdgeInsets.symmetric(vertical: AppSpacing.sm),
-        child: Row(
-          children: <Widget>[
-            Icon(
-              selected ? Icons.radio_button_checked : Icons.radio_button_off,
-              color: selected ? AppColors.primary : AppColors.textTertiary,
-              size: 22.r,
+      child: Row(
+        children: <Widget>[
+          Icon(
+            selected ? Icons.radio_button_checked : Icons.radio_button_off,
+            color: selected ? AppColors.primary : AppColors.textTertiary,
+            size: 22.r,
+          ),
+          SizedBox(width: AppSpacing.sm),
+          Container(
+            width: 32.r,
+            height: 24.r,
+            decoration: BoxDecoration(
+              color: AppColors.primary,
+              borderRadius: BorderRadius.circular(4.r),
             ),
-            SizedBox(width: AppSpacing.sm),
-            Container(
-              width: 32.r,
-              height: 24.r,
-              decoration: BoxDecoration(
-                color: AppColors.primary,
-                borderRadius: BorderRadius.circular(4.r),
-              ),
-              alignment: Alignment.center,
-              child: Icon(Icons.add_rounded, size: 16.r, color: Colors.white),
+            alignment: Alignment.center,
+            child: Icon(Icons.add_rounded, size: 16.r, color: Colors.white),
+          ),
+          SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Text(
+              'Новая карта (с сохранением)',
+              style: AppTextStyles.bodyMedium,
             ),
-            SizedBox(width: AppSpacing.sm),
-            Expanded(
-              child: Text(
-                'Новая карта (с сохранением)',
-                style: AppTextStyles.bodyMedium,
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

@@ -1,9 +1,7 @@
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import 'package:dispatcher_1/core/theme/app_colors.dart';
-import 'package:dispatcher_1/core/utils/yandex_maps.dart';
 import 'package:dispatcher_1/core/widgets/avatar_circle.dart';
 import 'package:dispatcher_1/features/auth/photo_crop_screen.dart';
 import 'package:dispatcher_1/features/orders/widgets/order_status_pill.dart';
@@ -21,6 +19,7 @@ class MyOrderCard extends StatelessWidget {
     required this.rentDate,
     required this.address,
     required this.publishedAgo,
+    this.reviewLeft = false,
     this.customerName,
     this.customerPhone,
     this.customerAvatar,
@@ -34,6 +33,10 @@ class MyOrderCard extends StatelessWidget {
   final String rentDate;
   final String address;
   final String publishedAgo;
+
+  /// Для completed-карточки: если отзыв уже оставлен — пилюля
+  /// показывает короткое «Завершён» вместо «Завершён. Оставьте отзыв».
+  final bool reviewLeft;
   final String? customerName;
   final String? customerPhone;
   final String? customerAvatar;
@@ -64,7 +67,7 @@ class MyOrderCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            OrderStatusPill(status: status),
+            OrderStatusPill(status: status, reviewLeft: reviewLeft),
             SizedBox(height: 6.h),
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -95,12 +98,10 @@ class MyOrderCard extends StatelessWidget {
             SizedBox(height: 8.h),
             _LabelLine(label: 'Дата аренды:', value: rentDate),
             SizedBox(height: 5.h),
-            _LabelLine(
-              label: 'Адрес:',
-              value: address,
-              valueUnderlined: true,
-              isAddress: true,
-            ),
+            // В карточке списка адрес — обычный текст без подчёркивания
+            // и без тапа: тап по самой карточке открывает деталь, где
+            // адрес уже становится кликабельным.
+            _LabelLine(label: 'Адрес:', value: address),
             if (_showCustomerRow) ...<Widget>[
               SizedBox(height: 12.h),
               _CustomerRow(
@@ -122,17 +123,10 @@ class MyOrderCard extends StatelessWidget {
 }
 
 class _LabelLine extends StatelessWidget {
-  const _LabelLine({
-    required this.label,
-    required this.value,
-    this.valueUnderlined = false,
-    this.isAddress = false,
-  });
+  const _LabelLine({required this.label, required this.value});
 
   final String label;
   final String value;
-  final bool valueUnderlined;
-  final bool isAddress;
 
   @override
   Widget build(BuildContext context) {
@@ -153,18 +147,10 @@ class _LabelLine extends StatelessWidget {
           ),
           TextSpan(
             text: value,
-            style: TextStyle(
+            style: const TextStyle(
               fontWeight: FontWeight.w400,
               color: AppColors.textSecondary,
-              decoration: valueUnderlined
-                  ? TextDecoration.underline
-                  : TextDecoration.none,
             ),
-            recognizer: isAddress
-                ? (TapGestureRecognizer()
-                  ..onTap =
-                      () => openAddressInYandexMaps(context, value))
-                : null,
           ),
         ],
       ),

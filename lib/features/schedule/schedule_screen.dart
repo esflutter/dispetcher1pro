@@ -467,13 +467,19 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     final String? tTo = updated.timeTo == null
         ? null
         : '${updated.timeTo!.hour.toString().padLeft(2, '0')}:${updated.timeTo!.minute.toString().padLeft(2, '0')}';
+    // Если приём включён и время не выставлено — по умолчанию считаем,
+    // что исполнитель доступен весь день. Без этой нормализации в БД
+    // ушло бы wholeDay=false с пустыми timeFrom/timeTo, и матчинг не
+    // смог бы понять, в какие часы исполнитель доступен.
+    final bool wholeDay = updated.allDay ||
+        (updated.accepting && tFrom == null && tTo == null);
     try {
       await ScheduleService.instance.upsertOverride(
         day: _selectedDate,
         accepting: updated.accepting,
         timeFrom: tFrom,
         timeTo: tTo,
-        wholeDay: updated.allDay,
+        wholeDay: wholeDay,
         radiusKm: radiusKm,
         locationAddress: updated.location,
         machineryTitles: updated.machinery.toList(),

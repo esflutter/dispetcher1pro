@@ -67,12 +67,24 @@ class PaymentService {
     if (data['error'] != null) {
       throw PaymentError('server', (data['error'] as Object?).toString());
     }
+    // Defensive cast: при 5xx Edge Function может вернуть Map без ключей
+    // payment_id/yookassa_payment_id/amount (например, ответ от прокси
+    // вместо самой функции). Без `as String?` здесь упадём NoSuchMethodError
+    // мимо catch-блоков UI и пользователь увидит generic-ошибку без
+    // понятного сообщения.
+    final String? paymentId = data['payment_id'] as String?;
+    final String? yookassaId = data['yookassa_payment_id'] as String?;
+    final num? amount = data['amount'] as num?;
+    if (paymentId == null || yookassaId == null || amount == null) {
+      throw const PaymentError('bad_response',
+          'Платёжный сервис вернул некорректный ответ. Попробуйте снова.');
+    }
     return PaymentCreateResult(
-      paymentId: data['payment_id'] as String,
-      yookassaPaymentId: data['yookassa_payment_id'] as String,
+      paymentId: paymentId,
+      yookassaPaymentId: yookassaId,
       status: (data['status'] as String?) ?? 'pending',
       confirmationUrl: data['confirmation_url'] as String?,
-      amount: (data['amount'] as num).toInt(),
+      amount: amount.toInt(),
     );
   }
 
@@ -145,9 +157,17 @@ class PaymentService {
     String paymentId, {
     Duration interval = const Duration(milliseconds: 1500),
     Duration timeout = const Duration(seconds: 90),
+    bool Function()? isCancelled,
   }) async {
+    // Пустой id пробивает PostgREST как `id=eq.` → 22P02 invalid uuid,
+    // `getPaymentStatus` ловит и возвращает unknown — без этой ветки цикл
+    // молотил бы 90 с впустую (deep-link без id, ошибка маршрута).
+    if (paymentId.isEmpty) return PaymentStatus.unknown;
     final DateTime deadline = DateTime.now().add(timeout);
     while (DateTime.now().isBefore(deadline)) {
+      // Чтобы цикл прерывался при unmount экрана PaymentResultScreen
+      // (раньше после ухода с экрана продолжали слать ~50 запросов).
+      if (isCancelled != null && isCancelled()) return PaymentStatus.pending;
       final PaymentStatus s = await getPaymentStatus(paymentId);
       if (s == PaymentStatus.succeeded ||
           s == PaymentStatus.failed ||

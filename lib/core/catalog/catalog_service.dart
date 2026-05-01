@@ -149,7 +149,10 @@ class CatalogService {
 
     final String? s = search?.trim();
     if (s != null && s.isNotEmpty) {
-      final String esc = s.replaceAll(',', ' '); // запятая ломает or-синтаксис
+      // Запятая ломает синтаксис or-фильтра PostgREST; `%` и `_` —
+      // wildcard-метасимволы LIKE/ILIKE: без экранирования юзер,
+      // ищущий «50%», ловит совпадения по любым строкам с «50».
+      final String esc = _escapeLike(s).replaceAll(',', ' ');
       q = q.or('title.ilike.%$esc%,address.ilike.%$esc%');
     }
     if (dateFrom != null) {
@@ -160,7 +163,7 @@ class CatalogService {
       q = q.lte('date_from', _isoDate(dateTo));
     }
     if (addressContains != null && addressContains.trim().isNotEmpty) {
-      final String esc = addressContains.trim().replaceAll(',', ' ');
+      final String esc = _escapeLike(addressContains.trim()).replaceAll(',', ' ');
       q = q.ilike('address', '%$esc%');
     }
     if (wholeDay == true) {
@@ -335,7 +338,13 @@ class CatalogService {
         .from('executor_cards')
         .select(
           'user_id, location_address, radius_km, '
-          'profile:profiles!executor_cards_user_id_fkey('
+          // !inner обязателен, иначе фильтр по `profile.name` (`ilike`
+          // ниже) PostgREST отдаёт по embedded ресурсу, а карточка
+          // executor_cards остаётся в выдаче — фильтр по имени фактически
+          // не применяется. С !inner left-join становится inner и фильтр
+          // пробивает наружу. FK NOT NULL гарантирует, что у каждой
+          // карточки есть profile, поэтому !inner ничего не теряет.
+          'profile:profiles!executor_cards_user_id_fkey!inner('
           'id, name, avatar_url, legal_status, experience_years, about, '
           'rating_as_executor, review_count_as_executor, '
           'verification_status, blocked_until)',
@@ -344,8 +353,9 @@ class CatalogService {
 
     final String? s = search?.trim();
     if (s != null && s.isNotEmpty) {
-      // Поиск по имени исполнителя через related-таблицу.
-      final String esc = s.replaceAll(',', ' ');
+      // Поиск по имени исполнителя через related-таблицу. Экранируем
+      // wildcard-метасимволы LIKE — без этого «и_ан» матчит «иван», «иган» и т.д.
+      final String esc = _escapeLike(s).replaceAll(',', ' ');
       q = q.ilike('profile.name', '%$esc%');
     }
 
@@ -658,4 +668,12 @@ class CatalogService {
         .single();
     return row['id'] as String;
   }
+
+  /// Экранирует wildcard-метасимволы LIKE/ILIKE в пользовательском вводе.
+  /// Без этого юзер, ищущий «50%», получит совпадения по любым строкам с
+  /// «50»; «и_ан» — по «иван», «иган», «итан» и т.д. Экранируем ровно
+  /// `%`, `_` и сам `\`. Бэкслеш экранируется первым, иначе мы добавим
+  /// обратные слеши, которые сами потом удвоим.
+  static String _escapeLike(String s) =>
+      s.replaceAll(r'\', r'\\').replaceAll('%', r'\%').replaceAll('_', r'\_');
 }

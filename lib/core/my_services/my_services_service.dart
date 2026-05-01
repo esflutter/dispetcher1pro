@@ -162,6 +162,11 @@ class MyServicesService {
       'min_hours': d.minHours,
       'photos': d.photos,
       'location_address': d.locationAddress,
+      // Координаты обязательно нужны на стороне заказчика для радиус-фильтра
+      // (gist `services_geo_idx`). Без них услуга в каталог по геолокации
+      // не попадёт даже при заполненном address+radius.
+      'location_lat': d.locationLat,
+      'location_lng': d.locationLng,
       'radius_km': d.radiusKm,
     };
   }

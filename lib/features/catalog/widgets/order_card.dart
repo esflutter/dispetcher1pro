@@ -1,10 +1,8 @@
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
-import 'package:dispatcher_1/core/utils/yandex_maps.dart';
 
 /// Карточка заказа в ленте каталога. По Figma — без рамки, разделение
 /// нижней линией, сверху строка тэгов техники + время публикации,
@@ -83,7 +81,10 @@ class OrderCard extends StatelessWidget {
             SizedBox(height: 8.h),
             _LabelLine(label: 'Дата аренды:', value: rentDate),
             SizedBox(height: 5.h),
-            _LabelLine(label: 'Адрес:', value: address, isAddress: true),
+            // В карточке списка каталога адрес — обычный текст без
+            // подчёркивания и без тапа: тап по самой карточке открывает
+            // деталь, где адрес уже становится кликабельным.
+            _LabelLine(label: 'Адрес:', value: address),
           ],
         ),
       ),
@@ -92,14 +93,9 @@ class OrderCard extends StatelessWidget {
 }
 
 class _LabelLine extends StatelessWidget {
-  const _LabelLine({
-    required this.label,
-    required this.value,
-    this.isAddress = false,
-  });
+  const _LabelLine({required this.label, required this.value});
   final String label;
   final String value;
-  final bool isAddress;
 
   @override
   Widget build(BuildContext context) {
@@ -120,17 +116,10 @@ class _LabelLine extends StatelessWidget {
           ),
           TextSpan(
             text: value,
-            style: TextStyle(
+            style: const TextStyle(
               fontWeight: FontWeight.w400,
               color: AppColors.textSecondary,
-              decoration:
-                  isAddress ? TextDecoration.underline : null,
             ),
-            recognizer: isAddress
-                ? (TapGestureRecognizer()
-                  ..onTap =
-                      () => openAddressInYandexMaps(context, value))
-                : null,
           ),
         ],
       ),

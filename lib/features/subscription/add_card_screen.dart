@@ -9,12 +9,14 @@ import 'package:dispatcher_1/core/theme/app_spacing.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
 import 'package:dispatcher_1/core/widgets/dark_sub_app_bar.dart';
 
-/// Экран «Мои карты» — список сохранённых карт + удаление.
+/// Экран «Способы оплаты» — список сохранённых карт + удаление + кнопка
+/// добавления новой карты.
 ///
-/// Раньше тут была форма ввода карточных данных, что нарушало PCI:
-/// данные карты должны вводиться только на форме YooKassa. Сохранение
-/// карты теперь происходит автоматически при первом платеже подписки/
-/// услуги через `save_card=true` в `yookassa-create-payment`.
+/// Внутри YooKassa-флоу: сами реквизиты карты пользователь вводит только
+/// на форме YooKassa (PCI-зона). Сохранение происходит при первом платеже
+/// подписки/услуги через `save_card=true`. Поэтому «Добавить карту» здесь
+/// — это инициирование обычной оплаты подписки, после успеха которой
+/// webhook кладёт карту в `saved_payment_methods`.
 class CardsScreen extends StatefulWidget {
   const CardsScreen({super.key});
 
@@ -81,7 +83,7 @@ class _CardsScreenState extends State<CardsScreen> {
       builder: (BuildContext ctx) => AlertDialog(
         title: const Text('Удалить карту?'),
         content: Text(
-            '${c.brand ?? 'Карта'} •••• ${c.displayLast4} больше не будет использоваться для оплаты.'),
+            '${_brandLabel(c.brand)} •• ${c.displayLast4} больше не будет использоваться для оплаты.'),
         actions: <Widget>[
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
@@ -108,50 +110,38 @@ class _CardsScreenState extends State<CardsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: const DarkSubAppBar(title: 'Мои карты'),
+      appBar: const DarkSubAppBar(title: 'Способы оплаты'),
       body: SafeArea(
         top: false,
         child: _loading
             ? const Center(child: CircularProgressIndicator())
-            : Column(
+            : ListView(
+                padding: EdgeInsets.fromLTRB(
+                  AppSpacing.screenH,
+                  AppSpacing.md,
+                  AppSpacing.screenH,
+                  AppSpacing.lg,
+                ),
                 children: <Widget>[
-                  Expanded(
-                    child: _cards == null || _cards!.isEmpty
-                        ? _EmptyState(onAddTap: _onAddCard)
-                        : ListView.separated(
-                            padding: EdgeInsets.symmetric(
-                                horizontal: AppSpacing.screenH,
-                                vertical: AppSpacing.md),
-                            itemCount: _cards!.length,
-                            separatorBuilder: (_, _) =>
-                                Divider(height: 1.h, color: AppColors.divider),
-                            itemBuilder: (BuildContext ctx, int i) {
-                              final SavedCard c = _cards![i];
-                              return _CardTile(
-                                card: c,
-                                deleting: _deleting.contains(c.id),
-                                onDelete: () => _onDelete(c),
-                              );
-                            },
-                          ),
-                  ),
-                  if (_cards != null && _cards!.isNotEmpty)
-                    Padding(
-                      padding: EdgeInsets.fromLTRB(
-                        AppSpacing.screenH,
-                        AppSpacing.sm,
-                        AppSpacing.screenH,
-                        AppSpacing.lg,
+                  if (_cards != null && _cards!.isNotEmpty) ...<Widget>[
+                    for (int i = 0; i < _cards!.length; i++) ...<Widget>[
+                      _CardTile(
+                        card: _cards![i],
+                        deleting: _deleting.contains(_cards![i].id),
+                        onDelete: () => _onDelete(_cards![i]),
                       ),
-                      child: TextButton.icon(
-                        onPressed: _onAddCard,
-                        icon: Icon(Icons.add_rounded,
-                            color: AppColors.primary, size: 20.r),
-                        label: Text('Добавить карту',
-                            style: AppTextStyles.bodyMedium
-                                .copyWith(color: AppColors.primary)),
+                      SizedBox(height: 8.h),
+                    ],
+                  ] else
+                    Padding(
+                      padding: EdgeInsets.fromLTRB(4.w, 0, 4.w, 16.h),
+                      child: Text(
+                        'Сохранённых карт пока нет. Карта сохранится автоматически при первой оплате подписки или услуги.',
+                        style: AppTextStyles.bodyMRegular
+                            .copyWith(color: AppColors.textSecondary),
                       ),
                     ),
+                  _AddCardTile(onTap: _onAddCard),
                 ],
               ),
       ),
@@ -159,6 +149,7 @@ class _CardsScreenState extends State<CardsScreen> {
   }
 }
 
+/// Карточка-плитка одной сохранённой карты в списке.
 class _CardTile extends StatelessWidget {
   const _CardTile({
     required this.card,
@@ -172,26 +163,25 @@ class _CardTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.symmetric(vertical: AppSpacing.sm),
+    return Container(
+      height: 56.h,
+      padding: EdgeInsets.symmetric(horizontal: 16.w),
+      decoration: BoxDecoration(
+        color: AppColors.categoryCard,
+        borderRadius: BorderRadius.circular(12.r),
+      ),
       child: Row(
         children: <Widget>[
-          Icon(Icons.credit_card_rounded,
-              color: AppColors.textSecondary, size: 24.r),
-          SizedBox(width: AppSpacing.sm),
+          _BrandBadge(brand: card.brand),
+          SizedBox(width: 12.w),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  '${card.brand ?? 'Карта'} •••• ${card.displayLast4}',
-                  style: AppTextStyles.bodyMedium,
-                ),
-                if (card.displayExpiry.isNotEmpty)
-                  Text('до ${card.displayExpiry}',
-                      style: AppTextStyles.caption
-                          .copyWith(color: AppColors.textTertiary)),
-              ],
+            child: Text(
+              '••  ${card.displayLast4}',
+              style: AppTextStyles.body.copyWith(
+                color: AppColors.textPrimary,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 1.2,
+              ),
             ),
           ),
           if (deleting)
@@ -201,10 +191,17 @@ class _CardTile extends StatelessWidget {
               child: const CircularProgressIndicator(strokeWidth: 2),
             )
           else
-            IconButton(
-              icon: Icon(Icons.delete_outline_rounded,
-                  color: AppColors.error, size: 22.r),
-              onPressed: onDelete,
+            // Tap-зона 40×40 для удобного попадания, иконка 22 — как в Figma.
+            SizedBox(
+              width: 40.r,
+              height: 40.r,
+              child: IconButton(
+                padding: EdgeInsets.zero,
+                splashRadius: 20.r,
+                icon: Icon(Icons.delete_outline_rounded,
+                    color: AppColors.textTertiary, size: 22.r),
+                onPressed: onDelete,
+              ),
             ),
         ],
       ),
@@ -212,42 +209,99 @@ class _CardTile extends StatelessWidget {
   }
 }
 
-class _EmptyState extends StatelessWidget {
-  const _EmptyState({required this.onAddTap});
-  final VoidCallback onAddTap;
+/// Плашка «Добавить карту» — стилизована под бренд (мягкий оранжевый
+/// фон + оранжевый текст и иконка), чтобы выделяться на фоне серых
+/// плиток с уже сохранёнными картами.
+class _AddCardTile extends StatelessWidget {
+  const _AddCardTile({required this.onTap});
+
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: EdgeInsets.symmetric(horizontal: AppSpacing.screenH),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Icon(Icons.credit_card_off_rounded,
-                color: AppColors.textTertiary, size: 64.r),
-            SizedBox(height: AppSpacing.md),
-            Text('Сохранённых карт нет',
-                style: AppTextStyles.h3, textAlign: TextAlign.center),
-            SizedBox(height: AppSpacing.sm),
-            Text(
-              'Карта сохранится автоматически при первой оплате подписки или услуги.',
-              textAlign: TextAlign.center,
-              style: AppTextStyles.bodyMRegular
-                  .copyWith(color: AppColors.textSecondary),
-            ),
-            SizedBox(height: AppSpacing.xl),
-            TextButton.icon(
-              onPressed: onAddTap,
-              icon: Icon(Icons.add_rounded,
-                  color: AppColors.primary, size: 20.r),
-              label: Text('Перейти к оплате',
-                  style: AppTextStyles.bodyMedium
-                      .copyWith(color: AppColors.primary)),
-            ),
-          ],
+    return Material(
+      color: AppColors.primaryTint,
+      borderRadius: BorderRadius.circular(12.r),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12.r),
+        child: Container(
+          height: 56.h,
+          alignment: Alignment.center,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: <Widget>[
+              Icon(Icons.add_rounded, color: AppColors.primary, size: 22.r),
+              SizedBox(width: 8.w),
+              Text(
+                'Добавить карту',
+                style: AppTextStyles.button.copyWith(color: AppColors.primary),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
+}
+
+/// Цветной шильдик с надписью бренда — заменяет логотипы платёжных
+/// систем, которых нет в ассетах. Цвета взяты из официальных гайдлайнов
+/// (МИР, Visa, MasterCard, Maestro), чтобы юзер мгновенно узнавал
+/// «свою» карту в списке.
+class _BrandBadge extends StatelessWidget {
+  const _BrandBadge({required this.brand});
+
+  final String? brand;
+
+  @override
+  Widget build(BuildContext context) {
+    final String label = _brandLabel(brand);
+    final Color color = _brandColor(brand);
+    return Container(
+      width: 40.w,
+      height: 28.h,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(6.r),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontFamily: 'Roboto',
+          fontSize: 10.sp,
+          fontWeight: FontWeight.w800,
+          color: Colors.white,
+          letterSpacing: 0.4,
+        ),
+      ),
+    );
+  }
+}
+
+String _brandLabel(String? raw) {
+  final String s = (raw ?? '').toUpperCase();
+  if (s.contains('MIR')) return 'МИР';
+  if (s.contains('VISA')) return 'VISA';
+  if (s.contains('MAESTRO')) return 'MAES';
+  if (s.contains('MASTER')) return 'MC';
+  if (s.contains('JCB')) return 'JCB';
+  if (s.contains('AMERICAN') || s.contains('AMEX')) return 'AMEX';
+  if (s.contains('UNION')) return 'UPI';
+  return 'CARD';
+}
+
+Color _brandColor(String? raw) {
+  final String s = (raw ?? '').toUpperCase();
+  if (s.contains('MIR')) return const Color(0xFF0F754E); // МИР — зелёный
+  if (s.contains('VISA')) return const Color(0xFF1434CB);
+  if (s.contains('MAESTRO')) return const Color(0xFF0099DF);
+  if (s.contains('MASTER')) return const Color(0xFFEB001B);
+  if (s.contains('JCB')) return const Color(0xFF0E4C96);
+  if (s.contains('AMERICAN') || s.contains('AMEX')) {
+    return const Color(0xFF006FCF);
+  }
+  if (s.contains('UNION')) return const Color(0xFFE21836);
+  return AppColors.textTertiary;
 }

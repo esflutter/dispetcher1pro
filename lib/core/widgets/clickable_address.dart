@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 
 import 'package:dispatcher_1/core/theme/app_colors.dart';
-import 'package:dispatcher_1/core/utils/yandex_maps.dart';
+import 'package:dispatcher_1/core/utils/external_maps.dart';
 
-/// Виджет «Кликабельный адрес»: подчёркнутый текст, по тапу открывает
-/// приложение «Яндекс Карты» (или web-версию). Обёртка вокруг обычного
-/// [Text] с собственным расписанием стилей — можно передать [baseStyle]
-/// (например, стиль заголовка/body).
+/// Виджет «Кликабельный адрес»: подчёркнутый текст, по тапу показывает
+/// bottom-sheet с выбором карт (Яндекс Карты / Google Maps / 2ГИС) и
+/// открывает выбранное приложение (или web-версию). Обёртка вокруг
+/// обычного [Text] с собственным расписанием стилей — можно передать
+/// [baseStyle] (например, стиль заголовка/body).
 class ClickableAddress extends StatelessWidget {
   const ClickableAddress(
     this.address, {
@@ -27,7 +28,7 @@ class ClickableAddress extends StatelessWidget {
     );
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: () => openAddressInYandexMaps(context, address),
+      onTap: () => openAddressInMaps(context, address),
       child: Text(
         address,
         style: style,

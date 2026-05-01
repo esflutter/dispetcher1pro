@@ -1,7 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 
 import 'package:dispatcher_1/core/catalog/catalog_service.dart';
@@ -38,11 +40,19 @@ class OrdersMapScreen extends StatelessWidget {
     this.markers = const <OrderMarkerData>[],
     this.initialCenter,
     this.initialZoom = 11,
+    this.onMarkerTap,
+    this.selectedMarkerId,
+    this.mapController,
+    this.showZoomControls = false,
   });
 
   final List<OrderMarkerData> markers;
   final LatLng? initialCenter;
   final double initialZoom;
+  final ValueChanged<String>? onMarkerTap;
+  final String? selectedMarkerId;
+  final MapController? mapController;
+  final bool showZoomControls;
 
   @override
   Widget build(BuildContext context) {
@@ -58,6 +68,10 @@ class OrdersMapScreen extends StatelessWidget {
       markers: mapMarkers,
       initialCenter: initialCenter,
       initialZoom: initialZoom,
+      onMarkerTap: onMarkerTap,
+      selectedMarkerId: selectedMarkerId,
+      mapController: mapController,
+      showZoomControls: showZoomControls,
     );
   }
 }
@@ -73,10 +87,26 @@ class OrdersMapFullScreen extends StatefulWidget {
 
 class _OrdersMapFullScreenState extends State<OrdersMapFullScreen> {
   final TextEditingController _searchCtrl = TextEditingController();
+  final MapController _mapController = MapController();
   String _query = '';
   bool _addressSelected = false;
   int _current = 0;
   int _direction = 1;
+
+  /// Последний центр и зум карты, на котором юзер вышел с экрана.
+  /// Статика — живёт в рамках одной сессии приложения. При повторном
+  /// открытии экрана используется как fallback, если геолокация
+  /// недоступна (см. [_resolveInitialCenter]).
+  static LatLng? _lastViewedCenter;
+  static double? _lastViewedZoom;
+
+  /// Центр карты при первом рендере. Решается асинхронно в initState:
+  /// сначала пробуем геолокацию пользователя, потом — координаты
+  /// последнего опубликованного заказа, иначе оставляем null
+  /// (карта подставит дефолтную Москву).
+  LatLng? _initialCenter;
+  double _initialZoom = 11;
+  bool _initialCenterReady = false;
 
   /// Все опубликованные заказы из БД на момент открытия карты. Фильтр
   /// `[AppliedFilter.equipment]` применяется на клиенте в [_visibleOrders],
@@ -131,6 +161,144 @@ class _OrdersMapFullScreenState extends State<OrdersMapFullScreen> {
 
     AppliedFilter.revision.addListener(_onFilterChanged);
     _ordersFuture = _fetchOrders();
+    // Откладываем разрешение центра карты до конца текущего фрейма,
+    // чтобы splash-кадр (CircularProgressIndicator) успел отрисоваться,
+    // и пользователь не видел замороженного экрана при медленном
+    // ответе геолокации.
+    // ignore: discarded_futures
+    _resolveInitialCenter();
+  }
+
+  /// Грубый bbox РФ — нужен, чтобы отсеять «бутафорские» координаты
+  /// эмулятора (Mountain View, 37 N / -122 W) и реальную локацию,
+  /// если пользователь сейчас за пределами страны (отпуск, Турция и т.д.).
+  /// В этих случаях правильнее показать ленту заказов в РФ, а не пустой
+  /// океан или чужой город.
+  static bool _looksLikeRussia(double lat, double lon) {
+    return lat >= 41 && lat <= 82 && lon >= 19 && lon <= 180;
+  }
+
+  /// Дефолтный zoom для первой отрисовки карты — городской квартал
+  /// видно домами, чтобы юзеру не приходилось сразу же приближать.
+  static const double _kDefaultZoom = 14;
+
+  /// Определяем точку для первого рендера карты:
+  ///   1. Координаты пользователя — только если разрешение УЖЕ выдано
+  ///      (на этом экране никаких диалогов не показываем) и точка
+  ///      попадает в bbox РФ. zoom 13.
+  ///   2. Сохранённый центр/зум из предыдущей сессии работы с картой
+  ///      (юзер закрыл и снова открыл экран в той же сессии приложения).
+  ///   3. Координаты самого свежего опубликованного заказа из БД —
+  ///      zoom 14.
+  ///   4. Москва — финальный fallback.
+  Future<void> _resolveInitialCenter() async {
+    LatLng? center;
+    double zoom = _kDefaultZoom;
+    try {
+      // Не вызываем request — на экране карты диалог о геолокации
+      // нерелевантен, юзер пришёл смотреть заказы. Если разрешение
+      // ещё не выдавалось — сразу fallback на сохранённый/последний заказ.
+      final LocationPermission permission =
+          await Geolocator.checkPermission();
+      final bool granted =
+          permission == LocationPermission.always ||
+              permission == LocationPermission.whileInUse;
+      if (granted && await Geolocator.isLocationServiceEnabled()) {
+        final Position pos = await Geolocator.getCurrentPosition(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.medium,
+            timeLimit: Duration(seconds: 4),
+          ),
+        );
+        if (_looksLikeRussia(pos.latitude, pos.longitude)) {
+          center = LatLng(pos.latitude, pos.longitude);
+        }
+      }
+    } catch (e) {
+      debugPrint('[OrdersMap] geolocation failed: $e');
+    }
+    // Если геолокации нет, но юзер уже был на карте в этой сессии —
+    // открываем ровно ту область, на которой он вышел. Зум тоже
+    // восстанавливаем, иначе после ручного приближения откатились
+    // бы к дефолту.
+    if (center == null && _lastViewedCenter != null) {
+      center = _lastViewedCenter;
+      zoom = _lastViewedZoom ?? _kDefaultZoom;
+    }
+    if (center == null) {
+      try {
+        final List<_MapOrder> orders = await _ordersFuture;
+        for (final _MapOrder o in orders) {
+          if (o.latitude != null && o.longitude != null) {
+            center = LatLng(o.latitude!, o.longitude!);
+            break;
+          }
+        }
+        // Если у всех заказов координаты null — берём моковые координаты
+        // первого заказа: маркер будет в той же точке, и юзер увидит
+        // «свой» заказ на карте, а не пустую центровую Москву без отметок.
+        if (center == null && orders.isNotEmpty) {
+          center = mockMoscowCoordsForId(orders.first.id);
+        }
+      } catch (_) {/* ignore */}
+    }
+    // Финальный fallback — центр Москвы. Это RU-приложение, не должны
+    // показывать Дублин/Mountain View/случайный «центр стиля карты».
+    center ??= const LatLng(55.7558, 37.6173);
+    if (!mounted) return;
+    setState(() {
+      _initialCenter = center;
+      _initialZoom = zoom;
+      _initialCenterReady = true;
+    });
+  }
+
+  /// Тап по маркеру — синхронизируем нижнюю карточку.
+  void _onMarkerTap(String id, List<_MapOrder> orders) {
+    if (orders.isEmpty) return;
+    final int idx = orders.indexWhere((_MapOrder o) => o.id == id);
+    if (idx < 0 || idx == _current) return;
+    setState(() {
+      _direction = idx > _current ? 1 : -1;
+      _current = idx;
+    });
+    _centerOnOrder(orders[idx]);
+  }
+
+  /// Двигает камеру к маркеру заказа без изменения zoom. Если у заказа
+  /// нет координат в БД (старые записи) — не трогаем камеру: маркер
+  /// в этом случае рендерится по детерминированному моку, перенос
+  /// туда был бы дезориентирующим.
+  void _centerOnOrder(_MapOrder o) {
+    if (o.latitude == null || o.longitude == null) return;
+    try {
+      final double currentZoom = _mapController.camera.zoom;
+      _mapController.move(
+        LatLng(o.latitude!, o.longitude!),
+        currentZoom,
+      );
+    } catch (e) {
+      debugPrint('[OrdersMap] _centerOnOrder failed: $e');
+    }
+  }
+
+  /// Обработчик выбора подсказки в строке поиска. Если у адреса есть
+  /// координаты — двигаем камеру и зум. Без координат — просто
+  /// заполняем строку (редкий кейс DaData без geo).
+  void _onAddressSelected(DadataAddress addr) {
+    _searchCtrl.text = addr.value;
+    setState(() {
+      _query = addr.value;
+      _addressSelected = true;
+    });
+    FocusScope.of(context).unfocus();
+    if (addr.lat != null && addr.lon != null) {
+      try {
+        _mapController.move(LatLng(addr.lat!, addr.lon!), 14);
+      } catch (e) {
+        debugPrint('[OrdersMap] mapController.move failed: $e');
+      }
+    }
   }
 
   Future<List<_MapOrder>> _fetchOrders() async {
@@ -184,17 +352,27 @@ class _OrdersMapFullScreenState extends State<OrdersMapFullScreen> {
         .toList();
   }
 
-  void _shift(int delta, int count) {
-    if (count == 0) return;
+  void _shift(int delta, List<_MapOrder> orders) {
+    if (orders.isEmpty) return;
     setState(() {
       _direction = delta;
-      _current = (_current + delta) % count;
-      if (_current < 0) _current += count;
+      _current = (_current + delta) % orders.length;
+      if (_current < 0) _current += orders.length;
     });
+    _centerOnOrder(orders[_current]);
   }
 
   @override
   void dispose() {
+    // Сохраняем текущий центр и зум — при следующем заходе на карту
+    // (в этой же сессии) восстановим их, если у юзера нет геолокации.
+    // try/catch: если карта так и не отрисовалась (быстрый dispose
+    // на splash-кадре), MapController.camera кидает исключение.
+    try {
+      _lastViewedCenter = _mapController.camera.center;
+      _lastViewedZoom = _mapController.camera.zoom;
+    } catch (_) {/* карта не успела отрендериться */}
+
     AppliedFilter.revision.removeListener(_onFilterChanged);
     AppliedFilter.categories
       ..clear()
@@ -230,6 +408,26 @@ class _OrdersMapFullScreenState extends State<OrdersMapFullScreen> {
           final List<_MapOrder> all = snap.data ?? const <_MapOrder>[];
           final List<_MapOrder> orders = _filterOrders(all);
           final int idx = orders.isEmpty ? 0 : _current % orders.length;
+          // Пока определяем дефолтный центр (геолокация / последний
+          // заказ), показываем тот же спиннер, что и сама карта при
+          // загрузке тайлов — иначе будет вспышка дефолтной Москвы и
+          // мгновенный прыжок камеры, что выглядит сломанно.
+          if (!_initialCenterReady) {
+            return Container(
+              color: AppColors.surfaceVariant,
+              alignment: Alignment.center,
+              child: SizedBox(
+                width: 24.r,
+                height: 24.r,
+                child: const CircularProgressIndicator(
+                  color: AppColors.primary,
+                  strokeWidth: 2.5,
+                ),
+              ),
+            );
+          }
+          final String? selectedId =
+              orders.isEmpty ? null : orders[idx].id;
           return Stack(
             children: <Widget>[
               Positioned.fill(
@@ -241,6 +439,12 @@ class _OrdersMapFullScreenState extends State<OrdersMapFullScreen> {
                             lon: o.longitude,
                           ))
                       .toList(),
+                  initialCenter: _initialCenter,
+                  initialZoom: _initialZoom,
+                  mapController: _mapController,
+                  showZoomControls: true,
+                  selectedMarkerId: selectedId,
+                  onMarkerTap: (String id) => _onMarkerTap(id, orders),
                 ),
               ),
               Positioned(
@@ -271,6 +475,10 @@ class _OrdersMapFullScreenState extends State<OrdersMapFullScreen> {
                         _addressSelected = false;
                       }),
                       showFilterBadge: active,
+                      // Правый отступ 8.w симметрично с кнопкой «Назад»
+                      // (left: 8.w в Stack ниже) — иначе бар визуально
+                      // съезжает влево на тёмной шапке.
+                      padding: EdgeInsets.fromLTRB(16.w, 8.h, 8.w, 8.h),
                     ),
                     if (active)
                       AppliedFilterChips(
@@ -293,14 +501,7 @@ class _OrdersMapFullScreenState extends State<OrdersMapFullScreen> {
                   right: 16.w,
                   child: _AddressSuggestions(
                     query: _query,
-                    onSelect: (String address) {
-                      _searchCtrl.text = address;
-                      setState(() {
-                        _query = address;
-                        _addressSelected = true;
-                      });
-                      FocusScope.of(context).unfocus();
-                    },
+                    onSelect: _onAddressSelected,
                   ),
                 ),
               if (orders.isEmpty &&
@@ -343,9 +544,9 @@ class _OrdersMapFullScreenState extends State<OrdersMapFullScreen> {
                     onVerticalDragEnd: (DragEndDetails d) {
                       final double v = d.primaryVelocity ?? 0;
                       if (v < -150) {
-                        _shift(1, orders.length);
+                        _shift(1, orders);
                       } else if (v > 150) {
-                        _shift(-1, orders.length);
+                        _shift(-1, orders);
                       }
                     },
                     onTap: () {
@@ -517,7 +718,11 @@ class _AddressSuggestions extends StatefulWidget {
   });
 
   final String query;
-  final ValueChanged<String> onSelect;
+
+  /// Передаём весь объект DadataAddress (а не строку) — родителю
+  /// нужны координаты `lat`/`lon`, чтобы переместить камеру карты
+  /// на выбранную точку.
+  final ValueChanged<DadataAddress> onSelect;
 
   @override
   State<_AddressSuggestions> createState() => _AddressSuggestionsState();
@@ -584,7 +789,7 @@ class _AddressSuggestionsState extends State<_AddressSuggestions> {
         itemBuilder: (BuildContext context, int i) {
           final DadataAddress a = _suggestions[i];
           return InkWell(
-            onTap: () => widget.onSelect(a.value),
+            onTap: () => widget.onSelect(a),
             child: Padding(
               padding:
                   EdgeInsets.symmetric(horizontal: 16.w, vertical: 12.h),

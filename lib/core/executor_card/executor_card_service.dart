@@ -1,5 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:dispatcher_1/core/profile/profile_service.dart';
+
 /// Чтение/запись моей публичной карточки исполнителя
 /// (`public.executor_cards` + расширения `profiles`: about, legal_status,
 /// experience_years). Одна строка на пользователя.
@@ -16,7 +18,7 @@ class ExecutorCardService {
         .from('executor_cards')
         .select(
           'location_address, location_lat, location_lng, radius_km, '
-          'is_published, updated_at',
+          'is_published, saved_at, updated_at',
         )
         .eq('user_id', user.id)
         .maybeSingle();
@@ -32,6 +34,9 @@ class ExecutorCardService {
       locationLng: (ec?['location_lng'] as num?)?.toDouble(),
       radiusKm: ec?['radius_km'] as int?,
       isPublished: (ec?['is_published'] as bool?) ?? false,
+      savedAt: ec?['saved_at'] == null
+          ? null
+          : DateTime.parse(ec!['saved_at'] as String),
       about: p?['about'] as String?,
       legalStatus: p?['legal_status'] as String?,
       experienceYears: p?['experience_years'] as int?,
@@ -84,6 +89,9 @@ class ExecutorCardService {
       'radius_km': radiusKm ?? existing?['radius_km'],
       'is_published':
           isPublished ?? (existing?['is_published'] as bool?) ?? false,
+      // Любой upsert карточки = факт сохранения. Этот флаг гасит
+      // empty-state в ExecutorCardScreen независимо от радиуса.
+      'saved_at': DateTime.now().toUtc().toIso8601String(),
     });
     final Map<String, dynamic> profilePatch = <String, dynamic>{
       'about': ?about,
@@ -93,6 +101,10 @@ class ExecutorCardService {
     if (profilePatch.isNotEmpty) {
       await _client.from('profiles').update(profilePatch).eq('id', user.id);
     }
+    // Любой upsert карточки/правка about/опыта в profile-плоскости —
+    // повод обновить шапку профиля (имя/avatar/about), которую слушают
+    // ProfileScreen и ExecutorCardScreen через ProfileService.changeBeacon.
+    ProfileService.changeBeacon.value++;
   }
 }
 
@@ -103,6 +115,7 @@ class MyExecutorCard {
     required this.locationLng,
     required this.radiusKm,
     required this.isPublished,
+    required this.savedAt,
     required this.about,
     required this.legalStatus,
     required this.experienceYears,
@@ -113,6 +126,11 @@ class MyExecutorCard {
   final double? locationLng;
   final int? radiusKm; // 10 / 20 / 50
   final bool isPublished;
+  /// Момент первого сохранения карточки. UI снимает empty-state по
+  /// этому полю — а не по `isPublished`, иначе после сохранения без
+  /// радиуса (radius_km IS NULL → is_published=false по CHECK)
+  /// карточка считалась бы несозданной и юзер попадал бы в «Создать».
+  final DateTime? savedAt;
   final String? about;
   final String? legalStatus;
   final int? experienceYears;

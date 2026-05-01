@@ -499,17 +499,12 @@ class _OrderDetailBody extends StatelessWidget {
       );
 
   String _formatWorkItem(WorkItem w) {
-    if (w.volume == null) return w.name;
-    final String volumeText = _fmtVolume(w.volume!);
+    final String? vol = w.volume;
+    if (vol == null || vol.isEmpty) return w.name;
     final String unit = _unitToUi(w.unit);
     return unit.isEmpty
-        ? '${w.name} — $volumeText'
-        : '${w.name} — $volumeText $unit';
-  }
-
-  String _fmtVolume(double v) {
-    if (v == v.truncateToDouble()) return v.toInt().toString();
-    return v.toString();
+        ? '${w.name} — $vol'
+        : '${w.name} — $vol $unit';
   }
 
   String _unitToUi(String? code) {
@@ -774,7 +769,7 @@ class _BlockedDialog extends StatelessWidget {
             ),
             SizedBox(height: 20.h),
             Text(
-              'Ваш профиль заблокирован\nна 30 дней',
+              'Ваш профиль заблокирован\n${AccountBlock.blockedUntilText ?? "на 30 дней"}',
               textAlign: TextAlign.center,
               style:
                   AppTextStyles.titleL.copyWith(fontWeight: FontWeight.w700),

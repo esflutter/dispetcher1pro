@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math';
 
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -80,9 +81,16 @@ class StorageService {
     }
     _ensureUnderMaxSize(file);
     final File compressed = await _compress(file);
-    final String fileName = '${DateTime.now().microsecondsSinceEpoch}.webp';
+    final String fileName = '${_uniqueId()}.webp';
     final String path = '${user.id}/$orderId/$fileName';
-    await _client.storage.from('order-photos').upload(path, compressed);
+    // Явный contentType — без него self-hosted Supabase Storage иногда
+    // выставляет application/octet-stream, и bucket с allowed_mime_types
+    // (image/jpeg|png|webp) reject'ит загрузку.
+    await _client.storage.from('order-photos').upload(
+          path,
+          compressed,
+          fileOptions: const FileOptions(contentType: 'image/webp'),
+        );
     return path;
   }
 
@@ -140,9 +148,25 @@ class StorageService {
     }
     _ensureUnderMaxSize(file);
     final File compressed = await _compress(file);
-    final String fileName = '${DateTime.now().microsecondsSinceEpoch}.webp';
+    final String fileName = '${_uniqueId()}.webp';
     final String path = '${user.id}/$fileName';
-    await _client.storage.from(bucket).upload(path, compressed);
+    // Явный contentType — см. uploadOrderPhoto.
+    await _client.storage.from(bucket).upload(
+          path,
+          compressed,
+          fileOptions: const FileOptions(contentType: 'image/webp'),
+        );
     return _client.storage.from(bucket).getPublicUrl(path);
+  }
+
+  /// Уникальный ID файла — micros + 6 hex-символов случайных. Раньше брали
+  /// просто `microsecondsSinceEpoch`, но при двух последовательных
+  /// загрузках в одну микросекунду (тапы по галерее на быстром девайсе)
+  /// файлы получали один path и второй upload «затирал» первый в storage.
+  static final Random _rng = Random.secure();
+  static String _uniqueId() {
+    final int micros = DateTime.now().microsecondsSinceEpoch;
+    final int rnd = _rng.nextInt(0xFFFFFF);
+    return '$micros-${rnd.toRadixString(16).padLeft(6, '0')}';
   }
 }

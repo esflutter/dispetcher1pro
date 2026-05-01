@@ -70,7 +70,9 @@ String _formatRentDateRaw({
   return '$datePart · $timePart';
 }
 
-/// "2 часа назад", "Сегодня в 11:30", "Вчера", "10 июня".
+/// "Только что", "5 минут назад", "2 часа назад", "3 дня назад".
+/// Раньше для сегодня/вчера возвращались «Сегодня в 11:30» / «Вчера», и
+/// рядом с «3 дня назад» пользователь видел два разных формата времени.
 String formatPublishedAgo(DateTime publishedAt, {DateTime? now}) {
   final DateTime n = now ?? DateTime.now();
   final Duration d = n.difference(publishedAt);
@@ -80,21 +82,13 @@ String formatPublishedAgo(DateTime publishedAt, {DateTime? now}) {
     final int m = d.inMinutes;
     return '$m ${_minutesWord(m)} назад';
   }
-  if (_isSameDay(publishedAt, n)) {
-    return 'Сегодня в ${_fmtHmDateTime(publishedAt)}';
+  if (d.inHours < 24) {
+    final int h = d.inHours;
+    return '$h ${_hoursWord(h)} назад';
   }
-  final DateTime yesterday = DateTime(n.year, n.month, n.day - 1);
-  if (_isSameDay(publishedAt, yesterday)) {
-    return 'Вчера';
-  }
-  return _fmtDay(publishedAt);
+  final int days = d.inDays;
+  return '$days ${_daysWord(days)} назад';
 }
-
-bool _isSameDay(DateTime a, DateTime b) =>
-    a.year == b.year && a.month == b.month && a.day == b.day;
-
-String _fmtHmDateTime(DateTime d) =>
-    '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
 
 String _minutesWord(int n) {
   final int n10 = n % 10;
@@ -103,4 +97,22 @@ String _minutesWord(int n) {
   if (n10 == 1) return 'минуту';
   if (n10 >= 2 && n10 <= 4) return 'минуты';
   return 'минут';
+}
+
+String _hoursWord(int n) {
+  final int n10 = n % 10;
+  final int n100 = n % 100;
+  if (n100 >= 11 && n100 <= 14) return 'часов';
+  if (n10 == 1) return 'час';
+  if (n10 >= 2 && n10 <= 4) return 'часа';
+  return 'часов';
+}
+
+String _daysWord(int n) {
+  final int n10 = n % 10;
+  final int n100 = n % 100;
+  if (n100 >= 11 && n100 <= 14) return 'дней';
+  if (n10 == 1) return 'день';
+  if (n10 >= 2 && n10 <= 4) return 'дня';
+  return 'дней';
 }

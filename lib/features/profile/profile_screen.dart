@@ -50,6 +50,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
     super.initState();
     VerificationStatus.notifier.addListener(_refresh);
     AccountBlock.notifier.addListener(_refresh);
+    // Любая правка профиля в дочерних экранах (имя/email/avatar/about/
+    // status/опыт) бьёт по changeBeacon → заново тянем DB, чтобы аватар
+    // и т.д. обновились без hot reload.
+    ProfileService.changeBeacon.addListener(_onProfileChanged);
+    _loadFromDb();
+  }
+
+  void _onProfileChanged() {
+    if (!mounted) return;
     _loadFromDb();
   }
 
@@ -57,7 +66,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
     try {
       final MyProfile? p = await ProfileService.instance.loadMine();
       if (p == null || !mounted) return;
-      CropResult.userName = p.name;
+      // Не перезаписываем CropResult.userName из БД, если локально уже
+      // есть значение. Иначе при возврате из EditProfileScreen мы могли
+      // затереть только что введённое имя его старым значением: dispose
+      // edit-экрана пишет в БД асинхронно, а наш SELECT прилетает быстрее.
+      if (CropResult.userName.isEmpty) {
+        CropResult.userName = p.name;
+      }
       // Синхронизируем мок-сторы с реальным состоянием в БД.
       AccountBlock.setUntil(p.blockedUntil);
       VerificationStatus.current = switch (p.verificationStatus) {
@@ -75,7 +90,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _dbReviewCount = p.reviewCountAsExecutor;
         _dbAvatarUrl = p.avatarUrl;
       });
-      // Подписка лежит в profiles_private, отдельный запрос.
+      // Подписка + email лежат в profiles_private, отдельный запрос.
       final MyPrivate? priv = await ProfileService.instance.loadMyPrivate();
       if (priv == null || !mounted) return;
       // VerificationStatus.hasSubscription — мок, обновим из БД.
@@ -84,6 +99,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
           paid != null && paid.isAfter(DateTime.now());
       VerificationStatus.subscriptionPaidUntilText =
           paid == null ? null : _fmtPaidUntil(paid);
+      // Email — тот же сценарий, что у имени: cold start → нет в кэше
+      // → берём из БД. После Hot Restart введённый ранее email пропадал
+      // из «Моей карточки» / профиля, потому что `loadMyPrivate.email`
+      // нигде не записывался в CropResult.userEmail.
+      if (CropResult.userEmail.isEmpty &&
+          priv.email != null && priv.email!.isNotEmpty) {
+        CropResult.userEmail = priv.email!;
+      }
       if (mounted) setState(() {});
     } catch (_) {
       // Нет сети / ошибка БД — тихо, оставляем мок-значения.
@@ -97,6 +120,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void dispose() {
     VerificationStatus.notifier.removeListener(_refresh);
     AccountBlock.notifier.removeListener(_refresh);
+    ProfileService.changeBeacon.removeListener(_onProfileChanged);
     super.dispose();
   }
 
@@ -183,7 +207,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               const BlockedPill(),
               SizedBox(height: 8.h),
               Text(
-                'Ваш рейтинг ниже 2 звёзд, поэтому доступ\nвременно ограничен на 30 дней',
+                'Ваш рейтинг ниже 2 звёзд, поэтому доступ\nвременно ограничен ${AccountBlock.blockedUntilText ?? "на 30 дней"}',
                 style: AppTextStyles.subBody.copyWith(
                   color: AppColors.textPrimary,
                   fontWeight: FontWeight.w400,
@@ -235,6 +259,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
             _ProfileMenuItem(
               label: 'Информация о подписке',
               onTap: () => context.push('/subscription'),
+            ),
+            SizedBox(height: 16.h),
+            _ProfileMenuItem(
+              label: 'Способы оплаты',
+              onTap: () => context.push('/subscription/cards'),
             ),
             SizedBox(height: 20.h),
             const _SupportFooter(),
@@ -289,11 +318,15 @@ class _Header extends StatelessWidget {
                 behavior: HitTestBehavior.opaque,
                 child: Row(
                   children: <Widget>[
-                    Image.asset('assets/images/catalog/star.webp',
-                        width: 20.r, height: 20.r),
-                    SizedBox(width: 4.w),
-                    Text(ratingText, style: AppTextStyles.body),
-                    SizedBox(width: 16.w),
+                    // При нуле отзывов рейтинг бессмысленен — звезду и
+                    // число прячем, оставляем только подчёркнутый счётчик.
+                    if (reviewsCount > 0) ...<Widget>[
+                      Image.asset('assets/images/catalog/star.webp',
+                          width: 20.r, height: 20.r),
+                      SizedBox(width: 4.w),
+                      Text(ratingText, style: AppTextStyles.body),
+                      SizedBox(width: 16.w),
+                    ],
                     Text(
                       '$reviewsCount ${reviewsWord(reviewsCount)}',
                       style: AppTextStyles.body.copyWith(

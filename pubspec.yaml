@@ -38,6 +38,15 @@ dependencies:
   flutter_map: ^7.0.2
   vector_map_tiles: ^8.0.0
   latlong2: ^0.9.1
+  # Deep links для возврата из браузерной формы YooKassa в приложение.
+  # Кастомная схема `dispatcher1pro://payment/result?id=...` ловится
+  # этим пакетом, и go_router сразу открывает экран статуса платежа.
+  app_links: ^6.3.2
+  # Путь к application cache directory — используется для дискового
+  # кэша тайлов OpenFreeMap (vector_map_tiles), чтобы карта не качала
+  # одни и те же тайлы при каждом открытии. Транзитивно тянется и
+  # другими пакетами, но добавлен явно для соответствия линту.
+  path_provider: ^2.1.4
 
 dev_dependencies:
   flutter_test:
