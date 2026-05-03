@@ -37,6 +37,12 @@ dependencies:
   # потом мигрировать на self-hosted PMTiles в Yandex Object Storage.
   flutter_map: ^7.0.2
   vector_map_tiles: ^8.0.0
+  # Прямая зависимость нужна для типов `Theme` / `ThemeLayer` —
+  # фильтруем слои стиля positron, чтобы скрыть государственные
+  # границы (см. `_hideAdminBoundaries` в openfreemap_view.dart).
+  # Транзитивно уже подтянута через vector_map_tiles, но без явного
+  # объявления Dart-анализатор запрещает импорт.
+  vector_tile_renderer: ^5.2.1
   latlong2: ^0.9.1
   # Deep links для возврата из браузерной формы YooKassa в приложение.
   # Кастомная схема `dispatcher1pro://payment/result?id=...` ловится

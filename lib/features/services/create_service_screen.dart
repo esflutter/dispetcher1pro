@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:dispatcher_1/core/catalog/catalog_service.dart';
@@ -23,6 +22,7 @@ import 'package:dispatcher_1/features/support/chat_screen.dart';
 import 'package:dispatcher_1/features/services/my_services_screen.dart';
 
 import 'widgets/service_alerts.dart';
+import 'widgets/service_paywall.dart';
 
 /// Склонение «час» после предлога «от» (род. падеж).
 /// 1 → «часа», 2/3/4/… → «часов», 11–14 → «часов».
@@ -349,12 +349,16 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
       // после успешной оплаты trigger `apply_payment_success` поставит
       // `is_paid=true` и услуга появится в каталоге.
       Navigator.of(context).pop(); // закрываем форму создания
-      // Передаём kind/serviceId через `extra` — наш роутер `/subscription/payment`
-      // умеет их разбирать (см. router.dart).
+      // Открываем paywall «Оплатите размещение услуги» с фоном-картинкой;
+      // оттуда юзер тапом «Продолжить» уходит на шторку выбора способа
+      // оплаты. Прямой переход на голую шторку убран — без paywall'а
+      // фон оставался чёрным.
       if (mounted) {
-        await context.push(
-          '/subscription/payment',
-          extra: <String, Object?>{'kind': 'service_slot', 'serviceId': id},
+        await Navigator.of(context).push<void>(
+          MaterialPageRoute<void>(
+            fullscreenDialog: true,
+            builder: (_) => ServicePaywall(serviceId: id),
+          ),
         );
       }
     } finally {

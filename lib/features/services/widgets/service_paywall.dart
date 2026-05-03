@@ -7,22 +7,23 @@ import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
 import 'package:dispatcher_1/features/subscription/widgets/payment_method_card.dart';
 
-/// Paywall для оплаты размещения карточки исполнителя. Структурно
-/// идентичен [SubscriptionPaywall] (фон + AnimatedSwitcher между
-/// маркетинговой карточкой и шторкой выбора способа оплаты), но с
-/// другим заголовком и описанием.
+/// Paywall оплаты размещения услуги. Структура та же, что у
+/// [SubscriptionPaywall] и [ExecutorCardPaywall]: фон + переход
+/// маркетинговой карточки в шторку выбора способа оплаты.
 ///
-/// Платёж — обычная подписка (`PaymentKind.subscription`): по дизайну
-/// у нас всего ДВЕ оплаты — подписка и слот услуги. Карточка
-/// исполнителя гейтится через `profiles_private.subscription_paid_until`.
-class ExecutorCardPaywall extends StatefulWidget {
-  const ExecutorCardPaywall({super.key});
+/// Для оплаты использует `PaymentKind.serviceSlot` и `serviceId` —
+/// после успеха триггер `apply_payment_success` ставит
+/// `services.is_paid = true`, услуга появляется в каталоге.
+class ServicePaywall extends StatefulWidget {
+  const ServicePaywall({super.key, required this.serviceId});
+
+  final String serviceId;
 
   @override
-  State<ExecutorCardPaywall> createState() => _ExecutorCardPaywallState();
+  State<ServicePaywall> createState() => _ServicePaywallState();
 }
 
-class _ExecutorCardPaywallState extends State<ExecutorCardPaywall>
+class _ServicePaywallState extends State<ServicePaywall>
     with SingleTickerProviderStateMixin {
   bool _showPayment = false;
   late final AnimationController _anim;
@@ -45,8 +46,7 @@ class _ExecutorCardPaywallState extends State<ExecutorCardPaywall>
 
   Future<void> _loadPrice() async {
     try {
-      final int p =
-          await SettingsService.instance.subscriptionMonthlyPriceRub();
+      final int p = await SettingsService.instance.serviceSlotPriceRub();
       if (!mounted) return;
       setState(() => _priceRub = p);
     } catch (_) {/* fallback в build */}
@@ -122,14 +122,13 @@ class _ExecutorCardPaywallState extends State<ExecutorCardPaywall>
                   );
                 },
                 child: PaymentMethodCard(
-                  kind: PaymentKind.subscription,
+                  kind: PaymentKind.serviceSlot,
                   amount: _priceRub,
-                  // После оплаты подписки из контекста «Открыть карточку
-                  // исполнителя» возвращаем именно туда, а не на /shell —
-                  // юзер только что хотел отредактировать карточку,
-                  // подписка теперь активна, у него под носом ровно тот
-                  // экран, ради которого он платил.
-                  returnPath: '/executor-card',
+                  serviceId: widget.serviceId,
+                  // После успешной оплаты слота юзер должен вернуться
+                  // в «Мои услуги» — там его новая услуга появится
+                  // как is_paid=true (триггер apply_payment_success).
+                  returnPath: '/services',
                 ),
               ),
             ),
@@ -151,7 +150,7 @@ class _ExecutorCardPaywallState extends State<ExecutorCardPaywall>
       child: Column(
         children: <Widget>[
           Text(
-            'Оплатите размещение\nкарточки исполнителя',
+            'Оплатите размещение\nуслуги',
             textAlign: TextAlign.center,
             style: TextStyle(
               fontFamily: 'Roboto',
@@ -162,7 +161,7 @@ class _ExecutorCardPaywallState extends State<ExecutorCardPaywall>
           ),
           SizedBox(height: 13.h),
           Text(
-            'После оплаты ваша карточка появится в\nкаталоге, и заказчики смогут выбрать вас',
+            'После оплаты ваша услуга появится в\nкаталоге, и заказчики смогут выбрать вас',
             textAlign: TextAlign.center,
             style: TextStyle(
               fontFamily: 'Roboto',
@@ -171,11 +170,11 @@ class _ExecutorCardPaywallState extends State<ExecutorCardPaywall>
               color: AppColors.textSecondary,
             ),
           ),
-          SizedBox(height: 20.h),
+          const Spacer(),
           Text(
             _priceRub == null
-                ? 'Стоимость подписки уточняется'
-                : 'N дней бесплатно, затем ${_fmtPrice(_priceRub!)} ₽/месяц',
+                ? 'Стоимость уточняется'
+                : '${_fmtPrice(_priceRub!)} ₽ за услугу',
             style: TextStyle(
               fontFamily: 'Roboto',
               fontSize: 14.sp,

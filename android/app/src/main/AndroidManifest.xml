@@ -43,6 +43,30 @@
                 <category android:name="android.intent.category.BROWSABLE"/>
                 <data android:scheme="dispatcher1pro"/>
             </intent-filter>
+            <!-- Android App Links: после публикации release-билда (см.
+                 .well-known/assetlinks.json на jokaynapesbem.beget.app)
+                 Android Verifier проверит SHA-256 ключа подписи и при
+                 успехе запрос https://jokaynapesbem.beget.app/payment/return*
+                 будет открывать приложение НАПРЯМУЮ, без выбора браузера.
+                 Сейчас есть только промежуточная HTML-страница; этот
+                 intent-filter готовит поведение «open in app» к моменту,
+                 когда APP_LINKS_SHA256 будет установлен на VPS.
+                 autoVerify="true" — Google проверит assetlinks.json
+                 при первой установке приложения.
+
+                 ВАЖНО: до того как файл assetlinks.json будет реально
+                 отдаваться на /.well-known/assetlinks.json (см.
+                 supabase/functions/assetlinks/index.ts), App Links не
+                 верифицируется и поведение остаётся как сейчас —
+                 запрос идёт в браузер на промежуточную страницу. -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="https"
+                      android:host="jokaynapesbem.beget.app"
+                      android:pathPrefix="/payment/return"/>
+            </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->

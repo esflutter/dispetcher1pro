@@ -7,7 +7,7 @@ import 'package:dispatcher_1/core/catalog/catalog_service.dart';
 import 'package:dispatcher_1/core/catalog/format.dart';
 import 'package:dispatcher_1/core/catalog/models.dart';
 import 'package:dispatcher_1/core/my_orders/my_orders_service.dart'
-    show MatchAlreadyTakenException;
+    show AlreadyRespondedException, MatchAlreadyTakenException;
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
 import 'package:dispatcher_1/core/widgets/clickable_address.dart';
@@ -208,6 +208,23 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
         barrierColor: Colors.black.withValues(alpha: 0.35),
         builder: (_) => RespondModalDialog(verified: true),
       );
+    } on AlreadyRespondedException {
+      // Этот же исполнитель уже откликался на этот заказ (его отклик
+      // потом получил rejected_*/expired). По бизнес-правилу повторный
+      // отклик запрещён — UNIQUE-индекс не пропускает INSERT. Сообщение
+      // отличается от MatchAlreadyTakenException: тут вина не в заказе,
+      // а в самом пользователе — он уже пытался.
+      if (!mounted) return;
+      setState(() {
+        _justResponded = true;
+        _responding = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Вы уже откликались на этот заказ.'),
+          duration: Duration(seconds: 4),
+        ),
+      );
     } on MatchAlreadyTakenException {
       if (!mounted) return;
       setState(() {
@@ -392,7 +409,7 @@ class _OrderDetailBody extends StatelessWidget {
                   ),
                 ),
                 SizedBox(height: 10.h),
-                Text('№${order.displayNumber.toString().padLeft(6, '0')}',
+                Text('№${order.displayNumber.toString().padLeft(8, '0')}',
                     style: AppTextStyles.caption
                         .copyWith(color: AppColors.textTertiary)),
                 SizedBox(height: 4.h),

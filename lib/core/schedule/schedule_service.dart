@@ -161,6 +161,19 @@ class ScheduleService {
         .eq('day', _isoDate(day));
   }
 
+  /// Атомарно отмечает день нерабочим: накатывает override
+  /// (`accepting=false`) и переводит все accepted-мэтчи исполнителя на
+  /// заказы, чей период покрывает [day], в `rejected_by_executor`.
+  /// RPC `mark_executor_day_off` делает второе UPDATE — первое
+  /// (UPSERT override) клиент уже сам отправил через [upsertOverride].
+  /// См. миграцию `cancel_matches_on_executor_day_off`.
+  Future<void> cancelAcceptedMatchesOnDay(DateTime day) async {
+    await _client.rpc<dynamic>(
+      'mark_executor_day_off',
+      params: <String, dynamic>{'p_day': _isoDate(day)},
+    );
+  }
+
   String _isoDate(DateTime d) =>
       '${d.year.toString().padLeft(4, '0')}-'
       '${d.month.toString().padLeft(2, '0')}-'

@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'package:dispatcher_1/core/payments/models.dart';
 import 'package:dispatcher_1/core/payments/payment_service.dart';
+import 'package:dispatcher_1/core/profile/profile_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_spacing.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
 import 'package:dispatcher_1/core/widgets/dark_sub_app_bar.dart';
+import 'package:dispatcher_1/core/widgets/primary_button.dart';
+import 'package:dispatcher_1/features/subscription/widgets/brand_badge.dart';
 
 /// Экран «Способы оплаты» — список сохранённых карт + удаление + кнопка
 /// добавления новой карты.
@@ -28,6 +32,10 @@ class _CardsScreenState extends State<CardsScreen> {
   List<SavedCard>? _cards;
   bool _loading = true;
   final Set<String> _deleting = <String>{};
+
+  /// Идёт инициирование привязки карты — `createPayment` в полёте.
+  /// Блокирует повторный тап, пока не получим confirmation_url.
+  bool _binding = false;
 
   @override
   void initState() {
@@ -55,7 +63,15 @@ class _CardsScreenState extends State<CardsScreen> {
   }
 
   Future<void> _onDelete(SavedCard c) async {
-    final bool? ok = await _confirmDelete(c);
+    // Если это карта, привязанная к подписке (subscription_payment_method_id),
+    // дополнительно предупреждаем — после удаления auto_renew выключится
+    // (БД-триггер `clear_subscription_card_on_deactivate`), и подписка
+    // не продлится. Вычисляем «является ли карта подписочной» через
+    // профиль — если это так, показываем дополнительное предупреждение.
+    final MyPrivate? priv = await ProfileService.instance.loadMyPrivate();
+    final bool isSubCard = priv?.subscriptionPaymentMethodId == c.id;
+    if (!mounted) return;
+    final bool? ok = await _confirmDelete(c, isSubscriptionCard: isSubCard);
     if (ok != true || !mounted) return;
     setState(() => _deleting.add(c.id));
     try {
@@ -76,34 +92,150 @@ class _CardsScreenState extends State<CardsScreen> {
     }
   }
 
-  Future<bool?> _confirmDelete(SavedCard c) {
+  Future<bool?> _confirmDelete(
+    SavedCard c, {
+    bool isSubscriptionCard = false,
+  }) {
+    // Стандартный модал приложения: крестик справа, центрированный
+    // заголовок, описание под ним, основная оранжевая кнопка действия и
+    // текстовая «Вернуться» снизу. Тот же шаблон используется в
+    // SubscriptionScreen._showDisableDialog — держим визуально единым.
     return showDialog<bool>(
       context: context,
       barrierDismissible: true,
-      builder: (BuildContext ctx) => AlertDialog(
-        title: const Text('Удалить карту?'),
-        content: Text(
-            '${_brandLabel(c.brand)} •• ${c.displayLast4} больше не будет использоваться для оплаты.'),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Отмена'),
+      builder: (BuildContext ctx) => Dialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppSpacing.radiusL),
+        ),
+        insetPadding: EdgeInsets.symmetric(horizontal: AppSpacing.xl),
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(
+            AppSpacing.md,
+            AppSpacing.sm,
+            AppSpacing.md,
+            AppSpacing.md,
           ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Удалить', style: TextStyle(color: AppColors.error)),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Align(
+                alignment: Alignment.centerRight,
+                child: GestureDetector(
+                  onTap: () => Navigator.of(ctx).pop(false),
+                  child: Icon(
+                    Icons.close_rounded,
+                    size: 22.r,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ),
+              Text(
+                'Удалить карту?',
+                style: AppTextStyles.titleL,
+                textAlign: TextAlign.center,
+              ),
+              SizedBox(height: AppSpacing.xs),
+              Text(
+                isSubscriptionCard
+                    ? 'Эта карта используется для авто-продления подписки. '
+                        'После удаления авто-продление отключится — '
+                        'подписка не продлится по окончании срока.'
+                    : '${c.isYooMoney ? "YooMoney" : _brandLabel(c.brand)} '
+                        '•• ${c.displayLast4} больше не будет использоваться '
+                        'для оплаты.',
+                style: AppTextStyles.body
+                    .copyWith(color: AppColors.textSecondary),
+                textAlign: TextAlign.center,
+              ),
+              SizedBox(height: AppSpacing.lg),
+              PrimaryButton(
+                label: 'Удалить',
+                onPressed: () => Navigator.of(ctx).pop(true),
+              ),
+              SizedBox(height: AppSpacing.xs),
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: Text(
+                  'Вернуться',
+                  style: AppTextStyles.bodyMedium
+                      .copyWith(color: AppColors.textPrimary),
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
 
-  void _onAddCard() {
-    // «Добавить карту» = инициировать обычный платёж подписки с
-    // `save_card=true`. После успешной оплаты webhook сам положит карту
-    // в `saved_payment_methods`, и при следующем заходе она появится
-    // в списке. Прямого «zero-amount binding» в нашем бэкенде ещё нет.
-    context.push('/subscription/payment');
+  /// «Добавить карту» — прямой YooKassa-флоу через kind='card_binding'.
+  ///
+  /// 1) Создаём в бэкенде платёж 1 ₽ с `save_payment_method=true`.
+  /// 2) Открываем confirmation_url в системном браузере и одновременно
+  ///    переходим на экран результата (тот же `PaymentResultScreen`,
+  ///    но с флагом binding=1) — он будет поллить статус.
+  /// 3) После успеха webhook сохраняет карту и тут же запускает
+  ///    рефанд той же 1 ₽ — юзер получает карту, ничего по факту
+  ///    не платит.
+  /// 4) Когда юзер вернётся в приложение и нажмёт «Готово», экран
+  ///    результата сам вернёт его на этот экран — мы сразу
+  ///    перечитываем список карт.
+  Future<void> _onAddCard() async {
+    if (_binding) return;
+    setState(() => _binding = true);
+    try {
+      // Тот же deep-link, что используется для подписочных платежей:
+      // dispatcher1pro://payment/result?binding=1 уже зарегистрирован в
+      // AndroidManifest/Info.plist и ловится `app_links`.
+      // Передаём `?binding=1` в return_url — Edge Function допишет
+       // `&payment_id=<uuid>` к этой строке. Когда YooKassa в конце
+       // редиректит юзера на эту deep-link'у, мы получим оба параметра
+       // и поймём, что это привязка карты, а не обычный платёж.
+       const String returnDeeplink =
+           'dispatcher1pro://payment/result?binding=1';
+      final PaymentCreateResult result =
+          await PaymentService.instance.createPayment(
+        kind: PaymentKind.cardBinding,
+        saveCard: true,
+        returnUrl: returnDeeplink,
+      );
+      if (!mounted) return;
+      // Уезжаем на экран результата (поллит статус) и параллельно
+      // открываем форму YooKassa в браузере. Push не await'им
+      // напрямую — фьючер `resultClosed` нужен только чтобы перезагрузить
+      // список карт после возврата.
+      final Future<Object?> resultClosed = context.push<void>(
+        '/subscription/payment/result'
+        '?id=${Uri.encodeComponent(result.paymentId)}&binding=1',
+      );
+      if (result.confirmationUrl != null) {
+        // ignore: discarded_futures
+        launchUrl(
+          Uri.parse(result.confirmationUrl!),
+          mode: LaunchMode.externalApplication,
+        );
+      }
+      // Когда юзер закрыл экран результата — перечитываем список карт:
+      // в случае успеха новая карта уже лежит в saved_payment_methods.
+      await resultClosed;
+      if (mounted) await _load();
+    } on PaymentError catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message)),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Не удалось начать привязку карты. Попробуйте ещё раз.'),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _binding = false);
+    }
   }
 
   @override
@@ -136,7 +268,7 @@ class _CardsScreenState extends State<CardsScreen> {
                     Padding(
                       padding: EdgeInsets.fromLTRB(4.w, 0, 4.w, 16.h),
                       child: Text(
-                        'Сохранённых карт пока нет. Карта сохранится автоматически при первой оплате подписки или услуги.',
+                        'Сохранённых карт пока нет.',
                         style: AppTextStyles.bodyMRegular
                             .copyWith(color: AppColors.textSecondary),
                       ),
@@ -167,21 +299,43 @@ class _CardTile extends StatelessWidget {
       height: 56.h,
       padding: EdgeInsets.symmetric(horizontal: 16.w),
       decoration: BoxDecoration(
-        color: AppColors.categoryCard,
+        // Лёгкая бренд-заливка вместо нейтрально-серого — серая
+        // палитра в дизайне приложения вообще не встречается, везде
+        // мягкий оранжевый tint.
+        color: AppColors.primaryTint,
         borderRadius: BorderRadius.circular(12.r),
       ),
       child: Row(
         children: <Widget>[
-          _BrandBadge(brand: card.brand),
+          BrandBadge(card: card),
           SizedBox(width: 12.w),
           Expanded(
-            child: Text(
-              '••  ${card.displayLast4}',
-              style: AppTextStyles.body.copyWith(
-                color: AppColors.textPrimary,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 1.2,
-              ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  // Отступы: между названием бренда и `••` — 4 пробела
+                  // (~2× от расстояния между `••` и цифрами карты, которое
+                  // = 2 пробелам). Так название бренда визуально отделяется,
+                  // а сама пара «точки + 4 цифры» читается как один блок.
+                  card.isYooMoney
+                      ? 'YooMoney    ••  ${card.displayLast4}'
+                      : '${card.brand ?? "Карта"}    ••  ${card.displayLast4}',
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    color: card.isExpired ? AppColors.textSecondary : null,
+                  ),
+                ),
+                if (card.isExpired)
+                  Text(
+                    'Срок действия истёк',
+                    style: TextStyle(
+                      fontFamily: 'Roboto',
+                      fontSize: 11.sp,
+                      color: AppColors.error,
+                    ),
+                  ),
+              ],
             ),
           ),
           if (deleting)
@@ -191,7 +345,6 @@ class _CardTile extends StatelessWidget {
               child: const CircularProgressIndicator(strokeWidth: 2),
             )
           else
-            // Tap-зона 40×40 для удобного попадания, иконка 22 — как в Figma.
             SizedBox(
               width: 40.r,
               height: 40.r,
@@ -209,9 +362,10 @@ class _CardTile extends StatelessWidget {
   }
 }
 
-/// Плашка «Добавить карту» — стилизована под бренд (мягкий оранжевый
-/// фон + оранжевый текст и иконка), чтобы выделяться на фоне серых
-/// плиток с уже сохранёнными картами.
+/// «Добавить карту» — строка-действие: оранжевая иконка `add_card`
+/// слева, обычный чёрный текст справа. Без подложки — вписывается в
+/// общий ритм списка плиток и совпадает по стилю с похожими CTA на
+/// других экранах приложения.
 class _AddCardTile extends StatelessWidget {
   const _AddCardTile({required this.onTap});
 
@@ -219,61 +373,25 @@ class _AddCardTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: AppColors.primaryTint,
+    return InkWell(
+      onTap: onTap,
       borderRadius: BorderRadius.circular(12.r),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12.r),
-        child: Container(
-          height: 56.h,
-          alignment: Alignment.center,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: <Widget>[
-              Icon(Icons.add_rounded, color: AppColors.primary, size: 22.r),
-              SizedBox(width: 8.w),
-              Text(
-                'Добавить карту',
-                style: AppTextStyles.button.copyWith(color: AppColors.primary),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Цветной шильдик с надписью бренда — заменяет логотипы платёжных
-/// систем, которых нет в ассетах. Цвета взяты из официальных гайдлайнов
-/// (МИР, Visa, MasterCard, Maestro), чтобы юзер мгновенно узнавал
-/// «свою» карту в списке.
-class _BrandBadge extends StatelessWidget {
-  const _BrandBadge({required this.brand});
-
-  final String? brand;
-
-  @override
-  Widget build(BuildContext context) {
-    final String label = _brandLabel(brand);
-    final Color color = _brandColor(brand);
-    return Container(
-      width: 40.w,
-      height: 28.h,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(6.r),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontFamily: 'Roboto',
-          fontSize: 10.sp,
-          fontWeight: FontWeight.w800,
-          color: Colors.white,
-          letterSpacing: 0.4,
+      child: Padding(
+        // Левый отступ совпадает с empty-state «Сохранённых карт пока
+        // нет.» (4.w) — иконка прижата к левому краю независимо от
+        // того, есть ли уже привязанные карты.
+        padding: EdgeInsets.fromLTRB(4.w, 12.h, 16.w, 12.h),
+        child: Row(
+          children: <Widget>[
+            Image.asset(
+              'assets/images/catalog/card_add.webp',
+              width: 24.r,
+              height: 24.r,
+              fit: BoxFit.contain,
+            ),
+            SizedBox(width: 12.w),
+            Text('Добавить карту', style: AppTextStyles.bodyMedium),
+          ],
         ),
       ),
     );
@@ -292,16 +410,3 @@ String _brandLabel(String? raw) {
   return 'CARD';
 }
 
-Color _brandColor(String? raw) {
-  final String s = (raw ?? '').toUpperCase();
-  if (s.contains('MIR')) return const Color(0xFF0F754E); // МИР — зелёный
-  if (s.contains('VISA')) return const Color(0xFF1434CB);
-  if (s.contains('MAESTRO')) return const Color(0xFF0099DF);
-  if (s.contains('MASTER')) return const Color(0xFFEB001B);
-  if (s.contains('JCB')) return const Color(0xFF0E4C96);
-  if (s.contains('AMERICAN') || s.contains('AMEX')) {
-    return const Color(0xFF006FCF);
-  }
-  if (s.contains('UNION')) return const Color(0xFFE21836);
-  return AppColors.textTertiary;
-}

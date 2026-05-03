@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:dispatcher_1/core/catalog/format.dart';
 import 'package:dispatcher_1/core/my_orders/models.dart';
 import 'package:dispatcher_1/core/my_orders/my_orders_service.dart';
 import 'package:dispatcher_1/core/schedule/schedule_service.dart';
@@ -113,6 +114,10 @@ class _ScheduledOrder {
     required this.photos,
     required this.customerRating,
     required this.customerReviewCount,
+    required this.createdAt,
+    required this.statusChangedAt,
+    required this.isSingleDay,
+    this.customerAvatarUrl,
     this.agreedPricePerHour,
     this.agreedPricePerDay,
     this.serviceMachineryTitle,
@@ -127,6 +132,29 @@ class _ScheduledOrder {
   final String customerId;
   final String customerName;
   final String customerPhone;
+
+  /// Когда был создан мэтч (момент отклика). Не используется для
+  /// подписи «X назад» — только как фоллбэк, если у заказа нет
+  /// `published_at`.
+  final DateTime createdAt;
+
+  /// Момент последнего изменения мэтча (`order_matches.updated_at`).
+  /// Используется в подписи «X назад» на экране деталей: при смене
+  /// статуса (отклик принят, отозван, отклонён) таймер «обнуляется» —
+  /// это явное событие, которое пользователь хочет видеть свежим.
+  final DateTime statusChangedAt;
+
+  /// `true`, если работа по заказу — на один день
+  /// (`date_to IS NULL` либо `date_from = date_to`). RPC
+  /// `mark_executor_day_off` отменяет accepted-мэтчи только для
+  /// однодневных заказов; multidate (несколько дней) не отменяется,
+  /// чтобы один нерабочий день не закрыл всю неделю работы.
+  final bool isSingleDay;
+
+  /// Аватар заказчика (`profiles.avatar_url`). Прокидывается в шапку
+  /// деталей, чтобы блок шапки на странице из графика выглядел
+  /// идентично странице из «Мои заказы».
+  final String? customerAvatarUrl;
 
   /// Поля заказа, нужные в `MyOrderDetailScreen` (категории, описание,
   /// спецификация работ, фото). Без них детальный экран рисовался
@@ -180,6 +208,10 @@ class _ScheduledOrder {
         photos: photos,
         customerRating: customerRating,
         customerReviewCount: customerReviewCount,
+        createdAt: createdAt,
+        statusChangedAt: statusChangedAt,
+        isSingleDay: isSingleDay,
+        customerAvatarUrl: customerAvatarUrl,
         agreedPricePerHour: agreedPricePerHour,
         agreedPricePerDay: agreedPricePerDay,
         serviceMachineryTitle: serviceMachineryTitle,
@@ -322,6 +354,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
             address: m.orderAddress,
             customerId: m.customerId,
             customerName: m.customerName,
+            customerAvatarUrl: m.customerAvatarUrl,
             customerPhone: c?.phone ?? '',
             customerEmail: c?.email,
             matchId: m.matchId,
@@ -333,6 +366,14 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
             photos: m.orderPhotos,
             customerRating: m.customerRating,
             customerReviewCount: m.customerReviewCount,
+            createdAt: m.createdAt,
+            statusChangedAt: m.statusChangedAt,
+            // Однодневный мэтч: либо date_to=null, либо date_to == date_from.
+            // Используется в `_toggleDayOff` для разделения мэтчей,
+            // которые можно отменить через RPC mark_executor_day_off,
+            // и многодневных, которые остаются accepted.
+            isSingleDay: m.orderDateTo == null ||
+                m.orderDateTo!.isAtSameMomentAs(m.orderDateFrom),
             agreedPricePerHour: m.agreedPricePerHour,
             agreedPricePerDay: m.agreedPricePerDay,
             serviceMachineryTitle: m.serviceMachineryTitle,
@@ -374,10 +415,20 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       List.generate(7, (i) => monday.add(Duration(days: i)));
 
   void _onPageChanged(int page) {
-    final newWeek = _weekFromPage(page);
+    final DateTime newWeek = _weekFromPage(page);
+    // Если в новой неделе есть сегодняшний день — выбираем именно его.
+    // Иначе (для будущих недель) — понедельник как первый доступный.
+    // Без этого возврат свайпом на текущую неделю ставил selection
+    // на понедельник, который уже мог быть в прошлом — кружок висел на
+    // некликаемом дне.
+    final DateTime today = _dateKey(DateTime.now());
+    final DateTime weekEnd = newWeek.add(const Duration(days: 6));
+    final bool todayInWeek =
+        !today.isBefore(newWeek) && !today.isAfter(weekEnd);
+    final DateTime defaultDay = todayInWeek ? today : newWeek;
     setState(() {
       _weekStart = newWeek;
-      _selectedDate = newWeek;
+      _selectedDate = defaultDay;
       _acceptingOrders = _acceptingFor(_selectedDate);
     });
   }
@@ -521,24 +572,60 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       return;
     }
 
-    final List<_ScheduledOrder> orders =
+    // Разделяем заказы дня на однодневные и многодневные. RPC
+    // `mark_executor_day_off` отменяет ТОЛЬКО однодневные мэтчи —
+    // многодневная работа (date_from < date_to) при одном нерабочем
+    // дне не отменяется, чтобы исполнитель не терял неделю работы из-за
+    // одного нерабочего дня. Из локального графика убираем тоже только
+    // однодневные — многодневные остаются на оставшихся днях работы.
+    final List<_ScheduledOrder> dayOrders =
         _ordersByDate[_dateKey(_selectedDate)] ?? <_ScheduledOrder>[];
-    if (orders.isNotEmpty) {
+    final List<_ScheduledOrder> singleDayOrders =
+        dayOrders.where((_ScheduledOrder o) => o.isSingleDay).toList();
+    final List<_ScheduledOrder> multiDayOrders =
+        dayOrders.where((_ScheduledOrder o) => !o.isSingleDay).toList();
+    if (dayOrders.isNotEmpty) {
       final bool? ok = await ScheduleAlerts.showMarkDayOffWithActiveOrders(
         context,
-        ordersCount: orders.length,
+        ordersCount: dayOrders.length,
       );
       if (ok != true || !mounted) return;
     }
     setState(() {
-      orders.clear();
+      // Удаляем из дня только однодневные — multidate остаются на дне,
+      // потому что в БД они продолжают быть accepted на остальные дни.
+      // Если убрать их визуально — после refresh они вернутся, и
+      // пользователь решит что баг.
+      dayOrders.removeWhere((_ScheduledOrder o) => o.isSingleDay);
       _dayStates[key] = DayState.dayOff;
       _acceptingOrders = false;
     });
+    if (multiDayOrders.isNotEmpty && mounted) {
+      // Информируем юзера, что многодневные заказы не отменены.
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Многодневные заказы (${multiDayOrders.length}) остались — '
+            'свяжитесь с заказчиком, чтобы договориться о пропуске дня.',
+          ),
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    }
     // Override: «нерабочий день» → accepting=false. Сохраняем все
     // остальные параметры дня (время/радиус/техника/локация), чтобы
     // при возврате на «рабочий» пользователь не потерял настройки.
     await _persistOverride(_selectedDate, accepting: false);
+    // Отменяем accepted-мэтчи на этот день в БД (RPC сам пропускает
+    // multidate-мэтчи). Cообщаем «Мои заказы», что данные могли
+    // измениться — иначе там карточки висели в accepted до pull-to-refresh.
+    if (singleDayOrders.isNotEmpty) {
+      try {
+        await ScheduleService.instance
+            .cancelAcceptedMatchesOnDay(_selectedDate);
+        MyOrdersService.bumpChangeBeacon();
+      } catch (_) {/* silent — UI уже очищен */}
+    }
   }
 
   Future<void> _toggleAcceptance(bool value) async {
@@ -950,12 +1037,17 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   /// ошибке заказ оставался в БД, но в UI его не было до перезагрузки;
   /// при двойном тапе уходило два UPDATE подряд. Сейчас ждём БД, и
   /// при ошибке возвращаем карточку обратно.
-  Future<void> _removeOrder(_ScheduledOrder order) async {
+  ///
+  /// Возвращает `true`, если БД зафиксировала переход. Это нужно
+  /// детальному экрану [MyOrderDetailScreen] — он закрывает себя
+  /// только после `true`, чтобы при ошибке юзер увидел SnackBar и
+  /// мог попробовать снова.
+  Future<bool> _removeOrder(_ScheduledOrder order) async {
     final List<_ScheduledOrder>? list =
         _ordersByDate[_dateKey(_selectedDate)];
-    if (list == null) return;
+    if (list == null) return false;
     final int origIdx = list.indexOf(order);
-    if (origIdx < 0) return;
+    if (origIdx < 0) return false;
     setState(() => list.removeAt(origIdx));
     try {
       if (order.status == MyOrderStatus.offerSent) {
@@ -966,8 +1058,9 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
         // awaiting_executor / accepted → rejected_by_executor
         await MyOrdersService.instance.declineMatch(order.matchId);
       }
+      return true;
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted) return false;
       // Возвращаем карточку на место — БД отвергла переход или сеть
       // упала. Без этого UI расходится с базой.
       setState(() {
@@ -976,6 +1069,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Не удалось обновить заказ: $e')),
       );
+      return false;
     }
   }
 }
@@ -1050,8 +1144,10 @@ class _OrderCard extends StatelessWidget {
   final Future<bool> Function() onConfirm;
 
   /// Удаление заказа из графика — когда исполнитель «Отклонил» /
-  /// «Отказался» / «Отозвал отклик».
-  final VoidCallback onRemove;
+  /// «Отказался» / «Отозвал отклик». Возвращает `true`, если БД
+  /// зафиксировала переход, чтобы детальный экран мог закрыться
+  /// только после успеха (`MyOrderDetailScreen._runRemove`).
+  final Future<bool> Function() onRemove;
 
   @override
   Widget build(BuildContext context) {
@@ -1080,10 +1176,12 @@ class _OrderCard extends StatelessWidget {
             state: detailState,
             customerId: order.customerId,
             customerName: order.customerName,
+            customerAvatarUrl: order.customerAvatarUrl,
             customerPhone: order.customerPhone,
             customerEmail: order.customerEmail,
             customerRating: order.customerRating,
             customerReviews: order.customerReviewCount,
+            publishedAgo: formatPublishedAgo(order.statusChangedAt),
             orderNumber:
                 '№${order.orderDisplayNumber.toString().padLeft(8, '0')}',
             matchId: order.matchId,
@@ -1122,7 +1220,10 @@ class _OrderCard extends StatelessWidget {
         SizedBox(height: 8.h),
         _LabelLine(label: 'Дата аренды:', value: _fullDate),
         SizedBox(height: 5.h),
-        _LabelLine(label: 'Адрес:', value: order.address, underlined: true),
+        // В списке заказов графика адрес не кликабельный (нет onTap-обвязки),
+        // подчёркивание вводило в заблуждение. Кликабельные ссылки на
+        // карты — только в деталях заказа, через ClickableAddress.
+        _LabelLine(label: 'Адрес:', value: order.address),
         ],
       ),
     );
@@ -1212,11 +1313,9 @@ class _LabelLine extends StatelessWidget {
   const _LabelLine({
     required this.label,
     required this.value,
-    this.underlined = false,
   });
   final String label;
   final String value;
-  final bool underlined;
 
   @override
   Widget build(BuildContext context) {
@@ -1237,10 +1336,9 @@ class _LabelLine extends StatelessWidget {
           ),
           TextSpan(
             text: value,
-            style: TextStyle(
+            style: const TextStyle(
               fontWeight: FontWeight.w400,
               color: AppColors.textSecondary,
-              decoration: underlined ? TextDecoration.underline : TextDecoration.none,
             ),
           ),
         ],

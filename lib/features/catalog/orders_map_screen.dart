@@ -44,6 +44,8 @@ class OrdersMapScreen extends StatelessWidget {
     this.selectedMarkerId,
     this.mapController,
     this.showZoomControls = false,
+    this.showMyLocation = false,
+    this.onMyLocationTap,
   });
 
   final List<OrderMarkerData> markers;
@@ -53,6 +55,8 @@ class OrdersMapScreen extends StatelessWidget {
   final String? selectedMarkerId;
   final MapController? mapController;
   final bool showZoomControls;
+  final bool showMyLocation;
+  final VoidCallback? onMyLocationTap;
 
   @override
   Widget build(BuildContext context) {
@@ -72,6 +76,8 @@ class OrdersMapScreen extends StatelessWidget {
       selectedMarkerId: selectedMarkerId,
       mapController: mapController,
       showZoomControls: showZoomControls,
+      showMyLocation: showMyLocation,
+      onMyLocationTap: onMyLocationTap,
     );
   }
 }
@@ -85,13 +91,20 @@ class OrdersMapFullScreen extends StatefulWidget {
   State<OrdersMapFullScreen> createState() => _OrdersMapFullScreenState();
 }
 
-class _OrdersMapFullScreenState extends State<OrdersMapFullScreen> {
+class _OrdersMapFullScreenState extends State<OrdersMapFullScreen>
+    with TickerProviderStateMixin {
   final TextEditingController _searchCtrl = TextEditingController();
   final MapController _mapController = MapController();
   String _query = '';
   bool _addressSelected = false;
   int _current = 0;
   int _direction = 1;
+
+  /// Видимость нижней карточки выбранного заказа. По умолчанию `false` —
+  /// при первом открытии экрана фокус на пользователе/карте; карточка
+  /// появляется только когда юзер ткнул в маркер. Тап по кнопке «моё
+  /// местоположение» снова прячет карточку.
+  bool _cardVisible = false;
 
   /// Последний центр и зум карты, на котором юзер вышел с экрана.
   /// Статика — живёт в рамках одной сессии приложения. При повторном
@@ -257,10 +270,14 @@ class _OrdersMapFullScreenState extends State<OrdersMapFullScreen> {
   void _onMarkerTap(String id, List<_MapOrder> orders) {
     if (orders.isEmpty) return;
     final int idx = orders.indexWhere((_MapOrder o) => o.id == id);
-    if (idx < 0 || idx == _current) return;
+    if (idx < 0) return;
     setState(() {
       _direction = idx > _current ? 1 : -1;
       _current = idx;
+      // Любой тап по маркеру → показать карточку. Если она уже была
+      // показана, обновится только индекс выбранного заказа (через
+      // `_current`).
+      _cardVisible = true;
     });
     _centerOnOrder(orders[idx]);
   }
@@ -273,9 +290,10 @@ class _OrdersMapFullScreenState extends State<OrdersMapFullScreen> {
     if (o.latitude == null || o.longitude == null) return;
     try {
       final double currentZoom = _mapController.camera.zoom;
-      _mapController.move(
+      _mapController.animatedMove(
         LatLng(o.latitude!, o.longitude!),
         currentZoom,
+        vsync: this,
       );
     } catch (e) {
       debugPrint('[OrdersMap] _centerOnOrder failed: $e');
@@ -294,7 +312,11 @@ class _OrdersMapFullScreenState extends State<OrdersMapFullScreen> {
     FocusScope.of(context).unfocus();
     if (addr.lat != null && addr.lon != null) {
       try {
-        _mapController.move(LatLng(addr.lat!, addr.lon!), 14);
+        _mapController.animatedMove(
+          LatLng(addr.lat!, addr.lon!),
+          14,
+          vsync: this,
+        );
       } catch (e) {
         debugPrint('[OrdersMap] mapController.move failed: $e');
       }
@@ -426,8 +448,13 @@ class _OrdersMapFullScreenState extends State<OrdersMapFullScreen> {
               ),
             );
           }
-          final String? selectedId =
-              orders.isEmpty ? null : orders[idx].id;
+          // Если карточка скрыта — не выделяем ни один маркер
+          // оранжевым; тогда юзер видит «нейтральное» состояние карты,
+          // как при первом открытии (фокус на синей точке его
+          // местоположения).
+          final String? selectedId = (orders.isEmpty || !_cardVisible)
+              ? null
+              : orders[idx].id;
           return Stack(
             children: <Widget>[
               Positioned.fill(
@@ -443,8 +470,11 @@ class _OrdersMapFullScreenState extends State<OrdersMapFullScreen> {
                   initialZoom: _initialZoom,
                   mapController: _mapController,
                   showZoomControls: true,
+                  showMyLocation: true,
                   selectedMarkerId: selectedId,
                   onMarkerTap: (String id) => _onMarkerTap(id, orders),
+                  onMyLocationTap: () =>
+                      setState(() => _cardVisible = false),
                 ),
               ),
               Positioned(
@@ -534,7 +564,7 @@ class _OrdersMapFullScreenState extends State<OrdersMapFullScreen> {
                     ),
                   ),
                 ),
-              if (orders.isNotEmpty)
+              if (orders.isNotEmpty && _cardVisible)
                 Positioned(
                   left: 0,
                   right: 0,

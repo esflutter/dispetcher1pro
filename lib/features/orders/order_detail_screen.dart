@@ -124,10 +124,10 @@ class MyOrderDetailScreen extends StatefulWidget {
   /// Колбэк «Отклонить заказ» (исполнитель не подтвердил) — обычно
   /// здесь parent перемещает заказ из «Новые» в «Не принятые» со
   /// статусом `rejectedDeclined` и закрывает экран.
-  final VoidCallback? onDecline;
+  final Future<bool> Function()? onDecline;
 
   /// Колбэк «Отказаться от заказа» (исполнитель уже подтвердил).
-  final VoidCallback? onRefuse;
+  final Future<bool> Function()? onRefuse;
 
   /// Колбэк «Подтвердить» (исполнитель принимает заказ). Возвращает
   /// `true`, если БД успешно зафиксировала переход в `accepted`.
@@ -141,7 +141,7 @@ class MyOrderDetailScreen extends StatefulWidget {
   /// Колбэк «Отозвать отклик» (заказчик ещё не ответил) — обычно
   /// parent переносит заказ из «Новые» в «Не принятые» со статусом
   /// `rejectedDeclined` и закрывает экран.
-  final VoidCallback? onWithdraw;
+  final Future<bool> Function()? onWithdraw;
 
   final bool isBlocked;
 
@@ -169,12 +169,28 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
   late MyOrderStatus _rejectedStatus;
   bool _reviewLeft = false;
 
+  /// Идёт async-операция (подтвердить / отклонить / отозвать /
+  /// отказаться). Пока true, кнопки в `_buildAction` дисабилятся и
+  /// игнорируют повторные тапы. Без этого пользователь успевал
+  /// нажать «Отклонить» и сразу «Подтвердить»; первый запрос летел
+  /// в БД, второй уходил уже после изменения статуса и БД отдавала
+  /// 23514 «Нельзя изменить финальный статус» (см. validate_match_transition).
+  bool _busy = false;
+
   /// Подгружаемые из БД контакты заказчика — доступны RLS-политикой
   /// `profiles_private` только участнику accepted-мэтча. До загрузки
   /// показываем то, что пришло в _effectivePhone (обычно пустая
   /// строка, т.к. заказчик ещё не открыл свой номер).
   String? _dbCustomerPhone;
   String? _dbCustomerEmail;
+
+  /// Локальный снапшот рейтинга/количества отзывов заказчика. Изначально
+  /// = widget.customerRating/customerReviews; после возврата с экрана
+  /// отзыва обновляется через [getCustomerRatingSnapshot], чтобы шапка
+  /// сразу показывала свежее значение (триггер `recalculate_profile_rating`
+  /// уже пересчитал в БД).
+  late double _customerRating;
+  late int _customerReviews;
 
   /// Контроллер прокрутки тела экрана — нужен, чтобы после подтверждения
   /// заказа и закрытия попапа автоматически вернуть пользователя к
@@ -187,10 +203,46 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
     _state = widget.state;
     _rejectedStatus = widget.rejectedStatus;
     _reviewLeft = MyOrderDetailScreen._reviewedOrders.contains(widget.orderNumber);
+    _customerRating = widget.customerRating;
+    _customerReviews = widget.customerReviews;
     if (_state == MyOrderDetailState.confirmed ||
         _state == MyOrderDetailState.completed) {
       _loadContacts();
     }
+    if (_state == MyOrderDetailState.completed) {
+      _checkExistingReview();
+    }
+  }
+
+  /// При открытии завершённого мэтча проверяем в БД, оставил ли я уже
+  /// отзыв заказчику. Локальный кэш `_reviewedOrders` сбрасывается при
+  /// Hot Restart и при первом запуске на новом устройстве — без этой
+  /// проверки кнопка «Оставить отзыв» снова показывается, и второй
+  /// INSERT падает на UNIQUE-индексе.
+  Future<void> _checkExistingReview() async {
+    if (_reviewLeft) return;
+    if (widget.matchId == null) return;
+    final bool exists =
+        await MyOrdersService.instance.hasMyReviewOnMatch(widget.matchId!);
+    if (!mounted || !exists) return;
+    MyOrderDetailScreen._reviewedOrders.add(widget.orderNumber);
+    setState(() => _reviewLeft = true);
+  }
+
+  /// После того, как исполнитель оставил отзыв заказчику и вернулся
+  /// на экран деталей, тянем свежий рейтинг/количество отзывов из БД
+  /// и обновляем локальный state шапки. Без этого «0 отзывов» висел
+  /// до полного refetch списка «Мои заказы».
+  Future<void> _refreshCustomerStats() async {
+    if (widget.customerId == null) return;
+    final ({double rating, int reviewCount})? snap =
+        await MyOrdersService.instance
+            .getCustomerRatingSnapshot(widget.customerId!);
+    if (!mounted || snap == null) return;
+    setState(() {
+      _customerRating = snap.rating;
+      _customerReviews = snap.reviewCount;
+    });
   }
 
   Future<void> _loadContacts() async {
@@ -333,8 +385,8 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
                   CustomerHeader(
                     name: widget.customerName,
                     avatarUrl: widget.customerAvatarUrl,
-                    rating: widget.customerRating,
-                    reviews: widget.customerReviews,
+                    rating: _customerRating,
+                    reviews: _customerReviews,
                     onTap: widget.customerId == null
                         ? () {}
                         : () => Navigator.of(context).push(
@@ -342,8 +394,8 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
                                 builder: (_) => CustomerCardScreen(
                                   customerId: widget.customerId!,
                                   customerName: widget.customerName,
-                                  customerRating: widget.customerRating,
-                                  customerReviews: widget.customerReviews,
+                                  customerRating: _customerRating,
+                                  customerReviews: _customerReviews,
                                   customerPhone: _effectivePhone,
                                   customerEmail: _effectiveEmail,
                                   // Контакты раскрываем, когда у исполнителя
@@ -359,8 +411,8 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
                         builder: (_) => ReviewsScreen(
                           subject: ReviewSubject.customer,
                           targetUserId: widget.customerId,
-                          initialRating: widget.customerRating,
-                          initialCount: widget.customerReviews,
+                          initialRating: _customerRating,
+                          initialCount: _customerReviews,
                         ),
                       ),
                     ),
@@ -545,17 +597,37 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
     );
   }
 
+  /// Общая обёртка для деструктивных действий «Отозвать / Отклонить /
+  /// Отказаться»: показать confirm-диалог, дождаться БД, при успехе
+  /// закрыть экран; при ошибке — НЕ закрывать, чтобы юзер увидел
+  /// сообщение из родительского `_doAction` и понял, что произошло.
+  /// `_busy` блокирует повторные тапы, пока запрос летит.
+  Future<void> _runRemove({
+    required Future<bool?> Function() showDialog,
+    required Future<bool> Function()? action,
+  }) async {
+    if (_busy) return;
+    final bool? confirmed = await showDialog();
+    if (confirmed != true || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      final bool ok = await (action?.call() ?? Future<bool>.value(true));
+      if (!ok || !mounted) return;
+      Navigator.of(context).maybePop();
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Widget _buildAction() {
     switch (_state) {
       case MyOrderDetailState.offerSent:
         return PrimaryButton(
           label: 'Отозвать отклик',
-          onPressed: () => showConfirmWithdrawDialog(
-            context,
-            onWithdraw: () {
-              widget.onWithdraw?.call();
-              if (mounted) Navigator.of(context).maybePop();
-            },
+          enabled: !_busy,
+          onPressed: () => _runRemove(
+            showDialog: () => showConfirmWithdrawDialog(context),
+            action: widget.onWithdraw,
           ),
         );
       case MyOrderDetailState.waitingConfirm:
@@ -564,8 +636,9 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
           children: <Widget>[
             PrimaryButton(
               label: 'Подтвердить',
-              enabled: !widget.isBlocked,
+              enabled: !widget.isBlocked && !_busy,
               onPressed: () async {
+                if (_busy) return;
                 if (!VerificationStatus.hasSubscription) {
                   final bool? go = await showSubscriptionPausedDialog(context);
                   if (go == true && mounted) context.push('/subscription');
@@ -594,8 +667,14 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
                 // Ждём результат БД-запроса до смены UI-state. Если
                 // заказчик одновременно выбрал другого, БД отвергнет
                 // переход — нельзя показывать «Подтверждено» и контакты.
-                final bool ok = await (widget.onConfirm?.call() ??
-                    Future<bool>.value(true));
+                setState(() => _busy = true);
+                bool ok = false;
+                try {
+                  ok = await (widget.onConfirm?.call() ??
+                      Future<bool>.value(true));
+                } finally {
+                  if (mounted) setState(() => _busy = false);
+                }
                 if (!ok || !mounted) return;
                 setState(() => _state = MyOrderDetailState.confirmed);
                 // Мэтч: заказ подтверждён — показываем попап с подсказкой
@@ -618,26 +697,28 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
             SizedBox(height: 8.h),
             SecondaryButton(
               label: 'Отклонить',
-              onPressed: () => showConfirmDeclineDialog(
-                context,
-                onDecline: () {
-                  widget.onDecline?.call();
-                  if (mounted) Navigator.of(context).maybePop();
-                },
-              ),
+              onPressed: _busy
+                  ? null
+                  : () => _runRemove(
+                        showDialog: () => showConfirmDeclineDialog(context),
+                        action: widget.onDecline,
+                      ),
             ),
           ],
         );
       case MyOrderDetailState.confirmed:
-        return PrimaryButton(
+        // Деструктивное действие на уже принятом заказе — выводим
+        // outline-стилем (SecondaryButton), чтобы визуально отличить
+        // от основных оранжевых CTA («Подтвердить», «Оставить отзыв»)
+        // и снизить вероятность случайного тапа.
+        return SecondaryButton(
           label: 'Отказаться от заказа',
-          onPressed: () => showConfirmRefuseDialog(
-            context,
-            onRefuse: () {
-              widget.onRefuse?.call();
-              if (mounted) Navigator.of(context).maybePop();
-            },
-          ),
+          onPressed: _busy
+              ? null
+              : () => _runRemove(
+                    showDialog: () => showConfirmRefuseDialog(context),
+                    action: widget.onRefuse,
+                  ),
         );
       case MyOrderDetailState.completed:
         if (_reviewLeft) return const SizedBox.shrink();
@@ -659,6 +740,11 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
             if (submitted == true && mounted) {
               MyOrderDetailScreen._reviewedOrders.add(widget.orderNumber);
               setState(() => _reviewLeft = true);
+              // Триггер `recalculate_profile_rating` в БД пересчитал
+              // рейтинг/счётчик сразу после INSERT в reviews. Тянем
+              // свежие значения, чтобы шапка показала «1 отзыв» вместо
+              // устаревших «0 отзывов».
+              _refreshCustomerStats();
             }
           },
         );

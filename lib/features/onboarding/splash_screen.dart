@@ -11,6 +11,7 @@ import '../../core/theme/app_text_styles.dart';
 import '../auth/photo_crop_screen.dart';
 import '../executor_card/executor_card_screen.dart';
 import '../profile/widgets/verification_badge.dart';
+import '../services/my_services_screen.dart';
 
 /// Сплеш-экран приложения «Диспетчер №1».
 /// Через 1.5 секунды отправляем пользователя:
@@ -67,12 +68,19 @@ class _SplashScreenState extends State<SplashScreen> {
         CropResult.userPhoneE164 = e164;
         CropResult.userPhone = PhoneFormat.toPretty(e164);
       }
-      // Параллельно тянем подписку (profiles_private) и карточку
-      // исполнителя (executor_cards). Оба запроса идут независимо;
-      // ошибка в одном не отменяет другой.
+      // Параллельно тянем подписку (profiles_private), карточку
+      // исполнителя (executor_cards) и список услуг (services). Все
+      // запросы идут независимо; ошибка в одном не отменяет другие.
+      // Услуги нужны заранее, чтобы блоки «Спецтехника»/«Категории»
+      // в карточке исполнителя и «Мой график»/«Параметры дня» не
+      // пустели после Hot Restart, пока юзер не зайдёт в «Мои услуги»
+      // (раньше getter `ExecutorCardData.machinery` читал из пустого
+      // in-memory кэша `ServiceData.services` и блок выглядел как
+      // «создайте первую услугу» даже у юзеров с услугами в БД).
       await Future.wait<void>(<Future<void>>[
         _bootstrapSubscription(),
         _bootstrapExecutorCard(),
+        _bootstrapServices(),
       ]);
     }
 
@@ -112,6 +120,12 @@ class _SplashScreenState extends State<SplashScreen> {
         ExecutorCardState.cardCreated = c.savedAt != null;
       }
     } catch (_) {/* фоллбэк: карточку поднимет executor_card_screen */}
+  }
+
+  Future<void> _bootstrapServices() async {
+    try {
+      await ServiceData.refresh();
+    } catch (_) {/* фоллбэк: services поднимет my_services_screen */}
   }
 
   static const List<String> _monthsRu = <String>[

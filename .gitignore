@@ -47,6 +47,12 @@ app.*.map.json
 # Figma API caches (большие JSON, не нужны в репо)
 .figma_cache/
 
+# Локальные настройки Claude Code (per-machine permissions, MCP-кэши)
+.claude/
+
+# Случайные screenshot-артефакты Flutter run/отладки в корне репо.
+flutter_*.png
+
 # --- Секреты / ключи / окружение ---
 # Любые env-файлы, пароли, ключи — никогда в репозиторий.
 # Поверх этого: .env.example коммитится как образец (там только имена, без значений).

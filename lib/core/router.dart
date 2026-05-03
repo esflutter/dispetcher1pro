@@ -26,10 +26,9 @@ import '../features/services/create_service_screen.dart';
 import '../features/services/my_services_screen.dart';
 import '../features/services/service_detail_screen.dart';
 import '../features/shell/main_shell.dart';
-import '../core/payments/models.dart';
 import '../features/subscription/add_card_screen.dart';
 import '../features/subscription/payment_result_screen.dart';
-import '../features/subscription/payment_screen.dart';
+import '../features/subscription/subscription_manage_screen.dart';
 import '../features/subscription/subscription_screen.dart';
 import '../features/support/chat_screen.dart';
 import '../features/support/support_home_screen.dart';
@@ -41,6 +40,36 @@ import '../features/support/support_home_screen.dart';
 ///   открываются поверх shell обычным push.
 final GoRouter appRouter = GoRouter(
   initialLocation: '/splash',
+  // Когда приложение запускается холодным стартом по deep-link
+  // `dispatcher1pro://...`, ОС передаёт URI как initial location в Flutter.
+  // GoRouter получает его раньше, чем `DeepLinks._handle` успеет
+  // переписать роут через `appRouter.go(...)` — без redirect юзер
+  // упирается в errorBuilder с «Маршрут не найден». Здесь
+  // переписываем такие URI в нормальные внутренние пути.
+  redirect: (BuildContext context, GoRouterState state) {
+    final String uriStr = state.uri.toString();
+    if (!uriStr.startsWith('dispatcher1pro://')) return null;
+    final Uri uri = Uri.parse(uriStr);
+    if (uri.host == 'payment' && uri.pathSegments.contains('result')) {
+      final String? paymentId =
+          uri.queryParameters['id'] ?? uri.queryParameters['payment_id'];
+      final String bindingTail =
+          uri.queryParameters['binding'] == '1' ? '&binding=1' : '';
+      // `return` — куда увести юзера после «Готово»/«Закрыть» на
+      // экране результата (см. PaymentResultScreen.returnPath).
+      // Прокидывается paywall'ом в return_url ЮКассы, а оттуда —
+      // обратно в deep-link при возврате из браузера.
+      final String? rp = uri.queryParameters['return'];
+      final String returnTail =
+          rp != null && rp.isNotEmpty ? '&return=${Uri.encodeComponent(rp)}' : '';
+      if (paymentId == null || paymentId.isEmpty) {
+        return '/subscription/payment/result';
+      }
+      return '/subscription/payment/result'
+          '?id=${Uri.encodeComponent(paymentId)}$bindingTail$returnTail';
+    }
+    return null;
+  },
   routes: <RouteBase>[
     GoRoute(path: '/splash', builder: (_, _) => const SplashScreen()),
     GoRoute(path: '/onboarding', builder: (_, _) => const OnboardingScreen()),
@@ -131,30 +160,29 @@ final GoRouter appRouter = GoRouter(
 
     // Подписка
     GoRoute(path: '/subscription', builder: (_, _) => const SubscriptionScreen()),
-    GoRoute(path: '/subscription/cards', builder: (_, _) => const CardsScreen()),
     GoRoute(
-      path: '/subscription/payment',
-      builder: (_, GoRouterState state) {
-        // Поддерживаем два сценария:
-        //   - оплата подписки (по умолчанию, без extra)
-        //   - оплата публикации услуги (extra = {kind, serviceId})
-        final Object? extra = state.extra;
-        PaymentKind kind = PaymentKind.subscription;
-        String? serviceId;
-        if (extra is Map) {
-          if (extra['kind'] == 'service_slot') kind = PaymentKind.serviceSlot;
-          if (extra['serviceId'] is String) {
-            serviceId = extra['serviceId'] as String;
-          }
-        }
-        return PaymentScreen(kind: kind, serviceId: serviceId);
-      },
+      path: '/subscription/manage',
+      builder: (_, _) => const SubscriptionManageScreen(),
     ),
+    GoRoute(path: '/subscription/cards', builder: (_, _) => const CardsScreen()),
+    // Роут `/subscription/payment` удалён: выбор способа оплаты теперь
+    // живёт внутри paywall'ов (Subscription/ExecutorCard/Service) как
+    // шторка, которая едет поверх маркетинговой карточки. Сами paywall'ы
+    // открываются из вызывающих экранов через `Navigator.push(MaterialPageRoute(...))`.
     GoRoute(
       path: '/subscription/payment/result',
       builder: (_, GoRouterState state) {
         final String paymentId = state.uri.queryParameters['id'] ?? '';
-        return PaymentResultScreen(paymentId: paymentId);
+        final bool binding =
+            state.uri.queryParameters['binding'] == '1';
+        final String? returnPath = state.uri.queryParameters['return'];
+        return PaymentResultScreen(
+          paymentId: paymentId,
+          binding: binding,
+          returnPath: (returnPath == null || returnPath.isEmpty)
+              ? null
+              : returnPath,
+        );
       },
     ),
 
@@ -172,7 +200,40 @@ final GoRouter appRouter = GoRouter(
       },
     ),
   ],
-  errorBuilder: (context, state) => Scaffold(
-    body: Center(child: Text('Маршрут не найден: ${state.uri}')),
-  ),
+  errorBuilder: (context, state) {
+    // Фолбэк: если ОС передала `dispatcher1pro://...` deep-link как
+    // initial location, а top-level redirect его почему-то пропустил
+    // (бывало с holodным стартом на Android), ловим здесь и сразу
+    // же на следующем кадре уводим на правильный внутренний путь —
+    // юзер видит спиннер вместо «Маршрут не найден» и тут же экран
+    // результата оплаты.
+    final Uri uri = state.uri;
+    if (uri.scheme == 'dispatcher1pro' &&
+        uri.host == 'payment' &&
+        uri.pathSegments.contains('result')) {
+      final String? paymentId =
+          uri.queryParameters['id'] ?? uri.queryParameters['payment_id'];
+      final String bindingTail =
+          uri.queryParameters['binding'] == '1' ? '&binding=1' : '';
+      final String? rp = uri.queryParameters['return'];
+      final String returnTail =
+          rp != null && rp.isNotEmpty ? '&return=${Uri.encodeComponent(rp)}' : '';
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (paymentId != null && paymentId.isNotEmpty) {
+          appRouter.go(
+            '/subscription/payment/result'
+            '?id=${Uri.encodeComponent(paymentId)}$bindingTail$returnTail',
+          );
+        } else {
+          appRouter.go('/subscription/payment/result');
+        }
+      });
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+    return Scaffold(
+      body: Center(child: Text('Маршрут не найден: ${state.uri}')),
+    );
+  },
 );

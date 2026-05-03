@@ -128,6 +128,35 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (mounted) setState(() {});
   }
 
+  // Временное переключение статуса по тапу на pill — нужно тестерам,
+  // чтобы быстро прогонять все ветки UI без хождения через бэкенд.
+  // Цикл: notVerified → inProgress → verified → rejected → blocked
+  // → обратно в notVerified. Состояние «blocked» рендерится через
+  // BlockedPill вместо FullWidthVerificationPill (см. build).
+  // TODO: убрать перед релизом.
+  void _cycleStatus() {
+    const List<VerificationStatus> order = <VerificationStatus>[
+      VerificationStatus.notVerified,
+      VerificationStatus.inProgress,
+      VerificationStatus.verified,
+      VerificationStatus.rejected,
+    ];
+    if (AccountBlock.isBlocked) {
+      // Сейчас отображается BlockedPill — следующий тап снимает
+      // блокировку и возвращает в начало цикла верификации.
+      AccountBlock.forceLift();
+      _status = VerificationStatus.notVerified;
+      return;
+    }
+    final int idx = order.indexOf(_status);
+    if (idx == order.length - 1) {
+      // После rejected — включаем тестовую блокировку на 30 дней.
+      AccountBlock.setUntil(DateTime.now().add(const Duration(days: 30)));
+      return;
+    }
+    _status = order[idx + 1];
+  }
+
   Future<void> _openEdit() async {
     await context.push('/profile/edit');
     if (!mounted) return;
@@ -204,7 +233,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
             SizedBox(height: 16.h),
             if (isBlocked) ...<Widget>[
-              const BlockedPill(),
+              // Тапаемая обёртка — для теста: следующий тап снимает
+              // блокировку и возвращает цикл в notVerified. См. _cycleStatus.
+              GestureDetector(
+                onTap: _cycleStatus,
+                behavior: HitTestBehavior.opaque,
+                child: const BlockedPill(),
+              ),
               SizedBox(height: 8.h),
               Text(
                 'Ваш рейтинг ниже 2 звёзд, поэтому доступ\nвременно ограничен ${AccountBlock.blockedUntilText ?? "на 30 дней"}',
@@ -217,7 +252,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
               SizedBox(height: 16.h),
             ] else ...<Widget>[
-              FullWidthVerificationPill(status: status),
+              GestureDetector(
+                onTap: _cycleStatus,
+                behavior: HitTestBehavior.opaque,
+                child: FullWidthVerificationPill(status: status),
+              ),
               if (status == VerificationStatus.notVerified) ...<Widget>[
                 SizedBox(height: 8.h),
                 _PrimaryActionButton(
@@ -258,12 +297,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             SizedBox(height: 16.h),
             _ProfileMenuItem(
               label: 'Информация о подписке',
-              onTap: () => context.push('/subscription'),
-            ),
-            SizedBox(height: 16.h),
-            _ProfileMenuItem(
-              label: 'Способы оплаты',
-              onTap: () => context.push('/subscription/cards'),
+              onTap: () => context.push('/subscription/manage'),
             ),
             SizedBox(height: 20.h),
             const _SupportFooter(),

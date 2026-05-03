@@ -25,28 +25,38 @@ class SubscriptionScreen extends StatefulWidget {
 }
 
 class _SubscriptionScreenState extends State<SubscriptionScreen> {
-  /// Есть ли у юзера сохранённые карты в YooKassa. Подгружается асинхронно
-  /// при открытии экрана и обновляется после возврата с `/subscription/cards`
-  /// (юзер мог удалить последнюю — тогда кнопку «Способы оплаты» нужно
-  /// скрыть). Ошибка загрузки трактуется как «карт нет», чтобы не показывать
-  /// мёртвую кнопку, ведущую на пустой экран.
-  bool _hasSavedCards = false;
+  /// Показывать ли кнопку «Способы оплаты». Показываем если:
+  ///   1) у юзера есть хотя бы одна привязанная карта, ИЛИ
+  ///   2) юзер хоть раз оплачивал что-то платное (даже если карта
+  ///      сохранена не была — например, через YooMoney) — раздел
+  ///      управления методами оплаты ему всё равно полезен.
+  /// Любая ошибка чтения трактуется как «не показывать», чтобы юзер
+  /// не упёрся в пустой/сломанный экран.
+  bool _showCardsButton = false;
 
   @override
   void initState() {
     super.initState();
-    _loadCards();
+    _loadPaymentMethodsAccess();
   }
 
-  Future<void> _loadCards() async {
+  Future<void> _loadPaymentMethodsAccess() async {
     try {
       final List<dynamic> cards =
           await PaymentService.instance.listCards();
       if (!mounted) return;
-      setState(() => _hasSavedCards = cards.isNotEmpty);
+      if (cards.isNotEmpty) {
+        setState(() => _showCardsButton = true);
+        return;
+      }
+      // Карт нет — но если был платёж, всё равно показываем кнопку.
+      final bool hadPayment =
+          await PaymentService.instance.hasAnySucceededPayment();
+      if (!mounted) return;
+      setState(() => _showCardsButton = hadPayment);
     } catch (_) {
       if (!mounted) return;
-      setState(() => _hasSavedCards = false);
+      setState(() => _showCardsButton = false);
     }
   }
 
@@ -168,13 +178,13 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     await context.push<void>('/subscription/cards');
     // После возврата перезагружаем список — юзер мог удалить последнюю
     // карту, тогда кнопку «Способы оплаты» больше показывать не нужно.
-    if (mounted) await _loadCards();
+    if (mounted) await _loadPaymentMethodsAccess();
   }
 
   @override
   Widget build(BuildContext context) {
     final bool showPayButton = _status == SubscriptionStatus.inactive;
-    final bool showCardsButton = _hasSavedCards;
+    final bool showCardsButton = _showCardsButton;
     final bool showAnyBottomButton = showPayButton || showCardsButton;
     return Scaffold(
       backgroundColor: AppColors.background,

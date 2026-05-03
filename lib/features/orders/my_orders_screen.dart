@@ -48,12 +48,17 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
     super.initState();
     _tab = TabController(length: 3, vsync: this);
     AccountBlock.notifier.addListener(_refresh);
+    // Глобальный маяк: меняется, когда другие экраны (например, график)
+    // отменяют мэтчи. Без подписки список «Мои заказы» оставался
+    // устаревшим до pull-to-refresh.
+    MyOrdersService.changeBeacon.addListener(_refresh);
     _future = _fetch();
   }
 
   @override
   void dispose() {
     AccountBlock.notifier.removeListener(_refresh);
+    MyOrdersService.changeBeacon.removeListener(_refresh);
     _tab.dispose();
     super.dispose();
   }
@@ -80,7 +85,12 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
 
   void _refresh() {
     if (!mounted) return;
-    setState(() => _future = _fetch());
+    // Блочный синтаксис обязателен: arrow-форма `() => _future = _fetch()`
+    // возвращает Future, и Flutter ругается «setState callback returned a
+    // Future» (см. RefreshIndicator unhandled exception в логах).
+    setState(() {
+      _future = _fetch();
+    });
   }
 
   @override
@@ -172,7 +182,9 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
 
   Future<void> _onRefresh() async {
     final Future<_MyOrdersData> next = _fetch();
-    setState(() => _future = next);
+    setState(() {
+      _future = next;
+    });
     await next;
   }
 
@@ -211,6 +223,12 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
           // визуально, но не выполнять никакого действия.
           final String? phone = phones[m.customerId];
           final bool canCall = phone != null && phone.trim().isNotEmpty;
+          // Таймер всегда от момента последнего изменения мэтча
+          // (`updated_at`). На INSERT триггер `moddatetime` ставит
+          // `updated_at = now()`, на каждый UPDATE статуса — снова
+          // обновляет. Поэтому «только что откликнулся / приняли /
+          // отозвал» — карточка показывает «Только что» и едет наверх.
+          final DateTime timerSource = m.statusChangedAt;
           return Column(
             children: <Widget>[
               MyOrderCard(
@@ -219,51 +237,61 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
                 equipment: m.orderMachineryTitles,
                 rentDate: rentDate,
                 address: m.orderAddress,
-                publishedAgo: formatPublishedAgo(m.createdAt),
+                publishedAgo: formatPublishedAgo(timerSource),
                 reviewLeft:
                     MyOrderDetailScreen.isOrderReviewed(orderNumber),
                 customerName: m.customerName,
                 customerPhone: phone,
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => MyOrderDetailScreen(
-                      title: m.orderTitle,
-                      equipment: m.orderMachineryTitles,
-                      workCategories: m.orderCategoryTitles,
-                      workDescription: m.orderWorks,
-                      description: m.orderDescription,
-                      photos: m.orderPhotos,
-                      rentDate: rentDate,
-                      address: m.orderAddress,
-                      publishedAgo: formatPublishedAgo(m.createdAt),
-                      orderNumber:
-                          '№${m.orderDisplayNumber.toString().padLeft(8, '0')}',
-                      customerId: m.customerId,
-                      customerName: m.customerName,
-                      customerAvatarUrl: m.customerAvatarUrl,
-                      customerPhone: phone ?? '',
-                      customerEmail: null,
-                      customerRating: m.customerRating,
-                      customerReviews: m.customerReviewCount,
-                      state: _detailStateForStatus(m.status),
-                      rejectedStatus: uiStatus,
-                      matchId: m.matchId,
-                      agreedPricePerHour: m.agreedPricePerHour,
-                      agreedPricePerDay: m.agreedPricePerDay,
-                      serviceMachineryTitle: m.serviceMachineryTitle,
-                      onWithdraw: () => _doAction(
-                          () => MyOrdersService.instance.withdraw(m.matchId)),
-                      onConfirm: () => _doAction(
-                            () => MyOrdersService.instance.acceptMatch(m.matchId),
-                          ),
-                      onDecline: () => _doAction(
-                          () => MyOrdersService.instance.declineMatch(m.matchId)),
-                      onRefuse: () => _doAction(
-                          () => MyOrdersService.instance.declineMatch(m.matchId)),
-                      isBlocked: _blocked,
+                customerAvatar: m.customerAvatarUrl,
+                onTap: () async {
+                  // После возврата из деталей перезагружаем список —
+                  // там могли измениться флаг «отзыв оставлен» (пилюля
+                  // «Завершён, оставьте отзыв» → «Завершён») или статус
+                  // мэтча (после accept/withdraw/decline). Без _refresh
+                  // карточка отдавала старый снапшот до следующего
+                  // pull-to-refresh.
+                  await Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => MyOrderDetailScreen(
+                        title: m.orderTitle,
+                        equipment: m.orderMachineryTitles,
+                        workCategories: m.orderCategoryTitles,
+                        workDescription: m.orderWorks,
+                        description: m.orderDescription,
+                        photos: m.orderPhotos,
+                        rentDate: rentDate,
+                        address: m.orderAddress,
+                        publishedAgo: formatPublishedAgo(timerSource),
+                        orderNumber:
+                            '№${m.orderDisplayNumber.toString().padLeft(8, '0')}',
+                        customerId: m.customerId,
+                        customerName: m.customerName,
+                        customerAvatarUrl: m.customerAvatarUrl,
+                        customerPhone: phone ?? '',
+                        customerEmail: null,
+                        customerRating: m.customerRating,
+                        customerReviews: m.customerReviewCount,
+                        state: _detailStateForStatus(m.status),
+                        rejectedStatus: uiStatus,
+                        matchId: m.matchId,
+                        agreedPricePerHour: m.agreedPricePerHour,
+                        agreedPricePerDay: m.agreedPricePerDay,
+                        serviceMachineryTitle: m.serviceMachineryTitle,
+                        onWithdraw: () => _doAction(() =>
+                            MyOrdersService.instance.withdraw(m.matchId)),
+                        onConfirm: () => _doAction(
+                          () => MyOrdersService.instance.acceptMatch(m.matchId),
+                        ),
+                        onDecline: () => _doAction(() =>
+                            MyOrdersService.instance.declineMatch(m.matchId)),
+                        onRefuse: () => _doAction(() =>
+                            MyOrdersService.instance.declineMatch(m.matchId)),
+                        isBlocked: _blocked,
+                      ),
                     ),
-                  ),
-                ),
+                  );
+                  _refresh();
+                },
                 onContact: canCall ? () => dialPhone(context, phone) : null,
               ),
               if (!isLast)
@@ -363,7 +391,7 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
       exactDate: m.orderExactDate,
       wholeDay: m.orderWholeDay,
       machineryTitles: m.orderMachineryTitles,
-      publishedAt: m.createdAt,
+      publishedAt: m.orderPublishedAt,
       customer: CustomerSummary(
         id: m.customerId,
         name: m.customerName,

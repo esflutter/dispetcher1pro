@@ -102,10 +102,38 @@ class _DaySettingsScreenState extends State<DaySettingsScreen> {
     setState(() => _accepting = value);
   }
 
+  /// Сборка DaySettings из текущих полей формы. Используется и при
+  /// «Сохранить», и при системной back-кнопке (PopScope), чтобы родитель
+  /// получил одинаковый объект независимо от того, как пользователь
+  /// закрыл экран. `clearDayOff=true`, если изначально день был
+  /// нерабочим, а сейчас — нет (пользователь нажал «Отметить рабочим»).
+  DaySettings _buildResult() => DaySettings(
+        accepting: _accepting,
+        timeFrom: _timeFrom,
+        timeTo: _timeTo,
+        allDay: _allDay,
+        radiusIndex: _radiusIndex,
+        location: _location,
+        locationLat: _locationLat,
+        locationLng: _locationLng,
+        machinery: Set<String>.from(_selMach),
+        categories: Set<String>.from(_selCat),
+        clearDayOff: widget.initialState == DayState.dayOff &&
+            _state != DayState.dayOff,
+      );
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return PopScope<Object?>(
+      canPop: false,
+      // Когда система/AppBar back-кнопка пытаются закрыть экран — мы
+      // сами делаем pop с DaySettings, чтобы родитель применил
+      // clearDayOff (или просто сохранил отредактированные поля).
+      onPopInvokedWithResult: (bool didPop, Object? _) {
+        if (didPop) return;
+        Navigator.of(context).pop(_buildResult());
+      },
+      child: Scaffold(
       backgroundColor: AppColors.background,
       appBar: const DarkSubAppBar(title: 'Параметры дня'),
       floatingActionButton: Padding(
@@ -133,29 +161,21 @@ class _DaySettingsScreenState extends State<DaySettingsScreen> {
                 label: _state == DayState.dayOff ? 'Отметить рабочим' : 'Сохранить',
                 onPressed: () {
                   if (_state == DayState.dayOff) {
+                    // «Отметить рабочим» — переключаемся в noOrders и
+                    // даём пользователю настроить параметры дня (время,
+                    // радиус, техника). Применится по «Сохранить» или
+                    // по back-кнопке (PopScope ниже сам сложит DaySettings
+                    // с clearDayOff=true, если initial был dayOff).
                     setState(() => _state = DayState.noOrders);
                   } else {
-                    Navigator.of(context).pop(
-                      DaySettings(
-                        accepting: _accepting,
-                        timeFrom: _timeFrom,
-                        timeTo: _timeTo,
-                        allDay: _allDay,
-                        radiusIndex: _radiusIndex,
-                        location: _location,
-                        locationLat: _locationLat,
-                        locationLng: _locationLng,
-                        machinery: Set<String>.from(_selMach),
-                        categories: Set<String>.from(_selCat),
-                        clearDayOff: widget.initialState == DayState.dayOff,
-                      ),
-                    );
+                    Navigator.of(context).pop(_buildResult());
                   }
                 },
               ),
             ),
           ],
         ),
+      ),
       ),
     );
   }

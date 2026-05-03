@@ -39,6 +39,7 @@ class PaymentService {
     String? paymentMethodId,
     bool saveCard = false,
     String? returnUrl,
+    bool activateTrial = false,
   }) async {
     final Map<String, dynamic> body = <String, dynamic>{
       'kind': kind.code,
@@ -46,6 +47,12 @@ class PaymentService {
       'payment_method_id': ?paymentMethodId,
       if (saveCard) 'save_card': true,
       'return_url': ?returnUrl,
+      // Edge Function активирует подписку (paid_until=now+30d, trial_used,
+      // auto_renew, payment_method_id) в webhook'е после succeeded —
+      // ТОЛЬКО при kind='card_binding'. Для других kind флаг
+      // игнорируется на сервере. См. supabase/functions/yookassa-webhook
+      // (activateTrial).
+      if (activateTrial) 'activate_trial': true,
     };
 
     final FunctionResponse resp = await _client.functions
@@ -126,6 +133,29 @@ class PaymentService {
     final dynamic data = resp.data;
     if (data is Map && data['error'] != null) {
       throw PaymentError('server', (data['error'] as Object?).toString());
+    }
+  }
+
+  /// Был ли у текущего юзера хотя бы один успешный платёж (включая
+  /// уже зарефанженные — например, технические `card_binding` 1 ₽).
+  /// Используется в `SubscriptionScreen`, чтобы показывать кнопку
+  /// «Способы оплаты» не только когда есть привязанные карты, но и
+  /// когда юзер хоть раз оплачивал что-то платное (логично давать ему
+  /// доступ в раздел управления способами оплаты, даже если карты
+  /// сейчас отвязаны).
+  Future<bool> hasAnySucceededPayment() async {
+    final User? user = _client.auth.currentUser;
+    if (user == null) return false;
+    try {
+      final List<Map<String, dynamic>> rows = await _client
+          .from('payments')
+          .select('id')
+          .eq('user_id', user.id)
+          .inFilter('status', const <String>['succeeded', 'refunded'])
+          .limit(1);
+      return rows.isNotEmpty;
+    } on PostgrestException {
+      return false;
     }
   }
 

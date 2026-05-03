@@ -12,6 +12,7 @@ import 'package:dispatcher_1/core/catalog/models.dart';
 import 'package:dispatcher_1/core/dadata/dadata_service.dart';
 import 'package:dispatcher_1/core/location_permission.dart';
 import 'package:dispatcher_1/core/utils/mock_coords.dart';
+import 'package:dispatcher_1/core/widgets/openfreemap_view.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
 import 'package:dispatcher_1/features/catalog/catalog_filter_screen.dart';
@@ -49,16 +50,29 @@ class _OrderFeedScreenState extends State<OrderFeedScreen> {
   Timer? _debounceTimer;
   late Future<List<OrderListItem>> _ordersFuture;
 
+  /// Последнее значение `AppliedFilter.revision`, под которое мы уже
+  /// пересчитали `_ordersFuture`. Сравниваем в `build` (под
+  /// `ValueListenableBuilder`), чтобы реактивно реагировать на смену
+  /// фильтра — но без вызова `_fetchOrders` на каждый build (например,
+  /// при смене `_tab`).
+  int _appliedFilterRev = 0;
+
+  /// MapController живёт на уровне feed screen, а не внутри
+  /// `_OrdersMapWithCard`. Так при пересоздании виджета карты (через
+  /// `ValueKey` от orders) controller сохраняется, и при выборе
+  /// адреса в поиске мы всегда можем переместить камеру независимо
+  /// от того, на каком фильтре мы сейчас.
+  final MapController _mapController = MapController();
+
   @override
   void initState() {
     super.initState();
-    AppliedFilter.revision.addListener(_onFilterChanged);
+    _appliedFilterRev = AppliedFilter.revision.value;
     _ordersFuture = _fetchOrders();
   }
 
   @override
   void dispose() {
-    AppliedFilter.revision.removeListener(_onFilterChanged);
     _debounceTimer?.cancel();
     _searchCtrl.dispose();
     super.dispose();
@@ -94,9 +108,21 @@ class _OrderFeedScreenState extends State<OrderFeedScreen> {
     return '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
   }
 
-  void _onFilterChanged() {
-    if (!mounted) return;
-    setState(() => _ordersFuture = _fetchOrders());
+  // _onFilterChanged удалён: подписка на AppliedFilter.revision
+  // переехала в build через ValueListenableBuilder + _maybeRefreshForFilterRevision.
+
+  /// Сверяет в `build` текущее `AppliedFilter.revision` с последним
+  /// применённым; если разошлись — пересоздаёт `_ordersFuture`. Раньше
+  /// это делалось через `addListener` + `setState`, но листенер на табе
+  /// «На карте» по какой-то причине не приводил к перерисовке (chips
+  /// «активный фильтр» тоже не появлялись, пока юзер не переключал
+  /// _tab). Реактивный путь через `ValueListenableBuilder` гарантирует
+  /// rebuild на изменении `revision`, отсюда чипы и карта обновляются
+  /// синхронно.
+  void _maybeRefreshForFilterRevision(int rev) {
+    if (rev == _appliedFilterRev) return;
+    _appliedFilterRev = rev;
+    _ordersFuture = _fetchOrders();
   }
 
   void _onSearchChanged(String v) {
@@ -113,12 +139,22 @@ class _OrderFeedScreenState extends State<OrderFeedScreen> {
 
   bool get _hasActiveFilter => hasActiveFilter();
 
-  void _openFilter() {
-    Navigator.of(context).push(
+  Future<void> _openFilter() async {
+    // Ждём возврата с экрана фильтра и явно перезапускаем загрузку.
+    // Подписка на `AppliedFilter.revision` обычно дергает _onFilterChanged
+    // синхронно при «Применить», но на табе «На карте» наблюдалась
+    // ситуация, когда маркеры не успевали обновиться к новому
+    // отфильтрованному набору (как будто IndexedStack кешировал
+    // ребёнка-карту). Явный setState после возврата гарантирует,
+    // что _ordersFuture точно стартанёт заново и карта пересобрала
+    // маркеры с новыми orders.
+    await Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
         builder: (_) => const CatalogFilterScreen(),
       ),
     );
+    if (!mounted) return;
+    setState(() => _ordersFuture = _fetchOrders());
   }
 
   @override
@@ -168,7 +204,18 @@ class _OrderFeedScreenState extends State<OrderFeedScreen> {
             )
           : null,
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
-      body: Stack(
+      body: ValueListenableBuilder<int>(
+        // Реактивная подписка на изменения фильтра. Раньше тут был
+        // addListener в initState — он по неясной причине не приводил
+        // к перерисовке, когда юзер находился на табе «На карте»:
+        // chips «активный фильтр» и красный значок не появлялись,
+        // а маркеры на карте оставались прежними до ручного
+        // переключения на «Списком». ValueListenableBuilder
+        // гарантирует rebuild при каждом revision++.
+        valueListenable: AppliedFilter.revision,
+        builder: (BuildContext _, int rev, Widget? _) {
+          _maybeRefreshForFilterRevision(rev);
+          return Stack(
         children: <Widget>[
           Column(
             children: <Widget>[
@@ -224,19 +271,54 @@ class _OrderFeedScreenState extends State<OrderFeedScreen> {
                             await next;
                           },
                           child: orders.isEmpty
-                              ? ListView(
-                                  // Пустой ListView, чтобы pull-to-refresh
-                                  // работал даже когда заказов нет — иначе
-                                  // обычный _EmptyOrdersState не скроллится.
-                                  physics:
-                                      const AlwaysScrollableScrollPhysics(),
-                                  children: const <Widget>[
-                                    _EmptyOrdersState(),
-                                  ],
+                              ? LayoutBuilder(
+                                  // SingleChildScrollView + ConstrainedBox
+                                  // даёт pull-to-refresh поверх пустого
+                                  // состояния И вертикальное центрирование
+                                  // содержимого. Раньше тут был ListView с
+                                  // одним ребёнком, который прижимал
+                                  // «Заказы не найдены» к самому верху.
+                                  builder: (BuildContext _,
+                                      BoxConstraints constraints) {
+                                    return SingleChildScrollView(
+                                      physics:
+                                          const AlwaysScrollableScrollPhysics(),
+                                      child: ConstrainedBox(
+                                        constraints: BoxConstraints(
+                                          minHeight: constraints.maxHeight,
+                                        ),
+                                        child: const Center(
+                                          child: _EmptyOrdersState(),
+                                        ),
+                                      ),
+                                    );
+                                  },
                                 )
                               : _OrderList(orders: orders),
                         ),
-                        _OrdersMapWithCard(orders: orders),
+                        _OrdersMapWithCard(
+                          // Ключ от набора id: при смене фильтра состав
+                          // orders меняется → ключ меняется → виджет
+                          // карты пересоздаётся целиком (включая
+                          // FlutterMap и MarkerLayer). Это нужно потому,
+                          // что пока юзер на табе «На карте»,
+                          // flutter_map кеширует уже отрисованный
+                          // layer и не реагирует на новый widget.markers,
+                          // а лёгкие приёмы (ValueKey на MarkerLayer +
+                          // `_mapController.move(...)` на ту же
+                          // позицию) проблему не закрывали — фильтр
+                          // применялся только после ручного
+                          // переключения на «Списком». Пересоздание
+                          // сбрасывает зум/центр карты — это плата за
+                          // гарантированный refresh.
+                          key: ValueKey<String>(
+                            orders
+                                .map((OrderListItem o) => o.id)
+                                .join(','),
+                          ),
+                          orders: orders,
+                          externalController: _mapController,
+                        ),
                       ],
                     );
                   },
@@ -251,18 +333,30 @@ class _OrderFeedScreenState extends State<OrderFeedScreen> {
               right: 16.w,
               child: _AddressSuggestions(
                 query: _query,
-                onSelect: (String address) {
-                  _searchCtrl.text = address;
+                onSelect: (DadataAddress a) {
+                  _searchCtrl.text = a.value;
                   setState(() {
-                    _query = address;
+                    _query = a.value;
                     _addressSelected = true;
                     _ordersFuture = _fetchOrders();
                   });
                   FocusScope.of(context).unfocus();
+                  // Перемещаем карту к выбранному адресу, если у DaData
+                  // есть координаты. Зум 13 — компромисс: видна
+                  // улица + соседние кварталы. Раньше координаты
+                  // выбрасывались, и юзер вводил «Санкт-Петербург»,
+                  // но камера упорно стояла в Москве.
+                  if (a.hasCoords) {
+                    try {
+                      _mapController.move(LatLng(a.lat!, a.lon!), 13);
+                    } catch (_) {/* карта ещё не отрисовалась */}
+                  }
                 },
               ),
             ),
         ],
+      );
+        },
       ),
     );
   }
@@ -391,18 +485,38 @@ class _FeedError extends StatelessWidget {
 /// Карта-заглушка + плашка снизу с одним заказом. Свайп вверх по плашке
 /// переключает на следующий заказ в списке (циклически).
 class _OrdersMapWithCard extends StatefulWidget {
-  const _OrdersMapWithCard({required this.orders});
+  const _OrdersMapWithCard({
+    super.key,
+    required this.orders,
+    this.externalController,
+  });
 
   final List<OrderListItem> orders;
+
+  /// MapController, переданный сверху (с уровня feed screen). Если
+  /// задан — используем его и не создаём внутренний; так controller
+  /// переживает пересоздание виджета карты по `ValueKey(orders)`,
+  /// и `feed`-экран может двигать камеру (по выбору адреса в поиске),
+  /// не теряя ссылку при смене фильтра.
+  final MapController? externalController;
 
   @override
   State<_OrdersMapWithCard> createState() => _OrdersMapWithCardState();
 }
 
-class _OrdersMapWithCardState extends State<_OrdersMapWithCard> {
-  final MapController _mapController = MapController();
+class _OrdersMapWithCardState extends State<_OrdersMapWithCard>
+    with TickerProviderStateMixin {
+  late final MapController _mapController =
+      widget.externalController ?? MapController();
   int _current = 0;
   int _direction = 1;
+
+  /// Видимость нижней карточки заказа. По умолчанию `false` —
+  /// при первом открытии экрана юзер видит чистую карту с синей
+  /// точкой своего местоположения; карточка появляется только когда
+  /// он тапает в маркер. Тап по кнопке «моё местоположение» снова
+  /// её прячет.
+  bool _cardVisible = false;
 
   @override
   void didUpdateWidget(covariant _OrdersMapWithCard oldWidget) {
@@ -410,6 +524,21 @@ class _OrdersMapWithCardState extends State<_OrdersMapWithCard> {
     if (!_sameOrders(oldWidget.orders, widget.orders)) {
       _current = 0;
       _direction = 1;
+      // Принудительный «пинок» камеры на ту же позицию: flutter_map
+      // на активном табе кеширует слой маркеров и не перерисовывает
+      // его при изменении `widget.markers`. При смене фильтра было
+      // видно, что список заказов уже отфильтрован, а маркеры на
+      // карте остались старыми; они появлялись только при
+      // переключении табов (Списком→Карта). `move()` на текущий
+      // центр и зум форсирует репаинт без визуального скачка.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        try {
+          _mapController.move(
+            _mapController.camera.center,
+            _mapController.camera.zoom,
+          );
+        } catch (_) {/* карта не отрисовалась */}
+      });
     }
   }
 
@@ -437,10 +566,11 @@ class _OrdersMapWithCardState extends State<_OrdersMapWithCard> {
   void _onMarkerTap(String id) {
     final int idx =
         widget.orders.indexWhere((OrderListItem o) => o.id == id);
-    if (idx < 0 || idx == _current) return;
+    if (idx < 0) return;
     setState(() {
       _direction = idx > _current ? 1 : -1;
       _current = idx;
+      _cardVisible = true;
     });
     _centerOnOrder(widget.orders[idx]);
   }
@@ -456,7 +586,7 @@ class _OrdersMapWithCardState extends State<_OrdersMapWithCard> {
         : mockMoscowCoordsForId(o.id);
     try {
       final double currentZoom = _mapController.camera.zoom;
-      _mapController.move(target, currentZoom);
+      _mapController.animatedMove(target, currentZoom, vsync: this);
     } catch (_) {/* карта не успела отрендериться */}
   }
 
@@ -466,12 +596,11 @@ class _OrdersMapWithCardState extends State<_OrdersMapWithCard> {
       return OrdersMapScreen(
         mapController: _mapController,
         showZoomControls: true,
+        showMyLocation: true,
       );
     }
     final int idx = _current % widget.orders.length;
     final OrderListItem o = widget.orders[idx];
-    final String firstMachinery =
-        o.machineryTitles.isEmpty ? '' : o.machineryTitles.first;
     final List<OrderMarkerData> markers = widget.orders
         .map((OrderListItem o) => OrderMarkerData(
               id: o.id,
@@ -486,11 +615,16 @@ class _OrdersMapWithCardState extends State<_OrdersMapWithCard> {
             markers: markers,
             mapController: _mapController,
             showZoomControls: true,
-            selectedMarkerId: o.id,
+            showMyLocation: true,
+            // Когда карточка скрыта — ни один маркер не подсвечивается
+            // оранжевым: пользователь видит «нейтральную» карту.
+            selectedMarkerId: _cardVisible ? o.id : null,
             onMarkerTap: _onMarkerTap,
+            onMyLocationTap: () =>
+                setState(() => _cardVisible = false),
           ),
         ),
-        Positioned(
+        if (_cardVisible) Positioned(
           left: 0,
           right: 0,
           bottom: 0,
@@ -553,6 +687,13 @@ class _OrdersMapWithCardState extends State<_OrdersMapWithCard> {
               },
               child: Container(
                 key: ValueKey<int>(idx),
+                // double.infinity нужен из-за того, что AnimatedSwitcher
+                // оборачивает свой child в Stack с alignment=bottomCenter,
+                // который ослабляет width-constraint. Без явной ширины
+                // Container ужимался под самый широкий Text внутри
+                // (раньше Row spaceBetween держал максимум, после её
+                // удаления карточка съёжилась).
+                width: double.infinity,
                 margin: EdgeInsets.fromLTRB(12.w, 0, 12.w, 20.h),
                 padding: EdgeInsets.fromLTRB(14.w, 12.h, 14.w, 12.h),
                 decoration: BoxDecoration(
@@ -570,21 +711,30 @@ class _OrdersMapWithCardState extends State<_OrdersMapWithCard> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
+                    // Все виды спецтехники заказа — тот же стиль, что
+                    // в MyOrderCard и других списках (серый, 12sp, через
+                    // тройной пробел). Если техники много и она не
+                    // помещается в одну строку с датой публикации,
+                    // Expanded заворачивает её на следующие строки;
+                    // дата при этом остаётся справа сверху, между
+                    // техникой и датой — отступ 12.w, чтобы строки не
+                    // упирались друг в друга.
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: <Widget>[
-                        Text(
-                          firstMachinery,
-                          style: TextStyle(
-                            fontFamily: 'Roboto',
-                            fontSize: 12.sp,
-                            color: AppliedFilter.equipment
-                                    .contains(firstMachinery)
-                                ? AppColors.primary
-                                : AppColors.textTertiary,
-                            height: 1.3,
+                        Expanded(
+                          child: Text(
+                            o.machineryTitles.join('   '),
+                            style: TextStyle(
+                              fontFamily: 'Roboto',
+                              fontSize: 12.sp,
+                              color: AppColors.textTertiary,
+                              height: 1.3,
+                            ),
+                            softWrap: true,
                           ),
                         ),
+                        SizedBox(width: 12.w),
                         Text(
                           formatPublishedAgo(o.publishedAt),
                           style: TextStyle(
@@ -664,7 +814,13 @@ class _AddressSuggestions extends StatefulWidget {
   });
 
   final String query;
-  final ValueChanged<String> onSelect;
+
+  /// Возвращает выбранный `DadataAddress` целиком — родителю нужны
+  /// и строка, и координаты (для перемещения карты к выбранному
+  /// адресу). Раньше отдавали только `String value` и теряли lat/lon,
+  /// поэтому при выборе «г Санкт-Петербург, ...» камера оставалась
+  /// в Москве.
+  final ValueChanged<DadataAddress> onSelect;
 
   @override
   State<_AddressSuggestions> createState() => _AddressSuggestionsState();
@@ -732,7 +888,7 @@ class _AddressSuggestionsState extends State<_AddressSuggestions> {
         itemBuilder: (BuildContext context, int i) {
           final DadataAddress a = _suggestions[i];
           return InkWell(
-            onTap: () => widget.onSelect(a.value),
+            onTap: () => widget.onSelect(a),
             child: Padding(
               padding:
                   EdgeInsets.symmetric(horizontal: 16.w, vertical: 12.h),

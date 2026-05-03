@@ -5,62 +5,48 @@ import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
 
 /// Алерт «Вы уверены, что хотите отказаться от заказа?»
-/// Используется на экране подтверждённого заказа (исполнитель уже принял).
-Future<void> showConfirmRefuseDialog(
-  BuildContext context, {
-  required VoidCallback onRefuse,
-}) {
-  return showDialog<void>(
+/// Возвращает `true`, если пользователь нажал «Отказаться»; `false`/`null` —
+/// если закрыл/отменил. Сама операция в БД делается вызывающим экраном
+/// уже ПОСЛЕ закрытия диалога — раньше колбэк запускался прямо отсюда без
+/// `await`, и UI закрывал детальный экран ДО ответа БД (при ошибке мэтч
+/// оставался в старом статусе, юзер получал PostgrestException на
+/// следующем тапе по кнопке).
+Future<bool?> showConfirmRefuseDialog(BuildContext context) {
+  return showDialog<bool>(
     context: context,
     barrierColor: Colors.black.withValues(alpha: 0.35),
     builder: (BuildContext ctx) => _ConfirmDialog(
       title: 'Вы уверены, что хотите\nотказаться от заказа?',
       primaryLabel: 'Отказаться',
-      onPrimary: () {
-        Navigator.of(ctx).pop();
-        onRefuse();
-      },
+      onPrimary: () => Navigator.of(ctx).pop(true),
     ),
   );
 }
 
-/// Алерт «Вы уверены, что хотите отклонить заказ?»
-/// Используется на экране, где исполнитель ещё не подтвердил заказ.
-Future<void> showConfirmDeclineDialog(
-  BuildContext context, {
-  required VoidCallback onDecline,
-}) {
-  return showDialog<void>(
+/// Алерт «Вы уверены, что хотите отклонить заказ?» — возвращает `true`
+/// при подтверждении, см. [showConfirmRefuseDialog] про новый контракт.
+Future<bool?> showConfirmDeclineDialog(BuildContext context) {
+  return showDialog<bool>(
     context: context,
     barrierColor: Colors.black.withValues(alpha: 0.35),
     builder: (BuildContext ctx) => _ConfirmDialog(
       title: 'Вы уверены, что хотите\nотклонить заказ?',
       primaryLabel: 'Отклонить заказ',
-      onPrimary: () {
-        Navigator.of(ctx).pop();
-        onDecline();
-      },
+      onPrimary: () => Navigator.of(ctx).pop(true),
     ),
   );
 }
 
-/// Алерт «Вы уверены, что хотите отозвать отклик?»
-/// Используется на экране заказа со статусом «Ожидает ответа заказчика»,
-/// когда исполнитель уже отправил отклик, но заказчик ещё не выбрал.
-Future<void> showConfirmWithdrawDialog(
-  BuildContext context, {
-  required VoidCallback onWithdraw,
-}) {
-  return showDialog<void>(
+/// Алерт «Вы уверены, что хотите отозвать отклик?» — возвращает `true`
+/// при подтверждении.
+Future<bool?> showConfirmWithdrawDialog(BuildContext context) {
+  return showDialog<bool>(
     context: context,
     barrierColor: Colors.black.withValues(alpha: 0.35),
     builder: (BuildContext ctx) => _ConfirmDialog(
       title: 'Вы уверены, что хотите\nотозвать отклик?',
       primaryLabel: 'Отозвать отклик',
-      onPrimary: () {
-        Navigator.of(ctx).pop();
-        onWithdraw();
-      },
+      onPrimary: () => Navigator.of(ctx).pop(true),
     ),
   );
 }

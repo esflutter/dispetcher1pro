@@ -1,7 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:dispatcher_1/core/my_orders/my_orders_service.dart'
-    show MatchAlreadyTakenException;
+    show AlreadyRespondedException, MatchAlreadyTakenException;
 import 'package:dispatcher_1/core/utils/geo_distance.dart';
 
 import 'models.dart';
@@ -263,6 +263,75 @@ class CatalogService {
         .limit(effectiveLimit);
     List<OrderListItem> items =
         rows.map(_orderListItemFromRow).toList();
+
+    // Отсеиваем заказы, по которым «мэтч исполнителя с заказчиком уже
+    // случился» (либо заказчик уже выбрал кого-то конкретно). На карте
+    // и в ленте остаются только те заказы, по которым ещё реально можно
+    // откликнуться:
+    //   - `awaiting_executor` — заказчик предложил конкретному исполнителю,
+    //     ждёт его согласия; новых откликов больше не принимает.
+    //   - `accepted` — исполнитель уже выбран и подтвердил.
+    //   - `completed` — работа выполнена.
+    // А вот `awaiting_customer` (на стороне заказчика — статус «Выберите
+    // исполнителя» / «Откликов несколько») оставляем видимым: заказчик
+    // ещё никого не выбрал, можно стать одним из претендентов. Раньше
+    // здесь скрывали и его — каталог терял заказы, на которые откликнулся
+    // хоть один другой исполнитель.
+    //
+    // `rejected_by_customer` / `rejected_by_executor` / `expired` —
+    // терминальные мэтчи. Если у заказа из мэтчей остались только они
+    // (заказчик в статусе «Исполнитель отказался. Откликов пока нет»
+    // или «Выберите другого»), заказ остаётся видимым — мы не упоминаем
+    // эти статусы в `inFilter` ниже.
+    //
+    // Параллельно отсекаем заказы с датой работ полностью в прошлом —
+    // зависшие `published`-записи, которые не успел переварить
+    // `expire_unmatched_orders`, и просто старые публикации.
+    if (items.isNotEmpty) {
+      final List<String> ids = items.map((OrderListItem o) => o.id).toList();
+      final List<Map<String, dynamic>> taken = await _client
+          .from('order_matches')
+          .select('order_id')
+          .inFilter('order_id', ids)
+          .inFilter('status', const <String>[
+            'awaiting_executor',
+            'accepted',
+            'completed',
+          ]);
+      final Set<String> takenIds = <String>{
+        for (final Map<String, dynamic> r in taken)
+          r['order_id'] as String,
+      };
+      final DateTime today = DateTime.now();
+      final DateTime todayDate =
+          DateTime(today.year, today.month, today.day);
+      final DateTime nowLocal = DateTime.now();
+      items = items.where((OrderListItem o) {
+        if (takenIds.contains(o.id)) return false;
+        // Если у заказа есть date_to — сравниваем по нему; иначе по
+        // date_from. Граница «вчера» (а не «сегодня»), чтобы заказ на
+        // сегодняшнее число оставался видимым весь день.
+        final DateTime end = o.dateTo ?? o.dateFrom;
+        if (end.isBefore(todayDate)) return false;
+        // Дополнительно: если заказ заканчивается СЕГОДНЯ и `time_to`
+        // уже прошёл, — скрываем. Иначе ленту захлёстывают заказы,
+        // работа по которым закончилась в 09:00 и больше не имеет
+        // смысла откликаться на них до полуночи.
+        if (!end.isAfter(todayDate) && o.timeTo != null && !o.wholeDay) {
+          final List<String> hm = o.timeTo!.split(':');
+          if (hm.length >= 2) {
+            final int? h = int.tryParse(hm[0]);
+            final int? m = int.tryParse(hm[1]);
+            if (h != null && m != null) {
+              final DateTime endTs = DateTime(
+                  end.year, end.month, end.day, h, m);
+              if (endTs.isBefore(nowLocal)) return false;
+            }
+          }
+        }
+        return true;
+      }).toList();
+    }
 
     // Клиентский фильтр радиуса (haversine). Серверный нужен PostGIS,
     // которого пока нет — поэтому выше при активном radius мы тянем в
@@ -788,8 +857,14 @@ class CatalogService {
           .single();
     } on PostgrestException catch (e) {
       if (e.code == '23505') {
-        // На пару (order_id, executor_id) уже есть не-completed мэтч.
-        throw const MatchAlreadyTakenException();
+        // На пару (order_id, executor_id) уже есть не-completed мэтч —
+        // т.е. этот же исполнитель уже откликался на этот заказ (или
+        // был приглашён через `proposeOrderToExecutor`) и потом получил
+        // терминальный rejected_*/expired. UNIQUE-индекс
+        // `order_matches_non_completed_unique` блокирует повторный INSERT.
+        // Это отдельный кейс от «заказ заняли другим исполнителем» —
+        // UI должен показать понятное «Вы уже откликались».
+        throw const AlreadyRespondedException();
       }
       rethrow;
     }

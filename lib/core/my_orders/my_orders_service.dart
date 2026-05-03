@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:dispatcher_1/core/catalog/catalog_service.dart';
@@ -14,12 +15,38 @@ class MatchAlreadyTakenException implements Exception {
   String toString() => 'Match already taken';
 }
 
+/// Этот исполнитель уже откликался на этот заказ — дальнейший отклик
+/// блокирует UNIQUE-индекс `order_matches_non_completed_unique`.
+/// Сценарий: исполнитель отозвал свой отклик (или заказчик его отклонил),
+/// и теперь хочет откликнуться повторно. По бизнес-правилу повторный
+/// отклик запрещён — UI показывает «Вы уже откликались на этот заказ»,
+/// чтобы сообщение отличалось от общего «Заказ занят».
+class AlreadyRespondedException implements Exception {
+  const AlreadyRespondedException();
+  @override
+  String toString() => 'Already responded to this order';
+}
+
 /// Чтение/обновление моих откликов (`order_matches` WHERE executor_id = me).
 /// FSM-переходы статуса валидирует триггер `validate_match_transition`
 /// в БД — клиент только пишет целевой статус.
 class MyOrdersService {
   MyOrdersService._();
   static final MyOrdersService instance = MyOrdersService._();
+
+  /// Глобальный «маяк» для оповещения экранов «Мои заказы» о том, что
+  /// данные мэтчей могли поменяться извне — например, исполнитель
+  /// пометил день нерабочим в графике, и accepted-мэтчи на этот день
+  /// уехали в `rejected_by_executor`. Сторонний код просто увеличивает
+  /// `value`; экран «Мои заказы» подписан и при изменении вызывает
+  /// `_refresh()` без необходимости делать pull-to-refresh.
+  static final ValueNotifier<int> changeBeacon = ValueNotifier<int>(0);
+
+  /// Сигнализирует подписчикам [changeBeacon] о том, что списки мэтчей
+  /// нужно перетянуть из БД.
+  static void bumpChangeBeacon() {
+    changeBeacon.value = changeBeacon.value + 1;
+  }
 
   SupabaseClient get _client => Supabase.instance.client;
 
@@ -34,36 +61,43 @@ class MyOrdersService {
     final List<Map<String, dynamic>> rows = await _client
         .from('order_matches')
         .select(
-          'id, order_id, status, created_at, '
+          'id, order_id, status, created_at, updated_at, status_changed_at, '
           'agreed_price_per_hour, agreed_price_per_day, agreed_min_hours, '
           'order:orders!order_matches_order_id_fkey('
           'id, display_number, title, description, address, '
           'date_from, date_to, time_from, time_to, exact_date, whole_day, '
+          'published_at, '
           'machinery_ids, category_ids, works, photos, '
           'customer:profiles!orders_customer_id_fkey('
           'id, name, avatar_url, rating_as_customer, review_count_as_customer)), '
           'service:services!order_matches_service_id_fkey(machinery_ids)',
         )
         .eq('executor_id', user.id)
-        .order('created_at', ascending: false)
+        // Сортируем по моменту смены статуса. `status_changed_at`
+        // обновляется ТОЛЬКО при OLD.status != NEW.status (триггер
+        // `set_match_status_changed_at`), поэтому правки цены или
+        // других полей не сбрасывают «таймер» и не поднимают карточку
+        // наверх. Раньше использовали `updated_at`, который moddatetime
+        // обновляет на любой UPDATE.
+        .order('status_changed_at', ascending: false)
         .limit(limit);
 
     return rows.map(_fromRow).toList();
   }
 
   /// Исполнитель отзывает свой отклик из `awaiting_customer`. FSM-
-  /// триггер `validate_match_transition` НЕ разрешает прямой переход
-  /// `awaiting_customer → rejected_by_executor` (только в `accepted`/
-  /// `rejected_by_customer`/`expired`). Используем `expired` как
-  /// нейтральный терминал — иначе UPDATE молча отбивался триггером,
-  /// мэтч оставался `awaiting_customer`, заказчик продолжал видеть
-  /// отозванный отклик. `.select().single()` обязательна, чтобы
-  /// «не нашлось ни одной строки» (RLS отказал, FSM не пустил)
-  /// выбрасывало исключение, а не было silent no-op.
+  /// триггер `validate_match_transition` разрешает переход
+  /// `awaiting_customer → rejected_by_executor` (миграция
+  /// `allow_withdraw_from_awaiting_customer`). В UI это рендерится как
+  /// «Отклонён» — корректно отражает, что инициатор отказа — исполнитель.
+  /// `expired` использовать нельзя: семантически это «снят с публикации»
+  /// (заказ удалили / истёк дедлайн), а не отозванный отклик.
+  /// `.select().single()` обязательна, чтобы «не нашлось ни одной строки»
+  /// (RLS отказал, FSM не пустил) выбрасывало исключение, а не было silent no-op.
   Future<void> withdraw(String matchId) async {
     await _client
         .from('order_matches')
-        .update(<String, dynamic>{'status': 'expired'})
+        .update(<String, dynamic>{'status': 'rejected_by_executor'})
         .eq('id', matchId)
         .select('id')
         .single();
@@ -99,6 +133,45 @@ class MyOrdersService {
         .eq('id', matchId)
         .select('id')
         .single();
+  }
+
+  /// Уже ли текущий исполнитель оставил отзыв на этот мэтч (subject =
+  /// 'customer'). Локальный кэш `_reviewedOrders` сбрасывается при
+  /// Hot Restart / переустановке, и без БД-проверки экран снова
+  /// показывал кнопку «Оставить отзыв» — а INSERT ловился UNIQUE-индексом
+  /// `reviews_unique_author_per_match_subject` (миграция
+  /// `unique_review_per_author_match_subject`) с непонятной ошибкой.
+  Future<bool> hasMyReviewOnMatch(String matchId) async {
+    final User? user = _client.auth.currentUser;
+    if (user == null) return false;
+    final Map<String, dynamic>? r = await _client
+        .from('reviews')
+        .select('id')
+        .eq('match_id', matchId)
+        .eq('author_id', user.id)
+        .eq('subject', 'customer')
+        .maybeSingle();
+    return r != null;
+  }
+
+  /// Свежий снапшот рейтинга/количества отзывов заказчика. Нужен после
+  /// того, как исполнитель оставил отзыв заказчику и вернулся на
+  /// экран деталей: триггер `recalculate_profile_rating` уже пересчитал
+  /// `profiles.rating_as_customer` и `review_count_as_customer`, но
+  /// открытый экран держит снапшот, полученный при изначальной загрузке.
+  /// Возвращает `null`, если профиль не найден.
+  Future<({double rating, int reviewCount})?> getCustomerRatingSnapshot(
+      String customerId) async {
+    final Map<String, dynamic>? r = await _client
+        .from('profiles')
+        .select('rating_as_customer, review_count_as_customer')
+        .eq('id', customerId)
+        .maybeSingle();
+    if (r == null) return null;
+    return (
+      rating: _toDouble(r['rating_as_customer']) ?? 0,
+      reviewCount: (r['review_count_as_customer'] as int?) ?? 0,
+    );
   }
 
   /// Контакты заказчика (телефон/email) — доступны только после
@@ -181,12 +254,29 @@ class MyOrdersService {
       }
     }
 
+    // `published_at` может быть NULL только у заказов в `draft` — но
+    // мэтча на черновик быть не может (RLS не отдаст), поэтому в реальной
+    // выборке поле всегда заполнено. Для безопасности fallback'имся на
+    // `created_at` мэтча, чтобы UI не упал на DateTime.parse(null).
+    final String? publishedAtRaw = order['published_at'] as String?;
+    final DateTime publishedAt = publishedAtRaw != null
+        ? DateTime.parse(publishedAtRaw)
+        : DateTime.parse(r['created_at'] as String);
+
     return MyOrderMatch(
       matchId: r['id'] as String,
       orderId: r['order_id'] as String,
       orderDisplayNumber: order['display_number'] as int,
       status: MyMatchStatus.fromDb(r['status'] as String),
       createdAt: DateTime.parse(r['created_at'] as String),
+      statusChangedAt: DateTime.parse(
+        // status_changed_at — приоритетный таймстемп смены статуса.
+        // updated_at — fallback для строк, обработанных до миграции
+        // `subscription_audit_fixes` (значения совпадают, потому что
+        // backfill в миграции их выровнял).
+        (r['status_changed_at'] ?? r['updated_at']) as String,
+      ),
+      orderPublishedAt: publishedAt,
       agreedPricePerHour: _toDouble(r['agreed_price_per_hour']),
       agreedPricePerDay: _toDouble(r['agreed_price_per_day']),
       agreedMinHours: r['agreed_min_hours'] as int?,

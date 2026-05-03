@@ -42,8 +42,9 @@ class ProfileService {
       final Map<String, dynamic>? r = await _client
           .from('profiles_private')
           .select('phone, email, date_of_birth, '
-              'subscription_paid_until, subscription_auto_renew, '
-              'verification_reject_reason')
+              'subscription_paid_until, subscription_trial_until, '
+              'subscription_auto_renew, subscription_trial_used, '
+              'subscription_payment_method_id, verification_reject_reason')
           .eq('id', user.id)
           .maybeSingle();
       if (r == null) return null;
@@ -190,19 +191,52 @@ class MyPrivate {
     required this.email,
     required this.dateOfBirth,
     required this.subscriptionPaidUntil,
+    required this.subscriptionTrialUntil,
     required this.subscriptionAutoRenew,
+    required this.subscriptionTrialUsed,
+    required this.subscriptionPaymentMethodId,
     required this.verificationRejectReason,
   });
   final String? phone;
   final String? email;
   final DateTime? dateOfBirth;
   final DateTime? subscriptionPaidUntil;
+
+  /// Конец триала. Если в будущем — юзер сейчас на бесплатном пробном
+  /// периоде; если в прошлом или null — обычная платная подписка
+  /// (или без подписки). Поле отделено от `paid_until`, чтобы UI мог
+  /// различать «N дней триала осталось» и «следующее списание …».
+  final DateTime? subscriptionTrialUntil;
   final bool subscriptionAutoRenew;
+
+  /// Триал был использован — повторно его не дать. Управляется
+  /// триггером `apply_payment_success` при первой активации
+  /// подписки/привязке карты с `activate_trial=1`.
+  final bool subscriptionTrialUsed;
+
+  /// id привязанной карты для авто-продления подписки. Cron
+  /// `subscription_charge_due` использует его для off-session-charge.
+  /// `null` — карта не привязана, авто-продление невозможно.
+  final String? subscriptionPaymentMethodId;
 
   /// Текстовая причина отказа модерацией. `null` — нет отказа или отказ
   /// без причины. Показывается на экране карточки исполнителя при
   /// `verification_status = rejected`.
   final String? verificationRejectReason;
+
+  /// Подписка активна сейчас (включая триал) — paid_until ещё в будущем.
+  bool get subscriptionActive {
+    final DateTime? until = subscriptionPaidUntil;
+    return until != null && until.isAfter(DateTime.now());
+  }
+
+  /// Юзер сейчас на бесплатном триале — `trial_until` ещё в будущем.
+  /// Это явный признак, не зависящий от `trial_used` (который
+  /// ставится в true сразу при активации и больше не меняется).
+  bool get subscriptionInTrial {
+    final DateTime? until = subscriptionTrialUntil;
+    return until != null && until.isAfter(DateTime.now());
+  }
 
   factory MyPrivate.fromRow(Map<String, dynamic> r) => MyPrivate(
         phone: r['phone'] as String?,
@@ -213,8 +247,15 @@ class MyPrivate {
         subscriptionPaidUntil: r['subscription_paid_until'] == null
             ? null
             : DateTime.parse(r['subscription_paid_until'] as String),
+        subscriptionTrialUntil: r['subscription_trial_until'] == null
+            ? null
+            : DateTime.parse(r['subscription_trial_until'] as String),
         subscriptionAutoRenew:
             (r['subscription_auto_renew'] as bool?) ?? false,
+        subscriptionTrialUsed:
+            (r['subscription_trial_used'] as bool?) ?? false,
+        subscriptionPaymentMethodId:
+            r['subscription_payment_method_id'] as String?,
         verificationRejectReason: r['verification_reject_reason'] as String?,
       );
 }

@@ -55,6 +55,8 @@ class MyOrderMatch {
     required this.orderDisplayNumber,
     required this.status,
     required this.createdAt,
+    required this.statusChangedAt,
+    required this.orderPublishedAt,
     required this.agreedPricePerHour,
     required this.agreedPricePerDay,
     required this.agreedMinHours,
@@ -90,7 +92,26 @@ class MyOrderMatch {
   final int orderDisplayNumber;
 
   final MyMatchStatus status;
+
+  /// Момент создания мэтча (`order_matches.created_at`) — когда исполнитель
+  /// откликнулся на заказ или заказчик предложил заказ исполнителю.
+  /// Используется для сортировки активных откликов от новых к старым.
   final DateTime createdAt;
+
+  /// Момент последнего изменения мэтча (`order_matches.updated_at`).
+  /// Триггер `moddatetime` обновляет это поле при каждом UPDATE — на
+  /// практике совпадает с моментом последней смены статуса (других
+  /// UPDATE в коде нет). Используется во вкладке «Не принятые»: и для
+  /// сортировки (только что отозванный — наверху), и для подписи
+  /// «отозвано N минут назад».
+  final DateTime statusChangedAt;
+
+  /// Момент публикации заказа (`orders.published_at`). Стабильный — не
+  /// меняется при смене статуса мэтча. Используется в карточке отклика
+  /// для подписи «Опубликован X назад», чтобы значение совпадало с
+  /// тем, что исполнитель видит в каталоге, и не «обнулялось» в момент
+  /// собственного отклика или принятия заказчиком.
+  final DateTime orderPublishedAt;
   final double? agreedPricePerHour;
   final double? agreedPricePerDay;
   final int? agreedMinHours;

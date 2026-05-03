@@ -5,12 +5,14 @@ import 'package:go_router/go_router.dart';
 import 'package:dispatcher_1/core/my_services/models.dart';
 import 'package:dispatcher_1/core/my_services/my_services_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
+import 'package:dispatcher_1/core/theme/app_spacing.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
 import 'package:dispatcher_1/core/widgets/dark_sub_app_bar.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
 import 'package:dispatcher_1/features/catalog/widgets/catalog_search_bar.dart';
 
 import 'widgets/service_card.dart';
+import 'widgets/service_paywall.dart';
 
 /// Тонкий кэш-адаптер над [MyServicesService] для кода, который ещё
 /// не переписан напрямую на сервис (карточка исполнителя, детали заказа
@@ -317,14 +319,16 @@ class _ServicesList extends StatelessWidget {
             pricePerDay: item.pricePerDay,
             onTap: () async {
               if (!item.isPaid) {
-                // Неоплаченная услуга — сразу уводим на оплату
-                // конкретно этой строки, без редактирования.
-                await context.push(
-                  '/subscription/payment',
-                  extra: <String, Object?>{
-                    'kind': 'service_slot',
-                    'serviceId': item.id,
-                  },
+                // Неоплаченная услуга — paywall «Оплатите размещение
+                // услуги» с фоном-картинкой и шторкой выбора способа
+                // оплаты. Раньше уводили сразу на голую шторку
+                // `/subscription/payment` без paywall'а — фон был
+                // чёрным, выглядело сломанным.
+                await Navigator.of(context).push<void>(
+                  MaterialPageRoute<void>(
+                    fullscreenDialog: true,
+                    builder: (_) => ServicePaywall(serviceId: item.id),
+                  ),
                 );
                 onRefresh();
                 return;
@@ -343,10 +347,15 @@ class _ServicesList extends StatelessWidget {
               top: 8.h,
               right: 8.w,
               child: Container(
-                padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 4.h),
+                padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 5.h),
                 decoration: BoxDecoration(
-                  color: AppColors.error,
-                  borderRadius: BorderRadius.circular(100.r),
+                  // Бренд-цвет вместо красного: «Не оплачена» — это
+                  // CTA «оплатите», а не ошибка/опасность. И стандартное
+                  // скругление AppSpacing.radiusM (12.r), как у других
+                  // прямоугольных бейджей в приложении.
+                  color: AppColors.primary,
+                  borderRadius:
+                      BorderRadius.circular(AppSpacing.radiusM),
                 ),
                 child: Text(
                   'Не оплачена',

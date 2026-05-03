@@ -144,6 +144,16 @@ class _ExecutorCardScreenState extends State<ExecutorCardScreen> {
       if (priv != null) {
         _verificationRejectReason = priv.verificationRejectReason;
       }
+      // Подтягиваем услуги: блоки «Спецтехника»/«Категории услуг» —
+      // computed-getter'ы поверх `ServiceData.services`. Если кэш
+      // пустой (Hot Restart, фоновый рестарт активити Android),
+      // экран показывал «Создайте первую услугу» даже у юзеров с
+      // услугами в БД. Сплеш тоже бутстрапит этот кэш, но дублируем
+      // здесь как self-heal — независимо от пути входа в экран.
+      try {
+        await ServiceData.refresh();
+      } catch (_) {/* silent: блок покажет empty-state, как раньше */}
+      if (!mounted) return;
       setState(() {});
     } catch (e) {
       if (!mounted) return;
@@ -357,10 +367,15 @@ class ExecutorCardData {
   static String? radius;
 
   /// Спецтехника и категории услуг — НЕ хранятся отдельно.
-  /// Подтягиваются из услуг исполнителя (объединение по всем услугам,
-  /// distinct, порядок первого появления). Единственный источник
-  /// истины — `ServiceData.services`, поэтому сеттеров нет: меняется
-  /// только через создание/удаление услуг в «Мои услуги».
+  /// Подтягиваются из ОПЛАЧЕННЫХ услуг исполнителя (объединение,
+  /// distinct, порядок первого появления). Неоплаченные (`isPaid=false`)
+  /// в карточку не идут — иначе они светились бы и тут, и в каталоге
+  /// при поиске по спецтехнике/категории, хотя сама услуга юзеру
+  /// недоступна (executor_catalog_mv тоже отфильтровывает `is_paid=true`,
+  /// бэкенд и фронтенд должны рисовать одинаковые наборы).
+  /// Единственный источник истины — `ServiceData.services`, поэтому
+  /// сеттеров нет: меняется только через создание/удаление/оплату услуг
+  /// в «Мои услуги».
   static List<String> get machinery => _unionFromServices((s) => s.machinery);
   static List<String> get categories => _unionFromServices((s) => s.categories);
 
@@ -369,6 +384,7 @@ class ExecutorCardData {
     final Set<String> seen = <String>{};
     final List<String> out = <String>[];
     for (final ServiceMock s in ServiceData.services) {
+      if (!s.isPaid) continue;
       for (final String v in pick(s)) {
         if (seen.add(v)) out.add(v);
       }
