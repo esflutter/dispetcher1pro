@@ -7,6 +7,7 @@ import 'package:pinput/pinput.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:dispatcher_1/core/auth/auth_service.dart';
+import 'package:dispatcher_1/core/bootstrap/post_login_bootstrap.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
@@ -104,6 +105,13 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
         if (result.name != null && result.name!.trim().isNotEmpty) {
           CropResult.userName = result.name!;
         }
+        // Подтянуть карточку исполнителя, услуги и подписку из БД до
+        // того, как юзер тапнет «Откликнуться» в каталоге. Без этого
+        // ExecutorCardState.cardCreated/ServiceData/VerificationStatus
+        // оставались дефолтными (false/пусто), и при первом тапе
+        // показывался ложный попап «Создайте карточку исполнителя».
+        await runPostLoginBootstrap();
+        if (!mounted) return;
         context.go('/shell');
       }
     } on AuthException {

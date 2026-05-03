@@ -175,28 +175,35 @@ class PaymentService {
     }
   }
 
+
   /// Поллинг статуса платежа до терминального состояния. Используется
   /// на экране результата оплаты после возврата из браузера.
   ///
   /// Резолвится:
-  ///   - `succeeded` / `canceled` — финал
-  ///   - `pending` после `timeout` — статус не успел дойти до нас,
-  ///     показываем «в обработке», результат уточнится на следующем
-  ///     заходе на экран подписки.
+  ///   - `succeeded` / `failed` / `refunded` — финал, останавливаем цикл;
+  ///   - `pending` — только если пришёл `isCancelled() == true` (юзер
+  ///     закрыл экран). Без отмены поллинг идёт бесконечно — у юзера
+  ///     не должно быть «таймаута, после которого надо самому что-то
+  ///     жать»; ручную проверку убрали как не оптимальную.
+  ///
+  /// Тайминг (адаптивный, чтобы балансировать responsiveness vs. трафик):
+  ///   - первые 5 проверок: 800 мс — типичный webhook прилетает за 2–6 с;
+  ///   - 5–30 с: 2 с — ловим задержанные webhook'и сразу;
+  ///   - 30 с — 2 мин: 5 с — webhook совсем поздний, но всё ещё ждём;
+  ///   - дальше: 10 с — экстремально редкие задержки YooKassa, экономим
+  ///     батарею/трафик при долгом ожидании.
   Future<PaymentStatus> pollPaymentStatus(
     String paymentId, {
-    Duration interval = const Duration(milliseconds: 1500),
-    Duration timeout = const Duration(seconds: 90),
     bool Function()? isCancelled,
   }) async {
     // Пустой id пробивает PostgREST как `id=eq.` → 22P02 invalid uuid,
     // `getPaymentStatus` ловит и возвращает unknown — без этой ветки цикл
-    // молотил бы 90 с впустую (deep-link без id, ошибка маршрута).
+    // молотил бы впустую (deep-link без id, ошибка маршрута).
     if (paymentId.isEmpty) return PaymentStatus.unknown;
-    final DateTime deadline = DateTime.now().add(timeout);
-    while (DateTime.now().isBefore(deadline)) {
-      // Чтобы цикл прерывался при unmount экрана PaymentResultScreen
-      // (раньше после ухода с экрана продолжали слать ~50 запросов).
+    final DateTime started = DateTime.now();
+    int attempt = 0;
+    while (true) {
+      // Чтобы цикл прерывался при unmount экрана PaymentResultScreen.
       if (isCancelled != null && isCancelled()) return PaymentStatus.pending;
       final PaymentStatus s = await getPaymentStatus(paymentId);
       if (s == PaymentStatus.succeeded ||
@@ -204,9 +211,20 @@ class PaymentService {
           s == PaymentStatus.refunded) {
         return s;
       }
-      await Future<void>.delayed(interval);
+      attempt++;
+      final Duration elapsed = DateTime.now().difference(started);
+      final Duration step;
+      if (attempt < 5) {
+        step = const Duration(milliseconds: 800);
+      } else if (elapsed < const Duration(seconds: 30)) {
+        step = const Duration(seconds: 2);
+      } else if (elapsed < const Duration(minutes: 2)) {
+        step = const Duration(seconds: 5);
+      } else {
+        step = const Duration(seconds: 10);
+      }
+      await Future<void>.delayed(step);
     }
-    return PaymentStatus.pending;
   }
 }
 

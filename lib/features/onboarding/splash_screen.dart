@@ -3,15 +3,9 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../../core/auth/phone_format.dart';
-import '../../core/executor_card/executor_card_service.dart';
-import '../../core/profile/profile_service.dart';
+import '../../core/bootstrap/post_login_bootstrap.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
-import '../auth/photo_crop_screen.dart';
-import '../executor_card/executor_card_screen.dart';
-import '../profile/widgets/verification_badge.dart';
-import '../services/my_services_screen.dart';
 
 /// Сплеш-экран приложения «Диспетчер №1».
 /// Через 1.5 секунды отправляем пользователя:
@@ -34,16 +28,11 @@ class _SplashScreenState extends State<SplashScreen> {
     _bootstrap();
   }
 
-  /// Пока на экране висит лого+спиннер (минимум 1.5 сек), параллельно:
-  /// — определяем, есть ли валидная Supabase-сессия;
-  /// — если есть, подгружаем приватную часть профиля и инициализируем
-  ///   VerificationStatus (подписка/верификация) + флаг
-  ///   ExecutorCardState.cardCreated. Это нужно, чтобы:
-  ///     1) при первом же тапе «Откликнуться» paywall не открылся
-  ///        ошибочно из-за свежезагруженного `hasSubscription = false`;
-  ///     2) при первом тапе «Мои услуги»/«Мой график» из профиля
-  ///        не выскакивал попап «Сначала создайте карточку», если
-  ///        карточка в БД на самом деле уже опубликована.
+  /// Пока на экране висит лого+спиннер (минимум 1.5 сек), параллельно
+  /// определяем, есть ли валидная Supabase-сессия; если есть — гоняем
+  /// общий post-login bootstrap (см. [runPostLoginBootstrap]), чтобы
+  /// при первом тапе «Откликнуться»/«Мои услуги»/«Мой график» не
+  /// показывался ошибочный попап про отсутствующую подписку/карточку.
   Future<void> _bootstrap() async {
     final Future<void> minDelay =
         Future<void>.delayed(const Duration(milliseconds: 1500));
@@ -56,86 +45,12 @@ class _SplashScreenState extends State<SplashScreen> {
     }
 
     if (session != null) {
-      // Восстанавливаем телефон в CropResult из auth-сессии. Поле
-      // заполняется только во время OTP-флоу (phone_input_screen), и
-      // после рестарта приложения с валидной сессией оставалось пустым —
-      // юзер заходил в «Редактирование профиля» и видел пустую плашку
-      // вместо своего номера.
-      final String? rawPhone = session.user.phone;
-      if (rawPhone != null && rawPhone.isNotEmpty) {
-        final String e164 =
-            rawPhone.startsWith('+') ? rawPhone : '+$rawPhone';
-        CropResult.userPhoneE164 = e164;
-        CropResult.userPhone = PhoneFormat.toPretty(e164);
-      }
-      // Параллельно тянем подписку (profiles_private), карточку
-      // исполнителя (executor_cards) и список услуг (services). Все
-      // запросы идут независимо; ошибка в одном не отменяет другие.
-      // Услуги нужны заранее, чтобы блоки «Спецтехника»/«Категории»
-      // в карточке исполнителя и «Мой график»/«Параметры дня» не
-      // пустели после Hot Restart, пока юзер не зайдёт в «Мои услуги»
-      // (раньше getter `ExecutorCardData.machinery` читал из пустого
-      // in-memory кэша `ServiceData.services` и блок выглядел как
-      // «создайте первую услугу» даже у юзеров с услугами в БД).
-      await Future.wait<void>(<Future<void>>[
-        _bootstrapSubscription(),
-        _bootstrapExecutorCard(),
-        _bootstrapServices(),
-      ]);
+      await runPostLoginBootstrap();
     }
 
     await minDelay;
     if (_disposed || !mounted) return;
     context.go(session != null ? '/shell' : '/onboarding');
-  }
-
-  Future<void> _bootstrapSubscription() async {
-    try {
-      final MyPrivate? priv = await ProfileService.instance.loadMyPrivate();
-      final DateTime? paidUntil = priv?.subscriptionPaidUntil;
-      if (paidUntil != null) {
-        VerificationStatus.hasSubscription =
-            paidUntil.isAfter(DateTime.now().toUtc());
-        VerificationStatus.subscriptionPaidUntilText = _fmtDateRu(paidUntil);
-      }
-      // Заодно подтягиваем email из profiles_private — без этого после
-      // Hot Restart `CropResult.userEmail` пуст, и в карточке/профиле
-      // показывается «—» вместо ранее сохранённого email'а.
-      if (priv?.email != null && priv!.email!.isNotEmpty &&
-          CropResult.userEmail.isEmpty) {
-        CropResult.userEmail = priv.email!;
-      }
-    } catch (_) {/* фоллбэк: подписку поднимет profile_screen */}
-  }
-
-  Future<void> _bootstrapExecutorCard() async {
-    try {
-      final MyExecutorCard? c =
-          await ExecutorCardService.instance.loadMine();
-      if (c != null) {
-        // saved_at != null → юзер хоть раз сохранил карточку и UI
-        // должен открывать filled-вариант. is_published — отдельный
-        // критерий (попадание в каталог), его держим в ec.isPublished
-        // для других мест, где это действительно нужно.
-        ExecutorCardState.cardCreated = c.savedAt != null;
-      }
-    } catch (_) {/* фоллбэк: карточку поднимет executor_card_screen */}
-  }
-
-  Future<void> _bootstrapServices() async {
-    try {
-      await ServiceData.refresh();
-    } catch (_) {/* фоллбэк: services поднимет my_services_screen */}
-  }
-
-  static const List<String> _monthsRu = <String>[
-    'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
-    'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря',
-  ];
-
-  String _fmtDateRu(DateTime d) {
-    final DateTime local = d.toLocal();
-    return '${local.day} ${_monthsRu[local.month - 1]}';
   }
 
   @override

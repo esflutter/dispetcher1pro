@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:app_links/app_links.dart';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'router.dart';
@@ -30,6 +31,13 @@ class DeepLinks {
   StreamSubscription<Uri>? _sub;
   bool _started = false;
 
+  /// Ключ в SharedPreferences для последнего обработанного initial-link'а.
+  /// На Android `getInitialLink()` возвращает один и тот же URL после
+  /// каждого hot restart (Intent остаётся на Activity до его явной
+  /// замены), поэтому без сравнения с прошлым значением экран статуса
+  /// оплаты появлялся при каждом перезапуске приложения.
+  static const String _kLastInitialKey = 'deep_links.last_initial';
+
   /// Подключаемся к стриму ссылок и обрабатываем initial-ссылку.
   /// Безопасно вызывать несколько раз — повторные вызовы no-op.
   Future<void> start() async {
@@ -39,16 +47,40 @@ class DeepLinks {
     // Начальная ссылка (приложение открылось переходом по ссылке).
     try {
       final Uri? initial = await _appLinks.getInitialLink();
-      if (initial != null) _handle(initial);
+      if (initial != null && await _shouldHandleInitial(initial)) {
+        _handle(initial);
+      }
     } catch (e) {
       debugPrint('[DeepLinks] getInitialLink error: $e');
     }
 
-    // Подписка на runtime-ссылки (приложение было в фоне).
+    // Подписка на runtime-ссылки (приложение было в фоне). Стрим
+    // эмитит ТОЛЬКО свежие интенты, поэтому здесь дедупликация не
+    // нужна — каждый вызов `_handle` относится к новому переходу.
     _sub = _appLinks.uriLinkStream.listen(
       _handle,
       onError: (Object e) => debugPrint('[DeepLinks] stream error: $e'),
     );
+  }
+
+  /// Сравнивает initial-link с последним обработанным. Возвращает true,
+  /// если ссылка новая (или storage недоступен — тогда лучше обработать,
+  /// чем потерять реальный платёж). Сразу же запоминает текущую ссылку.
+  Future<bool> _shouldHandleInitial(Uri uri) async {
+    try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      final String current = uri.toString();
+      final String? last = prefs.getString(_kLastInitialKey);
+      if (last == current) {
+        debugPrint('[DeepLinks] skip duplicate initial: $current');
+        return false;
+      }
+      await prefs.setString(_kLastInitialKey, current);
+      return true;
+    } catch (e) {
+      debugPrint('[DeepLinks] prefs error: $e');
+      return true;
+    }
   }
 
   void dispose() {
@@ -104,11 +136,21 @@ class DeepLinks {
       final SupabaseClient client = Supabase.instance.client;
       final User? user = client.auth.currentUser;
       if (user == null) return null;
+      // Окно 10 минут — гарантирует, что мы подхватим тот pending,
+      // который юзер только что создал из приложения и пошёл оплачивать
+      // в браузер. Старые «трупы» pending'ов от брошенных оплат
+      // (например, юзер закрыл вкладку, не введя реквизиты) могут лежать
+      // часами; без фильтра по времени fallback подхватывал такой pending
+      // и polling висел бесконечно — этот платёж в YooKassa не активен,
+      // webhook никогда не прилетит, status навсегда останется pending.
+      final DateTime cutoff =
+          DateTime.now().toUtc().subtract(const Duration(minutes: 10));
       final Map<String, dynamic>? row = await client
           .from('payments')
           .select('id')
           .eq('user_id', user.id)
           .eq('status', 'pending')
+          .gte('created_at', cutoff.toIso8601String())
           .order('created_at', ascending: false)
           .limit(1)
           .maybeSingle();

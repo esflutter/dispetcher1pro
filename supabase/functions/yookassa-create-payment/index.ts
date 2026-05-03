@@ -310,14 +310,20 @@ Deno.serve(async (req) => {
     },
   };
 
+  // confirmation.return_url ставим ВСЕГДА — YooKassa использует его
+  // только если потребуется редирект (форма ввода реквизитов или 3DS-
+  // челлендж сохранённой карты). Без явного return_url для сценария
+  // C (saved card + 3DS) YooKassa подставляла default из настроек
+  // мерчанта (главная yoomoney.ru), и юзер после ввода 3DS-кода
+  // оказывался не в нашем приложении, а на главной YooMoney.
+  ykPayload.confirmation = { type: "redirect", return_url: returnUrl };
   if (body.payment_method_id) {
-    // Сценарий C: списание с сохранённой карты, без редиректа.
-    // Если 3DS всё-таки потребуется — YooKassa вернёт confirmation_url
-    // в ответе и status=pending.
+    // Сценарий C: списание с сохранённой карты. Обычно проходит
+    // мгновенно, но банк может потребовать 3DS — тогда YooKassa
+    // вернёт confirmation_url с нашим return_url.
     ykPayload.payment_method_id = body.payment_method_id;
   } else {
-    // Сценарии A/B: редирект на YooKassa-форму.
-    ykPayload.confirmation = { type: "redirect", return_url: returnUrl };
+    // Сценарии A/B: редирект на YooKassa-форму ввода реквизитов.
     if (body.save_card) ykPayload.save_payment_method = true;
   }
 

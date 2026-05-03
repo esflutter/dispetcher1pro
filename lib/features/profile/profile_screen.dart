@@ -133,6 +133,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
   // Цикл: notVerified → inProgress → verified → rejected → blocked
   // → обратно в notVerified. Состояние «blocked» рендерится через
   // BlockedPill вместо FullWidthVerificationPill (см. build).
+  // Каждый шаг пишется в БД (`profiles.verification_status` /
+  // `profiles.blocked_until`), чтобы после рестарта статус не
+  // сбрасывался к серверному значению при `_loadFromDb()`.
   // TODO: убрать перед релизом.
   void _cycleStatus() {
     const List<VerificationStatus> order = <VerificationStatus>[
@@ -146,15 +149,32 @@ class _ProfileScreenState extends State<ProfileScreen> {
       // блокировку и возвращает в начало цикла верификации.
       AccountBlock.forceLift();
       _status = VerificationStatus.notVerified;
+      // ignore: discarded_futures
+      ProfileService.instance.updateVerificationState(
+        verificationStatus: 'none',
+        clearBlocked: true,
+      );
       return;
     }
     final int idx = order.indexOf(_status);
     if (idx == order.length - 1) {
       // После rejected — включаем тестовую блокировку на 30 дней.
-      AccountBlock.setUntil(DateTime.now().add(const Duration(days: 30)));
+      final DateTime until = DateTime.now().add(const Duration(days: 30));
+      AccountBlock.setUntil(until);
+      // ignore: discarded_futures
+      ProfileService.instance.updateVerificationState(blockedUntil: until);
       return;
     }
-    _status = order[idx + 1];
+    final VerificationStatus next = order[idx + 1];
+    _status = next;
+    final String dbValue = switch (next) {
+      VerificationStatus.notVerified => 'none',
+      VerificationStatus.inProgress => 'pending',
+      VerificationStatus.verified => 'approved',
+      VerificationStatus.rejected => 'rejected',
+    };
+    // ignore: discarded_futures
+    ProfileService.instance.updateVerificationState(verificationStatus: dbValue);
   }
 
   Future<void> _openEdit() async {

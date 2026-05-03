@@ -47,7 +47,11 @@ class AppColors {
   static const Color borderInputLight = Color(0xFFD1D1D6);
 
   // Переключатели (ios-style toggle).
-  static const Color toggleOn = Color(0xFF34C759);
+  // Раньше был зелёный 0xFF34C759 «как у iOS», но он выбивался из
+  // оранжевого бренда — особенно на «Моём графике» и подписке.
+  // По дизайну сейчас перекрасили в primary; зелёный из палитры
+  // больше нигде не используется.
+  static const Color toggleOn = primary;
   static const Color toggleOff = Color(0xFFE0E0E0);
 
   // Пилюли статуса заказа (Подтверждён — зелёная, Идёт поиск — синяя).

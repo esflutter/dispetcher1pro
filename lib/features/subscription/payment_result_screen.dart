@@ -48,6 +48,10 @@ class _PaymentResultScreenState extends State<PaymentResultScreen> {
   PaymentStatus _status = PaymentStatus.pending;
   bool _polling = true;
   bool _disposed = false;
+  // Поднимаем при каждом ручном перезапуске поллинга, чтобы старая
+  // background-итерация поняла, что её результат уже неактуален и
+  // не перезаписывала бы _status.
+  int _attempt = 0;
 
   @override
   void initState() {
@@ -61,28 +65,26 @@ class _PaymentResultScreenState extends State<PaymentResultScreen> {
     super.dispose();
   }
 
+  /// Авто-поллинг статуса до терминального состояния. Запускается из
+  /// initState один раз. У юзера нет ручных кнопок «Проверить» —
+  /// экран сам подхватит webhook (адаптивный шаг см. в
+  /// `PaymentService.pollPaymentStatus`).
   Future<void> _startPolling() async {
+    final int myAttempt = ++_attempt;
     // Прямой заход на /subscription/payment/result без id (битый
-    // deep-link / ручная навигация) — 90 секунд поллить нечего.
+    // deep-link / ручная навигация) — поллить нечего.
     if (widget.paymentId.isEmpty) {
+      if (!mounted || myAttempt != _attempt) return;
       setState(() {
         _status = PaymentStatus.unknown;
         _polling = false;
       });
       return;
     }
-    // Short-circuit для двух кейсов:
-    //   1) hot restart Android Studio: Activity-intent остаётся со
-    //      старым deep-link'ом, мы повторно открываем result-экран
-    //      по уже завершённому платежу — спиннер «Платёж в обработке»
-    //      бесполезен;
-    //   2) юзер закрыл браузер не платив, открыл приложение позже —
-    //      его не должно встречать «обработкой» того, что он не делал.
-    // Если status уже терминальный (succeeded/refunded), сразу
-    // уводим в финальное место без рендера спиннера.
+    // Short-circuit, если статус уже терминальный — без рендера спиннера.
     final PaymentStatus first =
         await PaymentService.instance.getPaymentStatus(widget.paymentId);
-    if (!mounted) return;
+    if (!mounted || myAttempt != _attempt) return;
     if (first == PaymentStatus.succeeded ||
         first == PaymentStatus.refunded) {
       _onClose();
@@ -97,17 +99,14 @@ class _PaymentResultScreenState extends State<PaymentResultScreen> {
     }
     final PaymentStatus s = await PaymentService.instance.pollPaymentStatus(
       widget.paymentId,
-      isCancelled: () => _disposed,
+      isCancelled: () => _disposed || myAttempt != _attempt,
     );
-    if (!mounted) return;
+    if (!mounted || myAttempt != _attempt) return;
     setState(() {
       _status = s;
       _polling = false;
     });
     if (s == PaymentStatus.succeeded || s == PaymentStatus.refunded) {
-      // Для привязки карты состояние подписки не меняется — пропуск.
-      // Для подписочного/услугового платежа — подтягиваем paid_until,
-      // его уже продлил триггер apply_payment_success.
       if (!widget.binding) {
         // ignore: discarded_futures
         _refreshSubscriptionState();
@@ -271,18 +270,23 @@ class _PaymentResultScreenState extends State<PaymentResultScreen> {
         (widget.binding && _status == PaymentStatus.refunded);
     final bool failed = _status == PaymentStatus.failed;
     final bool unknown = _status == PaymentStatus.unknown;
+    // Большая «голая» иконка в брендовом цвете (без бэкграундового
+    // кружка) — единый паттерн для всех терминальных состояний.
+    //   - succeeded → оранжевая галочка;
+    //   - failed/unknown → красный круг с «X»;
+    //   - pending (после внешней отмены поллинга) → серые часы.
     final IconData icon = ok
         ? Icons.check_circle_rounded
         : (failed || unknown)
             ? Icons.cancel_rounded
             : Icons.access_time_rounded;
     final Color iconColor = ok
-        ? AppColors.success
+        ? AppColors.primary
         : (failed || unknown)
             ? AppColors.error
-            : AppColors.textSecondary;
+            : AppColors.textTertiary;
     final String title = ok
-        ? (widget.binding ? 'Карта привязана' : 'Оплата прошла')
+        ? (widget.binding ? 'Карта привязана' : 'Оплата прошла успешно')
         : failed
             ? (widget.binding ? 'Привязка не удалась' : 'Платёж не прошёл')
             : unknown
@@ -290,48 +294,46 @@ class _PaymentResultScreenState extends State<PaymentResultScreen> {
                 : (widget.binding
                     ? 'Привязка в обработке'
                     : 'Платёж в обработке');
-    final String subtitle = ok
+    // Для не-binding-успеха не показываем подпись вовсе — заголовка
+    // «Оплата прошла успешно» юзеру достаточно. Раньше тут был
+    // дублирующий «Платёж успешно прошёл», который ничего не добавлял.
+    final String? subtitle = ok
         ? (widget.binding
             ? 'Списали 1 ₽ и сразу вернули. Карта сохранена и доступна '
                 'для оплат подписки и услуг.'
-            : 'Подписка активирована. Заказы доступны.')
+            : null)
         : failed
-            ? (widget.binding
-                ? 'Списание не прошло. Можно попробовать ещё раз.'
-                : 'Списание не прошло. Можно попробовать ещё раз.')
+            ? 'Списание не прошло. Можно попробовать ещё раз.'
             : unknown
                 ? (widget.binding
                     ? 'Не удалось получить данные. Проверьте список карт чуть позже.'
-                    : 'Не удалось получить данные о платеже. Проверьте статус подписки в профиле.')
+                    : 'Не удалось получить данные о платеже. Проверьте статус в профиле.')
                 : (widget.binding
                     ? 'Статус ещё не пришёл от банка. Карта появится в списке через минуту.'
-                    : 'Статус ещё не пришёл от банка. Загляните в подписку через минуту.');
+                    : 'Статус ещё не пришёл от банка. Загляните в профиль через минуту.');
 
     return Column(
       children: <Widget>[
-        Container(
-          width: 120.r,
-          height: 120.r,
-          decoration: BoxDecoration(
-            color: ok ? AppColors.primaryTint : AppColors.surfaceVariant,
-            shape: BoxShape.circle,
-          ),
-          child: Icon(icon, color: iconColor, size: 64.r),
-        ),
+        Icon(icon, color: iconColor, size: 120.r),
         SizedBox(height: AppSpacing.xl),
         Text(title, style: AppTextStyles.h3, textAlign: TextAlign.center),
-        SizedBox(height: AppSpacing.sm),
-        Text(
-          subtitle,
-          textAlign: TextAlign.center,
-          style: AppTextStyles.bodyMRegular
-              .copyWith(color: AppColors.textSecondary),
-        ),
+        if (subtitle != null) ...<Widget>[
+          SizedBox(height: AppSpacing.sm),
+          Text(
+            subtitle,
+            textAlign: TextAlign.center,
+            style: AppTextStyles.bodyMRegular
+                .copyWith(color: AppColors.textSecondary),
+          ),
+        ],
       ],
     );
   }
 
   Widget _buildButton() {
+    // Во время поллинга — без кнопки. Экран сам авто-проверяет статус
+    // и без таймаута. X в левом верхнем углу остаётся как способ выйти
+    // раньше (поллинг прервётся через isCancelled при unmount).
     if (_polling) return const SizedBox.shrink();
     final bool ok = _status == PaymentStatus.succeeded ||
         (widget.binding && _status == PaymentStatus.refunded);

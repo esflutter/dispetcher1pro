@@ -78,6 +78,39 @@ class ProfileService {
     changeBeacon.value++;
   }
 
+  /// UPDATE `profiles.verification_status` и/или `profiles.blocked_until`.
+  /// Используется тестовым тапом по pill'е верификации в профиле, чтобы
+  /// прогонять все ветки UI без хождения через бэкенд. Без этого записи
+  /// на сервере UI-цикл сбрасывался к серверному значению при следующем
+  /// `loadMine()`.
+  ///
+  /// Допустимые значения для `verificationStatus`:
+  ///   'none' / 'pending' / 'approved' / 'rejected'
+  /// Передача `blockedUntil` поверх `null` снимает блокировку (UPDATE
+  /// в NULL); чтобы оставить поле как есть — не передавать параметр.
+  Future<void> updateVerificationState({
+    String? verificationStatus,
+    DateTime? blockedUntil,
+    bool clearBlocked = false,
+  }) async {
+    final User? user = _client.auth.currentUser;
+    if (user == null) {
+      throw const AuthException('Нет активной сессии');
+    }
+    final Map<String, dynamic> payload = <String, dynamic>{};
+    if (verificationStatus != null) {
+      payload['verification_status'] = verificationStatus;
+    }
+    if (blockedUntil != null) {
+      payload['blocked_until'] = blockedUntil.toUtc().toIso8601String();
+    } else if (clearBlocked) {
+      payload['blocked_until'] = null;
+    }
+    if (payload.isEmpty) return;
+    await _client.from('profiles').update(payload).eq('id', user.id);
+    changeBeacon.value++;
+  }
+
   /// UPDATE `profiles_private` — email.
   Future<void> updatePrivateEmail(String email) async {
     final User? user = _client.auth.currentUser;
