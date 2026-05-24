@@ -178,12 +178,28 @@ class _PaymentResultScreenState extends State<PaymentResultScreen> {
       // юзера на вкладку «Профиль» главного шелла (а не куда-то в
       // зависимости от того, откуда он зашёл в paywall). Для общей
       // подписки или других кейсов без returnPath — просто /shell.
+      //
+      // Whitelist обязателен: returnPath приходит из deep-link
+      // `dispatcher1pro://payment/result?return=...`. Без проверки
+      // злоумышленник может оформить ссылку с return=/admin/...
+      // (когда такой роут появится) — и мы откроем его сами после
+      // успешного callback'а от YooKassa.
+      const Set<String> allowedReturnPaths = <String>{
+        '/shell',
+        '/profile',
+        '/services',
+        '/executor-card',
+        '/subscription',
+        '/subscription/cards',
+      };
       final String? rp = widget.returnPath;
-      if (rp == null || rp.isEmpty || rp == '/shell' || rp == '/profile') {
-        appRouter.go(rp ?? '/shell');
+      final String? safeRp =
+          (rp != null && allowedReturnPaths.contains(rp)) ? rp : null;
+      if (safeRp == null || safeRp == '/shell' || safeRp == '/profile') {
+        appRouter.go(safeRp ?? '/shell');
       } else {
         appRouter.go('/profile');
-        appRouter.push(rp);
+        appRouter.push(safeRp);
       }
     }
   }

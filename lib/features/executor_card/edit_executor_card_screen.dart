@@ -110,55 +110,41 @@ class _EditExecutorCardScreenState extends State<EditExecutorCardScreen> {
     // ignore: discarded_futures
     _loadSavedCoords();
 
-    _nameFocus.addListener(() async {
-      if (!_nameFocus.hasFocus) {
-        final String value = _nameCtrl.text.trim();
-        if (value.isEmpty) {
-          // Пустое имя не сохраняем — откатываем к последнему валидному.
-          _nameCtrl.text = ExecutorCardData.name;
-        } else if (value != ExecutorCardData.name) {
-          // Оптимистично пишем в локальный кэш + UPDATE в БД. Email-фокус
-          // тут же ниже это уже делает; для имени раньше DB-запись была
-          // только на dispose, и при focus-blur новое имя могло стать
-          // локальным до выхода с экрана, а в БД не уйти, если юзер не
-          // покинул экран сам (например, тапнул Save сверху).
-          ExecutorCardData.name = value;
-          try {
-            await ProfileService.instance.update(name: value);
-          } catch (_) {/* silent */}
-        }
-      }
-    });
-    _emailFocus.addListener(() {
-      if (_emailFocus.hasFocus) {
-        // Пользователь вернулся редактировать — убираем ошибку, пока
-        // не оценим снова на следующем blur.
-        if (_emailError != null) {
-          setState(() => _emailError = null);
-        }
-      } else {
-        // Нормализуем регистр для хранения — иначе один и тот же ящик
-        // может оказаться в БД дважды («User@x.com» / «user@x.com»).
-        // Контроллер не трогаем — пусть юзер видит вариант «как ввёл».
-        final String value = _emailCtrl.text.trim().toLowerCase();
-        final bool valid = isValidEmail(value);
-        if (valid) {
-          CropResult.userEmail = value;
-          // Пишем в `profiles_private.email` через RPC. На уровне UI
-          // оптимистично — без await: если сетевой запрос упадёт,
-          // в кэше у пользователя email уже сохранён, и при выходе
-          // с экрана значение всё равно попадёт в storage у
-          // следующей загрузки. Edit-screen профиля делает то же.
-          // ignore: discarded_futures
-          ProfileService.instance
-              .updatePrivateEmail(value)
-              .catchError((_) {/* silent */});
-          if (_emailError != null) setState(() => _emailError = null);
-        } else {
-          setState(() => _emailError = 'Некорректная электронная почта');
-        }
-      }
-    });
+    _nameFocus.addListener(_onNameFocusChanged);
+    _emailFocus.addListener(_onEmailFocusChanged);
+  }
+
+  Future<void> _onNameFocusChanged() async {
+    if (_nameFocus.hasFocus) return;
+    final String value = _nameCtrl.text.trim();
+    if (value.isEmpty) {
+      _nameCtrl.text = ExecutorCardData.name;
+      return;
+    }
+    if (value == ExecutorCardData.name) return;
+    ExecutorCardData.name = value;
+    try {
+      await ProfileService.instance.update(name: value);
+    } catch (_) {/* silent */}
+  }
+
+  void _onEmailFocusChanged() {
+    if (_emailFocus.hasFocus) {
+      if (_emailError != null) setState(() => _emailError = null);
+      return;
+    }
+    final String value = _emailCtrl.text.trim().toLowerCase();
+    final bool valid = isValidEmail(value);
+    if (valid) {
+      CropResult.userEmail = value;
+      // ignore: discarded_futures
+      ProfileService.instance
+          .updatePrivateEmail(value)
+          .catchError((_) {/* silent */});
+      if (_emailError != null) setState(() => _emailError = null);
+    } else {
+      setState(() => _emailError = 'Некорректная электронная почта');
+    }
   }
 
   Future<void> _loadSavedCoords() async {
@@ -202,6 +188,8 @@ class _EditExecutorCardScreenState extends State<EditExecutorCardScreen> {
         CropResult.userEmail = prev;
       });
     }
+    _nameFocus.removeListener(_onNameFocusChanged);
+    _emailFocus.removeListener(_onEmailFocusChanged);
     _location.dispose();
     _experience.dispose();
     _about.dispose();

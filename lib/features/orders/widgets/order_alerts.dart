@@ -4,6 +4,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
 
+import 'package:dispatcher_1/core/widgets/dialog_close_button.dart';
 /// Алерт «Вы уверены, что хотите отказаться от заказа?»
 /// Возвращает `true`, если пользователь нажал «Отказаться»; `false`/`null` —
 /// если закрыл/отменил. Сама операция в БД делается вызывающим экраном
@@ -130,13 +131,10 @@ Future<bool?> showSubscriptionPausedDialog(BuildContext context) {
           children: <Widget>[
             Align(
               alignment: Alignment.centerRight,
-              child: GestureDetector(
+              child: DialogCloseButton(
                 onTap: () => Navigator.of(ctx).pop(),
-                child: Icon(
-                  Icons.close_rounded,
-                  size: 22.r,
-                  color: AppColors.textTertiary,
-                ),
+                color: AppColors.textTertiary,
+                iconSize: 22.r,
               ),
             ),
             SizedBox(height: 12.h),
@@ -214,13 +212,10 @@ Future<bool?> showReviewSentDialog(BuildContext context) {
           children: <Widget>[
             Align(
               alignment: Alignment.centerRight,
-              child: GestureDetector(
+              child: DialogCloseButton(
                 onTap: () => Navigator.of(ctx).pop(),
-                child: Icon(
-                  Icons.close_rounded,
-                  size: 22.r,
-                  color: AppColors.textTertiary,
-                ),
+                color: AppColors.textTertiary,
+                iconSize: 22.r,
               ),
             ),
             SizedBox(height: 10.h),
@@ -290,13 +285,10 @@ Future<bool?> showExecutorCardRequiredDialog(BuildContext context) {
           children: <Widget>[
             Align(
               alignment: Alignment.centerRight,
-              child: GestureDetector(
+              child: DialogCloseButton(
                 onTap: () => Navigator.of(ctx).pop(),
-                child: Icon(
-                  Icons.close_rounded,
-                  size: 22.r,
-                  color: AppColors.textTertiary,
-                ),
+                color: AppColors.textTertiary,
+                iconSize: 22.r,
               ),
             ),
             SizedBox(height: 12.h),
@@ -379,10 +371,10 @@ Future<void> showNoServiceForEquipmentDialog(
           children: <Widget>[
             Align(
               alignment: Alignment.centerRight,
-              child: GestureDetector(
+              child: DialogCloseButton(
                 onTap: () => Navigator.of(ctx).pop(),
-                child: Icon(Icons.close_rounded,
-                    size: 22.r, color: AppColors.textTertiary),
+                color: AppColors.textTertiary,
+                iconSize: 22.r,
               ),
             ),
             SizedBox(height: 12.h),
@@ -472,13 +464,10 @@ class _ConfirmDialog extends StatelessWidget {
           children: <Widget>[
             Align(
               alignment: Alignment.centerRight,
-              child: GestureDetector(
+              child: DialogCloseButton(
                 onTap: () => Navigator.of(context).pop(),
-                child: Icon(
-                  Icons.close_rounded,
-                  size: 22.r,
-                  color: AppColors.textTertiary,
-                ),
+                color: AppColors.textTertiary,
+                iconSize: 22.r,
               ),
             ),
             SizedBox(height: 20.h),

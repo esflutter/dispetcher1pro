@@ -24,6 +24,7 @@ import 'package:dispatcher_1/features/profile/account_block.dart';
 import 'package:dispatcher_1/features/profile/reviews_screen.dart';
 import 'package:dispatcher_1/features/profile/widgets/verification_badge.dart';
 
+import 'package:dispatcher_1/core/widgets/dialog_close_button.dart';
 /// Карточка заказа (детали). Данные — из `public.orders` через
 /// [CatalogService.getOrderDetail]. Состояние "уже откликнулся" —
 /// тоже из БД (наличие не-терминального `order_matches` для этого
@@ -742,10 +743,10 @@ class _InProgressDialog extends StatelessWidget {
           children: <Widget>[
             Align(
               alignment: Alignment.centerRight,
-              child: GestureDetector(
+              child: DialogCloseButton(
                 onTap: () => Navigator.of(context).pop(),
-                child: Icon(Icons.close_rounded,
-                    size: 22.r, color: AppColors.textTertiary),
+                color: AppColors.textTertiary,
+                iconSize: 22.r,
               ),
             ),
             SizedBox(height: 20.h),
@@ -795,10 +796,10 @@ class _BlockedDialog extends StatelessWidget {
           children: <Widget>[
             Align(
               alignment: Alignment.centerRight,
-              child: GestureDetector(
+              child: DialogCloseButton(
                 onTap: () => Navigator.of(context).pop(),
-                child: Icon(Icons.close_rounded,
-                    size: 22.r, color: AppColors.textTertiary),
+                color: AppColors.textTertiary,
+                iconSize: 22.r,
               ),
             ),
             SizedBox(height: 20.h),
@@ -891,10 +892,10 @@ class _NoMatchingMachineryDialog extends StatelessWidget {
           children: <Widget>[
             Align(
               alignment: Alignment.centerRight,
-              child: GestureDetector(
+              child: DialogCloseButton(
                 onTap: () => Navigator.of(context).pop(),
-                child: Icon(Icons.close_rounded,
-                    size: 22.r, color: AppColors.textTertiary),
+                color: AppColors.textTertiary,
+                iconSize: 22.r,
               ),
             ),
             SizedBox(height: 20.h),

@@ -378,16 +378,16 @@ class CatalogService {
       address: r['address'] as String,
       latitude: (r['latitude'] as num?)?.toDouble(),
       longitude: (r['longitude'] as num?)?.toDouble(),
-      dateFrom: DateTime.parse(r['date_from'] as String),
+      dateFrom: DateTime.parse(r['date_from'] as String).toLocal(),
       dateTo: r['date_to'] == null
           ? null
-          : DateTime.parse(r['date_to'] as String),
+          : DateTime.parse(r['date_to'] as String).toLocal(),
       timeFrom: r['time_from'] as String?,
       timeTo: r['time_to'] as String?,
       exactDate: r['exact_date'] as bool,
       wholeDay: r['whole_day'] as bool,
       machineryTitles: titles,
-      publishedAt: DateTime.parse(r['published_at'] as String),
+      publishedAt: DateTime.parse(r['published_at'] as String).toLocal(),
       customer: cust,
     );
   }
@@ -447,10 +447,10 @@ class CatalogService {
       address: r['address'] as String,
       latitude: (r['latitude'] as num?)?.toDouble(),
       longitude: (r['longitude'] as num?)?.toDouble(),
-      dateFrom: DateTime.parse(r['date_from'] as String),
+      dateFrom: DateTime.parse(r['date_from'] as String).toLocal(),
       dateTo: r['date_to'] == null
           ? null
-          : DateTime.parse(r['date_to'] as String),
+          : DateTime.parse(r['date_to'] as String).toLocal(),
       timeFrom: r['time_from'] as String?,
       timeTo: r['time_to'] as String?,
       exactDate: r['exact_date'] as bool,
@@ -459,7 +459,7 @@ class CatalogService {
       categoryTitles: categoryTitles,
       works: works,
       photos: List<String>.from(r['photos'] as List),
-      publishedAt: DateTime.parse(r['published_at'] as String),
+      publishedAt: DateTime.parse(r['published_at'] as String).toLocal(),
       customer: cust,
     );
   }

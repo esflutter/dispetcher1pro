@@ -195,6 +195,31 @@ class MyOrdersService {
     }
   }
 
+  /// Bulk-вариант — один запрос на список customerId вместо отдельного
+  /// `eq().maybeSingle()` на каждого. Раньше «Мои заказы» исполнителя
+  /// делал 20 параллельных запросов для 20 заказов; теперь — один.
+  /// RLS отдаёт только те записи, к которым у текущего auth есть доступ.
+  Future<Map<String, ({String? phone, String? email})>>
+      getCustomerContactsBulk(Iterable<String> customerIds) async {
+    final List<String> ids = customerIds.toSet().toList();
+    if (ids.isEmpty) return <String, ({String? phone, String? email})>{};
+    try {
+      final List<Map<String, dynamic>> rows = await _client
+          .from('profiles_private')
+          .select('id, phone, email')
+          .inFilter('id', ids);
+      return <String, ({String? phone, String? email})>{
+        for (final Map<String, dynamic> row in rows)
+          row['id'] as String: (
+            phone: row['phone'] as String?,
+            email: row['email'] as String?,
+          ),
+      };
+    } on PostgrestException {
+      return <String, ({String? phone, String? email})>{};
+    }
+  }
+
   // ---------------------------------------------------------------
 
   MyOrderMatch _fromRow(Map<String, dynamic> r) {
@@ -261,14 +286,14 @@ class MyOrdersService {
     final String? publishedAtRaw = order['published_at'] as String?;
     final DateTime publishedAt = publishedAtRaw != null
         ? DateTime.parse(publishedAtRaw)
-        : DateTime.parse(r['created_at'] as String);
+        : DateTime.parse(r['created_at'] as String).toLocal();
 
     return MyOrderMatch(
       matchId: r['id'] as String,
       orderId: r['order_id'] as String,
       orderDisplayNumber: order['display_number'] as int,
       status: MyMatchStatus.fromDb(r['status'] as String),
-      createdAt: DateTime.parse(r['created_at'] as String),
+      createdAt: DateTime.parse(r['created_at'] as String).toLocal(),
       statusChangedAt: DateTime.parse(
         // status_changed_at — приоритетный таймстемп смены статуса.
         // updated_at — fallback для строк, обработанных до миграции
@@ -282,10 +307,10 @@ class MyOrdersService {
       agreedMinHours: r['agreed_min_hours'] as int?,
       orderTitle: order['title'] as String,
       orderAddress: order['address'] as String,
-      orderDateFrom: DateTime.parse(order['date_from'] as String),
+      orderDateFrom: DateTime.parse(order['date_from'] as String).toLocal(),
       orderDateTo: order['date_to'] == null
           ? null
-          : DateTime.parse(order['date_to'] as String),
+          : DateTime.parse(order['date_to'] as String).toLocal(),
       orderTimeFrom: order['time_from'] as String?,
       orderTimeTo: order['time_to'] as String?,
       orderExactDate: order['exact_date'] as bool,

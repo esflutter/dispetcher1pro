@@ -1,5 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:dispatcher_1/core/realtime/realtime_service.dart';
+
 /// Тонкая обёртка над Supabase Auth + чтением/записью в `public.profiles`.
 /// Знает только про телефон в E.164 — все преобразования из UI-формата
 /// делаются вызывающим кодом (см. `phone_format.dart`).
@@ -45,6 +47,14 @@ class AuthService {
         .maybeSingle();
     final bool registered = profile != null &&
         profile['agreement_accepted_at'] != null;
+    // Пересоздаём realtime после signIn. Раньше делали только start()
+    // — он идемпотентен и не подменял токен в уже поднятом WebSocket:
+    // если канал был открыт на холодном старте под анон-сессией (см.
+    // main.dart), он так и оставался анонимным до перезапуска
+    // приложения. С точки зрения RLS realtime-payload может не дойти
+    // до клиента, который сейчас уже залогинен.
+    await RealtimeService.instance.stop();
+    RealtimeService.instance.start();
     return VerifyResult(
       userId: user.id,
       needsRegistration: !registered,

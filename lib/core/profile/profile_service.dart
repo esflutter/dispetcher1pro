@@ -78,39 +78,6 @@ class ProfileService {
     changeBeacon.value++;
   }
 
-  /// UPDATE `profiles.verification_status` и/или `profiles.blocked_until`.
-  /// Используется тестовым тапом по pill'е верификации в профиле, чтобы
-  /// прогонять все ветки UI без хождения через бэкенд. Без этого записи
-  /// на сервере UI-цикл сбрасывался к серверному значению при следующем
-  /// `loadMine()`.
-  ///
-  /// Допустимые значения для `verificationStatus`:
-  ///   'none' / 'pending' / 'approved' / 'rejected'
-  /// Передача `blockedUntil` поверх `null` снимает блокировку (UPDATE
-  /// в NULL); чтобы оставить поле как есть — не передавать параметр.
-  Future<void> updateVerificationState({
-    String? verificationStatus,
-    DateTime? blockedUntil,
-    bool clearBlocked = false,
-  }) async {
-    final User? user = _client.auth.currentUser;
-    if (user == null) {
-      throw const AuthException('Нет активной сессии');
-    }
-    final Map<String, dynamic> payload = <String, dynamic>{};
-    if (verificationStatus != null) {
-      payload['verification_status'] = verificationStatus;
-    }
-    if (blockedUntil != null) {
-      payload['blocked_until'] = blockedUntil.toUtc().toIso8601String();
-    } else if (clearBlocked) {
-      payload['blocked_until'] = null;
-    }
-    if (payload.isEmpty) return;
-    await _client.from('profiles').update(payload).eq('id', user.id);
-    changeBeacon.value++;
-  }
-
   /// UPDATE `profiles_private` — email.
   Future<void> updatePrivateEmail(String email) async {
     final User? user = _client.auth.currentUser;
@@ -124,30 +91,22 @@ class ProfileService {
     changeBeacon.value++;
   }
 
-  /// UPDATE `profiles_private` — `subscription_paid_until` и
-  /// `subscription_auto_renew`. Используется paywall'ом и тумблером
-  /// «Авто-продление» в `subscription_screen`. Когда подписка
-  /// продлевается, `subscriptionPaidUntil` приходит как `now() + 30d`;
-  /// при отмене auto-renew — флаг `false` без смены даты.
-  Future<void> updateSubscription({
-    DateTime? paidUntil,
-    bool? autoRenew,
-  }) async {
+  /// UPDATE `profiles_private.subscription_auto_renew` — тумблер
+  /// «Авто-продление» в настройках подписки. Клиент может сам менять
+  /// этот флаг (это его собственный выбор отписаться). А вот дату
+  /// `subscription_paid_until` клиент НЕ должен ставить — её пишет
+  /// серверная Edge Function `payment-return` после успешной оплаты в
+  /// YooKassa. Серверный триггер `profiles_private_protect_sensitive`
+  /// блокирует попытку клиента изменить любые subscription-поля кроме
+  /// `auto_renew`.
+  Future<void> updateSubscriptionAutoRenew(bool autoRenew) async {
     final User? user = _client.auth.currentUser;
     if (user == null) {
       throw const AuthException('Нет активной сессии');
     }
-    final Map<String, dynamic> payload = <String, dynamic>{};
-    if (paidUntil != null) {
-      payload['subscription_paid_until'] = paidUntil.toUtc().toIso8601String();
-    }
-    if (autoRenew != null) {
-      payload['subscription_auto_renew'] = autoRenew;
-    }
-    if (payload.isEmpty) return;
     await _client
         .from('profiles_private')
-        .update(payload)
+        .update(<String, dynamic>{'subscription_auto_renew': autoRenew})
         .eq('id', user.id);
     changeBeacon.value++;
   }
@@ -208,12 +167,12 @@ class MyProfile {
         isCustomer: (r['is_customer'] as bool?) ?? true,
         blockedUntil: r['blocked_until'] == null
             ? null
-            : DateTime.parse(r['blocked_until'] as String),
+            : DateTime.parse(r['blocked_until'] as String).toLocal(),
         verificationStatus:
             (r['verification_status'] as String?) ?? 'none',
         agreementAcceptedAt: r['agreement_accepted_at'] == null
             ? null
-            : DateTime.parse(r['agreement_accepted_at'] as String),
+            : DateTime.parse(r['agreement_accepted_at'] as String).toLocal(),
         termsVersion: r['terms_version'] as String?,
       );
 }
@@ -276,13 +235,13 @@ class MyPrivate {
         email: r['email'] as String?,
         dateOfBirth: r['date_of_birth'] == null
             ? null
-            : DateTime.parse(r['date_of_birth'] as String),
+            : DateTime.parse(r['date_of_birth'] as String).toLocal(),
         subscriptionPaidUntil: r['subscription_paid_until'] == null
             ? null
-            : DateTime.parse(r['subscription_paid_until'] as String),
+            : DateTime.parse(r['subscription_paid_until'] as String).toLocal(),
         subscriptionTrialUntil: r['subscription_trial_until'] == null
             ? null
-            : DateTime.parse(r['subscription_trial_until'] as String),
+            : DateTime.parse(r['subscription_trial_until'] as String).toLocal(),
         subscriptionAutoRenew:
             (r['subscription_auto_renew'] as bool?) ?? false,
         subscriptionTrialUsed:

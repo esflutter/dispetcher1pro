@@ -9,6 +9,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:dispatcher_1/core/catalog/catalog_service.dart';
 import 'package:dispatcher_1/core/catalog/format.dart';
 import 'package:dispatcher_1/core/catalog/models.dart';
+import 'package:dispatcher_1/core/realtime/realtime_service.dart';
 import 'package:dispatcher_1/core/dadata/dadata_service.dart';
 import 'package:dispatcher_1/core/location_permission.dart';
 import 'package:dispatcher_1/core/utils/mock_coords.dart';
@@ -69,13 +70,27 @@ class _OrderFeedScreenState extends State<OrderFeedScreen> {
     super.initState();
     _appliedFilterRev = AppliedFilter.revision.value;
     _ordersFuture = _fetchOrders();
+    // Realtime: при изменении любой записи в `orders`/`order_matches`
+    // глобальный RealtimeService бампит ordersFeedBeacon. Лента
+    // пере-фетчит, чтобы новый/изменённый/снятый заказ появлялся /
+    // исчезал «живьём», без pull-to-refresh.
+    RealtimeService.ordersFeedBeacon.addListener(_onFeedChanged);
   }
 
   @override
   void dispose() {
     _debounceTimer?.cancel();
     _searchCtrl.dispose();
+    RealtimeService.ordersFeedBeacon.removeListener(_onFeedChanged);
+    // MapController — ChangeNotifier; без явного dispose накапливает
+    // ссылки между заходами в ленту.
+    _mapController.dispose();
     super.dispose();
+  }
+
+  void _onFeedChanged() {
+    if (!mounted) return;
+    setState(() => _ordersFuture = _fetchOrders());
   }
 
   Future<List<OrderListItem>> _fetchOrders() {

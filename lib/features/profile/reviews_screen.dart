@@ -158,7 +158,11 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
     final String? authorAvatarUrl = author is Map<String, dynamic>
         ? author['avatar_url'] as String?
         : null;
-    final DateTime created = DateTime.parse(r['created_at'] as String);
+    // Supabase возвращает timestamptz всегда в UTC. Без toLocal()
+    // отзыв, оставленный в 02:00 МСК (= 23:00 UTC предыдущих суток),
+    // показывался юзеру датой на день раньше.
+    final DateTime created =
+        DateTime.parse(r['created_at'] as String).toLocal();
     final String date =
         '${created.day.toString().padLeft(2, '0')}/${created.month.toString().padLeft(2, '0')}/${created.year}';
     return Review(

@@ -77,6 +77,7 @@ class _ServicePaywallState extends State<ServicePaywall>
   Widget build(BuildContext context) {
     final double cardHeight = MediaQuery.of(context).size.height * 0.47;
     return Scaffold(
+      backgroundColor: AppColors.background,
       body: Stack(
         fit: StackFit.expand,
         children: <Widget>[
@@ -94,9 +95,18 @@ class _ServicePaywallState extends State<ServicePaywall>
           Positioned(
             top: MediaQuery.of(context).padding.top + 12.h,
             right: 10.w,
-            child: GestureDetector(
-              onTap: () => Navigator.of(context).pop(),
-              child: Icon(Icons.close, color: Colors.white, size: 22.r),
+            child: SizedBox(
+              width: 44.r,
+              height: 44.r,
+              child: Material(
+                color: Colors.transparent,
+                shape: const CircleBorder(),
+                child: InkWell(
+                  customBorder: const CircleBorder(),
+                  onTap: () => Navigator.of(context).pop(),
+                  child: Icon(Icons.close, color: Colors.white, size: 22.r),
+                ),
+              ),
             ),
           ),
           Positioned(

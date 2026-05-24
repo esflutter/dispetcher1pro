@@ -17,6 +17,7 @@ import 'package:dispatcher_1/features/orders/order_detail_screen.dart';
 import 'package:dispatcher_1/features/schedule/day_settings_screen.dart';
 import 'package:dispatcher_1/features/schedule/widgets/schedule_alerts.dart';
 
+import 'package:dispatcher_1/core/widgets/dialog_close_button.dart';
 /// Состояние конкретного дня графика.
 enum DayState { noOrders, hasOrders, dayOff }
 
@@ -704,10 +705,10 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
             children: [
               Align(
                 alignment: Alignment.centerRight,
-                child: GestureDetector(
+                child: DialogCloseButton(
                   onTap: () => Navigator.of(ctx).pop(false),
-                  child: Icon(Icons.close_rounded,
-                      size: 22.r, color: AppColors.textTertiary),
+                  color: AppColors.textTertiary,
+                  iconSize: 22.r,
                 ),
               ),
               SizedBox(height: 16.h),

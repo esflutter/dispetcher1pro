@@ -128,15 +128,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (mounted) setState(() {});
   }
 
-  // Временное переключение статуса по тапу на pill — нужно тестерам,
-  // чтобы быстро прогонять все ветки UI без хождения через бэкенд.
-  // Цикл: notVerified → inProgress → verified → rejected → blocked
-  // → обратно в notVerified. Состояние «blocked» рендерится через
-  // BlockedPill вместо FullWidthVerificationPill (см. build).
-  // Каждый шаг пишется в БД (`profiles.verification_status` /
-  // `profiles.blocked_until`), чтобы после рестарта статус не
-  // сбрасывался к серверному значению при `_loadFromDb()`.
-  // TODO: убрать перед релизом.
+  // Локальное переключение статуса по тапу на pill — для тестового
+  // прогона веток UI. РАНЬШЕ этот цикл писал значение в `profiles.
+  // verification_status` и `blocked_until`, чтобы изменение пережило
+  // рестарт. Это был backdoor: любой пользователь мог сам поставить
+  // себе verification_status='approved' и пройти за paywall. Серверный
+  // триггер `profiles_protect_sensitive` теперь блокирует такие
+  // апдейты. Локально оставляем переключение для отладки UI — до
+  // перезапуска. Реальная верификация идёт через админ-flow на бэке.
+  // TODO: убрать перед релизом — это сейчас чисто debug-affordance.
   void _cycleStatus() {
     const List<VerificationStatus> order = <VerificationStatus>[
       VerificationStatus.notVerified,
@@ -145,36 +145,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
       VerificationStatus.rejected,
     ];
     if (AccountBlock.isBlocked) {
-      // Сейчас отображается BlockedPill — следующий тап снимает
-      // блокировку и возвращает в начало цикла верификации.
       AccountBlock.forceLift();
       _status = VerificationStatus.notVerified;
-      // ignore: discarded_futures
-      ProfileService.instance.updateVerificationState(
-        verificationStatus: 'none',
-        clearBlocked: true,
-      );
       return;
     }
     final int idx = order.indexOf(_status);
     if (idx == order.length - 1) {
-      // После rejected — включаем тестовую блокировку на 30 дней.
       final DateTime until = DateTime.now().add(const Duration(days: 30));
       AccountBlock.setUntil(until);
-      // ignore: discarded_futures
-      ProfileService.instance.updateVerificationState(blockedUntil: until);
       return;
     }
-    final VerificationStatus next = order[idx + 1];
-    _status = next;
-    final String dbValue = switch (next) {
-      VerificationStatus.notVerified => 'none',
-      VerificationStatus.inProgress => 'pending',
-      VerificationStatus.verified => 'approved',
-      VerificationStatus.rejected => 'rejected',
-    };
-    // ignore: discarded_futures
-    ProfileService.instance.updateVerificationState(verificationStatus: dbValue);
+    _status = order[idx + 1];
   }
 
   Future<void> _openEdit() async {
@@ -512,7 +493,7 @@ Future<bool?> _showProfileAlert(
   return showDialog<bool>(
     context: context,
     builder: (ctx) => Dialog(
-      backgroundColor: const Color(0xFFDFDFDF),
+      backgroundColor: AppColors.dialogAlertBg,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(14.r),
       ),

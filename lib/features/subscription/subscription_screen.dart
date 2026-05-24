@@ -13,6 +13,7 @@ import 'package:dispatcher_1/features/catalog/widgets/catalog_search_bar.dart';
 import 'package:dispatcher_1/features/catalog/widgets/subscription_paywall.dart';
 import 'package:dispatcher_1/features/profile/widgets/verification_badge.dart';
 
+import 'package:dispatcher_1/core/widgets/dialog_close_button.dart';
 /// Состояние подписки.
 enum SubscriptionStatus { active, paused, inactive }
 
@@ -93,7 +94,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
       if (ok != true) return;
       setState(() => VerificationStatus.hasSubscription = false);
       try {
-        await ProfileService.instance.updateSubscription(autoRenew: false);
+        await ProfileService.instance.updateSubscriptionAutoRenew(false);
       } catch (_) {
         if (!mounted) return;
         setState(() => VerificationStatus.hasSubscription = true);
@@ -106,7 +107,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
       // т. к. платёжный период ещё не закончился.
       setState(() => VerificationStatus.hasSubscription = true);
       try {
-        await ProfileService.instance.updateSubscription(autoRenew: true);
+        await ProfileService.instance.updateSubscriptionAutoRenew(true);
       } catch (_) {
         if (!mounted) return;
         setState(() => VerificationStatus.hasSubscription = false);
@@ -139,10 +140,10 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
             children: [
               Align(
                 alignment: Alignment.centerRight,
-                child: GestureDetector(
+                child: DialogCloseButton(
                   onTap: () => Navigator.of(ctx).pop(false),
-                  child: Icon(Icons.close_rounded,
-                      size: 22.r, color: AppColors.textSecondary),
+                  color: AppColors.textSecondary,
+                  iconSize: 22.r,
                 ),
               ),
               Text('Отключить подписку?',

@@ -3,9 +3,11 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'package:dispatcher_1/core/config/env.dart';
 import 'package:dispatcher_1/core/payments/models.dart';
 import 'package:dispatcher_1/core/payments/payment_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
+import 'package:dispatcher_1/core/widgets/dialog_close_button.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
 import 'package:dispatcher_1/features/subscription/widgets/brand_badge.dart';
 
@@ -141,8 +143,14 @@ class _PaymentMethodCardState extends State<PaymentMethodCard> {
       // JS-вызовом `window.location.href = 'dispatcher1pro://...'` —
       // такой переход Chrome допускает. Подробности см. в
       // `supabase/functions/payment-return/index.ts`.
-      const String returnBaseUrl =
-          'https://jokaynapesbem.beget.app/functions/v1/payment-return';
+      //
+      // База берётся из Env.supabaseUrl, а не хардкодом — при смене
+      // домена бэка не нужно искать URL по коду, и инфраструктура не
+      // светится строкой в собранном APK.
+      final String supabaseBase =
+          Env.supabaseUrl.replaceAll(RegExp(r'/+$'), '');
+      final String returnBaseUrl =
+          '$supabaseBase/functions/v1/payment-return';
       final String returnDeeplink = rp == null
           ? returnBaseUrl
           : '$returnBaseUrl?return=${Uri.encodeComponent(rp)}';
@@ -241,10 +249,15 @@ class _PaymentMethodCardState extends State<PaymentMethodCard> {
                     ),
                   ),
                 ),
-                GestureDetector(
+                // Общий компонент с 44×44 тап-зоной — H2 закрывал
+                // такие места массово, но этот не был зачтён скрипту
+                // массовой замены, потому что иконка `Icons.close`
+                // (без `_rounded`).
+                DialogCloseButton(
                   onTap: () => Navigator.of(context).pop(),
-                  child: Icon(Icons.close,
-                      size: 22.r, color: AppColors.textTertiary),
+                  iconData: Icons.close,
+                  iconSize: 22.r,
+                  color: AppColors.textTertiary,
                 ),
               ],
             ),

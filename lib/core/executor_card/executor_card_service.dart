@@ -36,7 +36,7 @@ class ExecutorCardService {
       isPublished: (ec?['is_published'] as bool?) ?? false,
       savedAt: ec?['saved_at'] == null
           ? null
-          : DateTime.parse(ec!['saved_at'] as String),
+          : DateTime.parse(ec!['saved_at'] as String).toLocal(),
       about: p?['about'] as String?,
       legalStatus: p?['legal_status'] as String?,
       experienceYears: p?['experience_years'] as int?,

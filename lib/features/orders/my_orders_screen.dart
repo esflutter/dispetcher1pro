@@ -74,12 +74,14 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
             m.status == MyMatchStatus.completed)
           m.customerId,
     };
-    final Map<String, String?> phones = <String, String?>{};
-    await Future.wait(needContact.map((String id) async {
-      final ({String? phone, String? email})? c =
-          await MyOrdersService.instance.getCustomerContacts(id);
-      phones[id] = c?.phone;
-    }));
+    // Bulk-запрос: один SELECT с inFilter вместо N отдельных
+    // `eq().maybeSingle()`. Раньше 20 заказов = 20 параллельных
+    // HTTP-запросов к profiles_private.
+    final Map<String, ({String? phone, String? email})> bulk =
+        await MyOrdersService.instance.getCustomerContactsBulk(needContact);
+    final Map<String, String?> phones = <String, String?>{
+      for (final String id in needContact) id: bulk[id]?.phone,
+    };
     return _MyOrdersData(matches: matches, phones: phones);
   }
 

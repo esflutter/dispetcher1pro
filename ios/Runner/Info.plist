@@ -56,14 +56,27 @@
 		<!-- Deep link для возврата из браузерной формы YooKassa.
 		     dispatcher1pro://payment/result?id=... обрабатывается
 		     пакетом app_links и роутится на экран статуса платежа. -->
-		<!-- Без `yandexmaps` в LSApplicationQueriesSchemes canLaunchUrl
-		     для `yandexmaps://...` всегда возвращает false на iOS 9+,
-		     и наш «открыть в Яндекс Картах если установлены» молча
-		     падает в web-фолбэк даже когда приложение установлено. -->
+		<!-- Без `yandexmaps`/`comgooglemaps`/`dgis` в LSApplicationQueriesSchemes
+		     canLaunchUrl для соответствующих deeplink'ов всегда возвращает
+		     false на iOS 9+, и кнопки «Открыть в …» молча падают в web-фолбэк
+		     даже когда приложение установлено. Bottom-sheet «Открыть адрес в»
+		     умеет открывать Яндекс/2ГИС/Google/Apple — все четыре нужны здесь. -->
 		<key>LSApplicationQueriesSchemes</key>
 		<array>
 			<string>yandexmaps</string>
+			<string>comgooglemaps</string>
+			<string>dgis</string>
+			<!-- `maps` — для нативного Apple Maps deeplink (maps://?q=...).
+			     Раньше комментарий обещал «Apple — нужен», но в списке его
+			     не было: на iPhone кнопка «Apple Карты» молча падала в
+			     веб-фолбэк, потому что canLaunchUrl возвращал false. -->
+			<string>maps</string>
 		</array>
+		<!-- Бэкенд использует только стандартный TLS поверх HTTPS — никакого
+		     дополнительного шифрования. Без этого ключа загрузка в App Store
+		     Connect каждый раз задаёт вопрос про экспортное шифрование. -->
+		<key>ITSAppUsesNonExemptEncryption</key>
+		<false/>
 		<key>CFBundleURLTypes</key>
 		<array>
 			<dict>

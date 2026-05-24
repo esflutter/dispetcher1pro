@@ -114,25 +114,59 @@ class StorageService {
   /// и сбивает с толку). 50-мегапиксельный кадр 8160×6120 после сжатия
   /// станет 2560×1920 ≈ 250 КБ webp.
   ///
-  /// При неудаче (некоторые форматы платформа не сжимает) возвращает
-  /// исходный файл — лучше залить как есть, чем сорвать создание заказа.
+  /// HEIC/HEIF из iOS-галереи обрабатывается особо: webp-компрессор у
+  /// нативных плагинов нередко падает на этих контейнерах. Сначала
+  /// пробуем JPEG (он гарантированно поддерживается), и только если
+  /// HEIC оригинал — никогда не возвращаем его «как есть»: сервер
+  /// отвергает HEIC с ошибкой mime, и юзер видит мутный «не удалось
+  /// загрузить» без понимания почему.
+  ///
+  /// При неудаче на не-HEIC форматах возвращаем исходный файл — лучше
+  /// залить как есть, чем сорвать создание заказа.
   Future<File> _compress(File source) async {
+    final String ext = source.path.toLowerCase();
+    final bool isHeic = ext.endsWith('.heic') || ext.endsWith('.heif');
     try {
+      final CompressFormat fmt =
+          isHeic ? CompressFormat.jpeg : CompressFormat.webp;
+      final String suffix = isHeic ? 'jpg' : 'webp';
       final String target =
-          '${source.path}.${DateTime.now().microsecondsSinceEpoch}.webp';
+          '${source.path}.${DateTime.now().microsecondsSinceEpoch}.$suffix';
       final XFile? out = await FlutterImageCompress.compressAndGetFile(
         source.absolute.path,
         target,
-        format: CompressFormat.webp,
+        format: fmt,
         quality: 85,
         minWidth: maxImageDimension,
         minHeight: maxImageDimension,
       );
-      if (out == null) return source;
-      return File(out.path);
-    } catch (_) {
-      return source;
+      if (out != null) return File(out.path);
+    } catch (_) {/* ниже — fallback */}
+    // Если первая попытка не удалась И исходник HEIC — пробуем ещё
+    // раз с JPEG форматом явно (на случай если первый Try был webp по
+    // ошибке) и если снова никак — бросаем явное исключение вместо
+    // возврата HEIC оригинала: пусть UI покажет «не удалось обработать
+    // фото», а не сервер отдаст «invalid mime type» позже.
+    if (isHeic) {
+      try {
+        final String target =
+            '${source.path}.${DateTime.now().microsecondsSinceEpoch}.jpg';
+        final XFile? out = await FlutterImageCompress.compressAndGetFile(
+          source.absolute.path,
+          target,
+          format: CompressFormat.jpeg,
+          quality: 85,
+          minWidth: maxImageDimension,
+          minHeight: maxImageDimension,
+        );
+        if (out != null) return File(out.path);
+      } catch (_) {/* ниже */}
+      throw const FormatException(
+        'Не удалось обработать HEIC-фото. Попробуйте сохранить в галерее '
+        'как JPEG и повторить.',
+      );
     }
+    return source;
   }
 
   /// Возвращает signed URL для приватного файла (1 час).

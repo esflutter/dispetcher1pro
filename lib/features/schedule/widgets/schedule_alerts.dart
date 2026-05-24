@@ -6,6 +6,7 @@ import 'package:dispatcher_1/core/theme/app_spacing.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
 
+import 'package:dispatcher_1/core/widgets/dialog_close_button.dart';
 /// Центрированный alert-dialog «Закрыть приём заказов?».
 class ScheduleAlerts {
   ScheduleAlerts._();
@@ -52,10 +53,10 @@ class ScheduleAlerts {
             children: [
               Align(
                 alignment: Alignment.centerRight,
-                child: GestureDetector(
+                child: DialogCloseButton(
                   onTap: () => Navigator.of(ctx).pop(false),
-                  child: Icon(Icons.close_rounded,
-                      size: 22.r, color: AppColors.textSecondary),
+                  color: AppColors.textSecondary,
+                  iconSize: 22.r,
                 ),
               ),
               Text(
@@ -111,10 +112,10 @@ class ScheduleAlerts {
             children: [
               Align(
                 alignment: Alignment.centerRight,
-                child: GestureDetector(
+                child: DialogCloseButton(
                   onTap: () => Navigator.of(ctx).pop(false),
-                  child: Icon(Icons.close_rounded,
-                      size: 22.r, color: AppColors.textSecondary),
+                  color: AppColors.textSecondary,
+                  iconSize: 22.r,
                 ),
               ),
               Text(

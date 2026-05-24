@@ -48,14 +48,17 @@ class _ChatInputBarState extends State<ChatInputBar> {
   @override
   void initState() {
     super.initState();
-    _ctrl.addListener(() {
-      final has = _ctrl.text.trim().isNotEmpty;
-      if (has != _hasText) setState(() => _hasText = has);
-    });
+    _ctrl.addListener(_onTextChanged);
+  }
+
+  void _onTextChanged() {
+    final has = _ctrl.text.trim().isNotEmpty;
+    if (has != _hasText) setState(() => _hasText = has);
   }
 
   @override
   void dispose() {
+    _ctrl.removeListener(_onTextChanged);
     _ctrl.dispose();
     super.dispose();
   }

@@ -7,6 +7,7 @@ import 'package:dispatcher_1/core/theme/app_text_styles.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
 import 'package:dispatcher_1/features/catalog/widgets/respond_bottom_sheet.dart';
 
+import 'package:dispatcher_1/core/widgets/dialog_close_button.dart';
 Future<void> showCreateExecutorCardAlert(
   BuildContext context, {
   String? rejectReason,
@@ -49,10 +50,10 @@ Future<bool?> showExecutorCardRequiredAlert(BuildContext context) {
           children: <Widget>[
             Align(
               alignment: Alignment.centerRight,
-              child: GestureDetector(
+              child: DialogCloseButton(
                 onTap: () => Navigator.of(ctx).pop(false),
-                child: Icon(Icons.close_rounded,
-                    size: 22.r, color: AppColors.textTertiary),
+                color: AppColors.textTertiary,
+                iconSize: 22.r,
               ),
             ),
             SizedBox(height: 20.h),
@@ -119,10 +120,10 @@ Future<bool?> showSaveCardWithoutLocationAlert(BuildContext context) {
           children: <Widget>[
             Align(
               alignment: Alignment.centerRight,
-              child: GestureDetector(
+              child: DialogCloseButton(
                 onTap: () => Navigator.of(ctx).pop(false),
-                child: Icon(Icons.close_rounded,
-                    size: 22.r, color: AppColors.textTertiary),
+                color: AppColors.textTertiary,
+                iconSize: 22.r,
               ),
             ),
             SizedBox(height: 20.h),

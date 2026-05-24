@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
+import 'package:dispatcher_1/core/theme/system_bar_style.dart';
 import 'package:dispatcher_1/core/utils/photo_source.dart';
 
 /// Полноэкранный просмотр набора фотографий со свайпами между ними
@@ -61,6 +62,14 @@ class _PhotoGalleryScreenState extends State<PhotoGalleryScreen> {
         backgroundColor: Colors.black.withValues(alpha: 0.3),
         elevation: 0,
         foregroundColor: Colors.white,
+        // Фон чёрный — нужны светлые иконки в статус-баре, иначе время
+        // и батарея сливаются. Глобальный стиль из main.dart рисует
+        // тёмные иконки на светлом фоне, здесь его перекрываем.
+        systemOverlayStyle: dispatcherSystemBarStyle(
+          navBarColor: Colors.black,
+          navIconBrightness: Brightness.light,
+          statusIconBrightness: Brightness.light,
+        ),
         toolbarHeight: 48.h,
         leading: IconButton(
           icon: Icon(Icons.close_rounded, size: 26.r, color: Colors.white),

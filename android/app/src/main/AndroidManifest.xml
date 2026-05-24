@@ -114,5 +114,25 @@
             <action android:name="android.intent.action.VIEW"/>
             <data android:scheme="geo"/>
         </intent>
+        <!-- Deeplinks конкретных картографических приложений: чтобы
+             пользовательский выбор в bottom-sheet «Открыть адрес в»
+             корректно открывал выбранное приложение, а не дефолтное.
+             Без этих queries на Android 11+ launchUrl бросит
+             PlatformException и наш fallback на web уйдёт не туда. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="yandexmaps"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="dgis"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="comgooglemaps"/>
+        </intent>
+        <package android:name="ru.yandex.yandexmaps"/>
+        <package android:name="ru.dublgis.dgismobile"/>
+        <package android:name="com.google.android.apps.maps"/>
     </queries>
 </manifest>

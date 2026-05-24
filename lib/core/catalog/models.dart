@@ -280,7 +280,7 @@ class ReviewItem {
       rating: r['rating'] as int,
       text: r['text'] as String?,
       authorName: authorName,
-      createdAt: DateTime.parse(r['created_at'] as String),
+      createdAt: DateTime.parse(r['created_at'] as String).toLocal(),
     );
   }
 }

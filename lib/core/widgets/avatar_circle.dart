@@ -22,6 +22,11 @@ class AvatarCircle extends StatelessWidget {
   Widget build(BuildContext context) {
     final bool hasUrl =
         avatarUrl != null && avatarUrl!.trim().isNotEmpty;
+    // Декодим и кэшим уменьшенную копию, а не оригинал. Без cacheWidth
+    // картинка 1024×1024 декодируется в RAM на ~4 МБ ради 100×100-кружка.
+    // Без maxWidthDiskCache папка `cached_network_image` за полгода
+    // активного использования набивается оригиналами по 3–4 МБ каждый.
+    final int targetPx = (size * 3).round().clamp(64, 512);
     return Container(
       width: size,
       height: size,
@@ -35,6 +40,10 @@ class AvatarCircle extends StatelessWidget {
               imageUrl: avatarUrl!,
               fit: BoxFit.cover,
               fadeInDuration: const Duration(milliseconds: 120),
+              memCacheWidth: targetPx,
+              memCacheHeight: targetPx,
+              maxWidthDiskCache: targetPx,
+              maxHeightDiskCache: targetPx,
               errorWidget: (_, _, _) => _placeholder(),
             )
           : _placeholder(),

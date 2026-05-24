@@ -85,6 +85,9 @@ class _SubscriptionPaywallState extends State<SubscriptionPaywall>
   Widget build(BuildContext context) {
     final double cardHeight = MediaQuery.of(context).size.height * 0.47;
     return Scaffold(
+      // Явный фон, чтобы edge-to-edge на Android 15+ не показывал чёрную
+      // полосу под нав-баром. Сам контент рисуется поверх через Stack.
+      backgroundColor: AppColors.background,
       body: Stack(
         fit: StackFit.expand,
         children: <Widget>[
@@ -102,9 +105,20 @@ class _SubscriptionPaywallState extends State<SubscriptionPaywall>
           Positioned(
             top: MediaQuery.of(context).padding.top + 12.h,
             right: 10.w,
-            child: GestureDetector(
-              onTap: () => Navigator.of(context).pop(),
-              child: Icon(Icons.close, color: Colors.white, size: 22.r),
+            // 44×44 — минимум touch-target. Раньше hit-area = иконка
+            // 22dp, пальцем попадать было сложно.
+            child: SizedBox(
+              width: 44.r,
+              height: 44.r,
+              child: Material(
+                color: Colors.transparent,
+                shape: const CircleBorder(),
+                child: InkWell(
+                  customBorder: const CircleBorder(),
+                  onTap: () => Navigator.of(context).pop(),
+                  child: Icon(Icons.close, color: Colors.white, size: 22.r),
+                ),
+              ),
             ),
           ),
           // Маркетинговая карточка — рисуется всегда; в режиме _showPayment

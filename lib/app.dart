@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -21,7 +22,9 @@ class _DispatcherAppState extends State<DispatcherApp> {
     // (`dispatcher1pro://payment/result?id=...`).
     // ignore: discarded_futures
     DeepLinks.instance.start().catchError((Object e) {
-      debugPrint('[DispatcherApp] DeepLinks.start failed: $e');
+      if (kDebugMode) {
+        debugPrint('[DispatcherApp] DeepLinks.start failed: $e');
+      }
     });
   }
 

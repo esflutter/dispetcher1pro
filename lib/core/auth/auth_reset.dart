@@ -1,5 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:dispatcher_1/core/realtime/realtime_service.dart';
+import 'package:dispatcher_1/core/utils/photo_source.dart' show clearSignedUrlCache;
 import 'package:dispatcher_1/features/auth/photo_crop_screen.dart';
 import 'package:dispatcher_1/features/catalog/catalog_filter_screen.dart';
 import 'package:dispatcher_1/features/executor_card/executor_card_screen.dart';
@@ -15,6 +17,10 @@ import 'package:dispatcher_1/features/support/chat_screen.dart';
 /// статические сторы. При повторном входе профиль/услуги/заказы
 /// подтянутся из БД заново.
 Future<void> signOut() async {
+  // Сначала останавливаем realtime — иначе подписки продолжат держать
+  // WebSocket-соединение от имени прошлого юзера. Делаем до signOut,
+  // чтобы Supabase сам не успел кинуть auth-error в наш callback.
+  await RealtimeService.instance.stop();
   try {
     await Supabase.instance.client.auth.signOut();
   } catch (_) {/* всё равно чистим локально */}
@@ -25,6 +31,7 @@ Future<void> signOut() async {
 /// всех сторов, что и при выходе. Сами данные удаляются на сервере
 /// отдельным RPC, который дёргает экран профиля до вызова этой функции.
 Future<void> deleteAccount() async {
+  await RealtimeService.instance.stop();
   try {
     await Supabase.instance.client.auth.signOut();
   } catch (_) {/* всё равно чистим локально */}
@@ -69,4 +76,10 @@ void _clearAll() {
 
   // Активная вкладка нижней навигации.
   MainShell.selectedTab.value = 0;
+
+  // Кэш подписанных URL приватных файлов. Подпись валидна 50 минут —
+  // без сброса следующий юзер на устройстве теоретически мог получить
+  // живой URL от чужой записи storage (типично при коллизии путей,
+  // например общий placeholder-аватар).
+  clearSignedUrlCache();
 }

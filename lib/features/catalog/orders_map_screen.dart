@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -228,7 +229,7 @@ class _OrdersMapFullScreenState extends State<OrdersMapFullScreen>
         }
       }
     } catch (e) {
-      debugPrint('[OrdersMap] geolocation failed: $e');
+      if (kDebugMode) debugPrint('[OrdersMap] geolocation failed: $e');
     }
     // Если геолокации нет, но юзер уже был на карте в этой сессии —
     // открываем ровно ту область, на которой он вышел. Зум тоже
@@ -296,7 +297,7 @@ class _OrdersMapFullScreenState extends State<OrdersMapFullScreen>
         vsync: this,
       );
     } catch (e) {
-      debugPrint('[OrdersMap] _centerOnOrder failed: $e');
+      if (kDebugMode) debugPrint('[OrdersMap] _centerOnOrder failed: $e');
     }
   }
 
@@ -318,7 +319,7 @@ class _OrdersMapFullScreenState extends State<OrdersMapFullScreen>
           vsync: this,
         );
       } catch (e) {
-        debugPrint('[OrdersMap] mapController.move failed: $e');
+        if (kDebugMode) debugPrint('[OrdersMap] mapController.move failed: $e');
       }
     }
   }
@@ -394,6 +395,10 @@ class _OrdersMapFullScreenState extends State<OrdersMapFullScreen>
       _lastViewedCenter = _mapController.camera.center;
       _lastViewedZoom = _mapController.camera.zoom;
     } catch (_) {/* карта не успела отрендериться */}
+    // MapController внутри ChangeNotifier — без явного dispose ссылка
+    // на его внутренние подписки живёт до конца процесса. На устройствах
+    // со слабой памятью многократные заходы на карту копят объекты.
+    _mapController.dispose();
 
     AppliedFilter.revision.removeListener(_onFilterChanged);
     AppliedFilter.categories

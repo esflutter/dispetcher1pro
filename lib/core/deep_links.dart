@@ -51,7 +51,9 @@ class DeepLinks {
         _handle(initial);
       }
     } catch (e) {
-      debugPrint('[DeepLinks] getInitialLink error: $e');
+      if (kDebugMode) {
+        debugPrint('[DeepLinks] getInitialLink error: $e');
+      }
     }
 
     // Подписка на runtime-ссылки (приложение было в фоне). Стрим
@@ -59,7 +61,9 @@ class DeepLinks {
     // нужна — каждый вызов `_handle` относится к новому переходу.
     _sub = _appLinks.uriLinkStream.listen(
       _handle,
-      onError: (Object e) => debugPrint('[DeepLinks] stream error: $e'),
+      onError: (Object e) {
+        if (kDebugMode) debugPrint('[DeepLinks] stream error: $e');
+      },
     );
   }
 
@@ -72,13 +76,15 @@ class DeepLinks {
       final String current = uri.toString();
       final String? last = prefs.getString(_kLastInitialKey);
       if (last == current) {
-        debugPrint('[DeepLinks] skip duplicate initial: $current');
+        if (kDebugMode) {
+          debugPrint('[DeepLinks] skip duplicate initial: $current');
+        }
         return false;
       }
       await prefs.setString(_kLastInitialKey, current);
       return true;
     } catch (e) {
-      debugPrint('[DeepLinks] prefs error: $e');
+      if (kDebugMode) debugPrint('[DeepLinks] prefs error: $e');
       return true;
     }
   }
@@ -90,7 +96,7 @@ class DeepLinks {
   }
 
   void _handle(Uri uri) {
-    debugPrint('[DeepLinks] got: $uri');
+    if (kDebugMode) debugPrint('[DeepLinks] got: $uri');
     // Принимаем только нашу схему — игнорируем чужое.
     if (uri.scheme != 'dispatcher1pro') return;
 
@@ -156,7 +162,7 @@ class DeepLinks {
           .maybeSingle();
       return row == null ? null : row['id'] as String?;
     } catch (e) {
-      debugPrint('[DeepLinks] pending lookup error: $e');
+      if (kDebugMode) debugPrint('[DeepLinks] pending lookup error: $e');
       return null;
     }
   }

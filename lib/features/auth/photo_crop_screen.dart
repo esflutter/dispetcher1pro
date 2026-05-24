@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
+import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/utils/photo_source.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
 
@@ -106,7 +107,7 @@ class _PhotoCropScreenState extends State<PhotoCropScreen> {
     _imageAreaSize = imageAreaSize;
 
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: AppColors.background,
       body: Stack(
         children: [
           // 1. Статичное фото — full bleed под верхней панелью

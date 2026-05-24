@@ -2,6 +2,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:dispatcher_1/core/catalog/catalog_service.dart';
 import 'package:dispatcher_1/core/catalog/models.dart';
+import 'package:dispatcher_1/core/utils/client_uid.dart';
 
 import 'models.dart';
 
@@ -56,19 +57,38 @@ class MyServicesService {
   /// `/subscription/payment` с `kind=service_slot` и этим `service_id`.
   /// После успешной оплаты webhook отметит платёж succeeded → триггер
   /// `apply_payment_success` поставит `services.is_paid=true`.
-  Future<String> create(ServiceDraft d) async {
+  Future<String> create(ServiceDraft d, {String? clientUid}) async {
     final User? user = _client.auth.currentUser;
     if (user == null) {
       throw const AuthException('Нет активной сессии');
     }
+    // Идемпотентный ключ для защиты от дублей при сетевом флапе.
+    // Серверный partial unique index `services_executor_client_uid_uniq`
+    // не даст создать вторую услугу с тем же UID; если такое случилось —
+    // подтягиваем уже созданную и возвращаем её id.
+    final String uid = clientUid ?? generateClientUid();
     final Map<String, dynamic> payload = await _draftToRow(d);
     payload['executor_id'] = user.id;
-    final Map<String, dynamic> row = await _client
-        .from('services')
-        .insert(payload)
-        .select('id')
-        .single();
-    return row['id'] as String;
+    payload['client_uid'] = uid;
+    try {
+      final Map<String, dynamic> row = await _client
+          .from('services')
+          .insert(payload)
+          .select('id')
+          .single();
+      return row['id'] as String;
+    } on PostgrestException catch (e) {
+      if (e.code == '23505') {
+        final Map<String, dynamic>? existing = await _client
+            .from('services')
+            .select('id')
+            .eq('executor_id', user.id)
+            .eq('client_uid', uid)
+            .maybeSingle();
+        if (existing != null) return existing['id'] as String;
+      }
+      rethrow;
+    }
   }
 
   Future<void> update(String id, ServiceDraft d) async {

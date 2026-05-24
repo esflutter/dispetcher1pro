@@ -56,7 +56,7 @@ class ScheduleService {
     final Map<DateTime, ScheduleDayOverride> out =
         <DateTime, ScheduleDayOverride>{};
     for (final Map<String, dynamic> r in rows) {
-      final DateTime day = DateTime.parse(r['day'] as String);
+      final DateTime day = DateTime.parse(r['day'] as String).toLocal();
       final List<int> mIds = List<int>.from(r['machinery_ids'] as List);
       final List<int> cIds = List<int>.from(r['category_ids'] as List);
       out[DateTime(day.year, day.month, day.day)] = ScheduleDayOverride(

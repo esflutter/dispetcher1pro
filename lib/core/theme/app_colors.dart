@@ -19,6 +19,11 @@ class AppColors {
   static const Color surfaceMuted = Color(0xFFFAFAFA);
   static const Color categoryCard = Color(0xFFF1F1F1);
   static const Color navBarDark = Color(0xFF333333);
+  // iOS-style alert dialog background — серая подложка чуть темнее
+  // surface, чтобы контент кнопок выделялся. Раньше захардкожен
+  // как `Color(0xFFDFDFDF)` в одном диалоге логаута; вынесен в токен,
+  // чтобы при смене темы / переходе на тёмную тему был единый источник.
+  static const Color dialogAlertBg = Color(0xFFDFDFDF);
 
   // Текст
   static const Color textPrimary = Color(0xFF1D1D1D);

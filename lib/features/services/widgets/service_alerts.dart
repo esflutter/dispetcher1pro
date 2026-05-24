@@ -5,6 +5,7 @@ import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
 
+import 'package:dispatcher_1/core/widgets/dialog_close_button.dart';
 /// Диалог подтверждения удаления услуги.
 Future<bool?> showDeleteServiceDialog(BuildContext context) {
   return showDialog<bool>(
@@ -25,10 +26,10 @@ Future<bool?> showDeleteServiceDialog(BuildContext context) {
           children: [
             Align(
               alignment: Alignment.centerRight,
-              child: GestureDetector(
+              child: DialogCloseButton(
                 onTap: () => Navigator.of(ctx).pop(false),
-                child: Icon(Icons.close_rounded,
-                    size: 22.r, color: AppColors.textTertiary),
+                color: AppColors.textTertiary,
+                iconSize: 22.r,
               ),
             ),
             SizedBox(height: 16.h),
@@ -79,10 +80,10 @@ Future<void> showServicePublishedDialog(BuildContext context) {
           children: [
             Align(
               alignment: Alignment.centerRight,
-              child: GestureDetector(
+              child: DialogCloseButton(
                 onTap: () => Navigator.of(ctx).pop(),
-                child: Icon(Icons.close_rounded,
-                    size: 22.r, color: AppColors.textTertiary),
+                color: AppColors.textTertiary,
+                iconSize: 22.r,
               ),
             ),
             SizedBox(height: 22.h),

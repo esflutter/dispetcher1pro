@@ -13,6 +13,7 @@ import 'package:dispatcher_1/core/widgets/dark_sub_app_bar.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
 import 'package:dispatcher_1/features/subscription/widgets/brand_badge.dart';
 
+import 'package:dispatcher_1/core/widgets/dialog_close_button.dart';
 /// Экран «Способы оплаты» — список сохранённых карт + удаление + кнопка
 /// добавления новой карты.
 ///
@@ -122,13 +123,10 @@ class _CardsScreenState extends State<CardsScreen> {
             children: <Widget>[
               Align(
                 alignment: Alignment.centerRight,
-                child: GestureDetector(
+                child: DialogCloseButton(
                   onTap: () => Navigator.of(ctx).pop(false),
-                  child: Icon(
-                    Icons.close_rounded,
-                    size: 22.r,
-                    color: AppColors.textSecondary,
-                  ),
+                  color: AppColors.textSecondary,
+                  iconSize: 22.r,
                 ),
               ),
               Text(

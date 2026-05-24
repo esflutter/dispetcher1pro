@@ -10,6 +10,7 @@ import 'package:dispatcher_1/core/theme/app_text_styles.dart';
 import 'package:dispatcher_1/core/widgets/dark_sub_app_bar.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
 import 'package:dispatcher_1/features/catalog/widgets/subscription_paywall.dart';
+import 'package:dispatcher_1/core/widgets/dialog_close_button.dart';
 import 'package:dispatcher_1/features/schedule/schedule_screen.dart' show ScheduleToggle;
 
 /// Экран «Информация о подписке».
@@ -92,7 +93,7 @@ class _SubscriptionManageScreenState extends State<SubscriptionManageScreen> {
       if (ok != true) return;
       setState(() => _busy = true);
       try {
-        await ProfileService.instance.updateSubscription(autoRenew: false);
+        await ProfileService.instance.updateSubscriptionAutoRenew(false);
       } finally {
         if (mounted) setState(() => _busy = false);
       }
@@ -104,7 +105,7 @@ class _SubscriptionManageScreenState extends State<SubscriptionManageScreen> {
       // (paid_until > now()), доплачивать не нужно.
       setState(() => _busy = true);
       try {
-        await ProfileService.instance.updateSubscription(autoRenew: true);
+        await ProfileService.instance.updateSubscriptionAutoRenew(true);
       } finally {
         if (mounted) setState(() => _busy = false);
       }
@@ -300,13 +301,10 @@ Future<bool?> _showDisableDialog(BuildContext context) {
           children: <Widget>[
             Align(
               alignment: Alignment.centerRight,
-              child: GestureDetector(
+              child: DialogCloseButton(
                 onTap: () => Navigator.of(ctx).pop(false),
-                child: Icon(
-                  Icons.close_rounded,
-                  size: 22.r,
-                  color: AppColors.textSecondary,
-                ),
+                color: AppColors.textSecondary,
+                iconSize: 22.r,
               ),
             ),
             Text(

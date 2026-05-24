@@ -212,6 +212,11 @@ class _OpenFreeMapViewState extends State<OpenFreeMapView>
   @override
   void dispose() {
     _positionSub?.cancel();
+    // Диспозим только внутренний контроллер. Если он передан извне
+    // (widget.mapController != null), родитель сам отвечает за dispose.
+    if (widget.mapController == null) {
+      _internalController.dispose();
+    }
     super.dispose();
   }
 
