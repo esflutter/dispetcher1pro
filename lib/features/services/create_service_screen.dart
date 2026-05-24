@@ -143,8 +143,23 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
             c.map((cat.CategoryRef e) => e.title).toList(growable: false);
       });
     } catch (_) {
-      // БД недоступна — чипы остаются пустыми, пользователь увидит это
-      // визуально и поймёт, что форму открыли без сети.
+      // Чипы техники/категорий без справочников остаются пустыми, и
+      // юзер не понимает, почему. Раньше catch был тихий — теперь
+      // показываем snackbar с ретраем, чтобы стало ясно: это сеть, а
+      // не «у нас нет техники в каталоге».
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(
+            'Не удалось загрузить справочники. '
+            'Проверьте интернет и попробуйте позже.',
+          ),
+          action: SnackBarAction(
+            label: 'Повторить',
+            onPressed: _loadDirectories,
+          ),
+        ),
+      );
     }
   }
 
