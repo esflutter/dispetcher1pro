@@ -44,7 +44,8 @@ class ProfileService {
           .select('phone, email, date_of_birth, '
               'subscription_paid_until, subscription_trial_until, '
               'subscription_auto_renew, subscription_trial_used, '
-              'subscription_payment_method_id, verification_reject_reason')
+              'subscription_payment_method_id, verification_reject_reason, '
+              'push_enabled, push_new_orders')
           .eq('id', user.id)
           .maybeSingle();
       if (r == null) return null;
@@ -108,6 +109,25 @@ class ProfileService {
         .from('profiles_private')
         .update(<String, dynamic>{'subscription_auto_renew': autoRenew})
         .eq('id', user.id);
+    changeBeacon.value++;
+  }
+
+  /// UPDATE настроек пуш-уведомлений в `profiles_private`.
+  /// Применяет любой из двух тумблеров; null поля не меняет.
+  Future<void> updatePushSettings({
+    bool? pushEnabled,
+    bool? pushNewOrders,
+  }) async {
+    final User? user = _client.auth.currentUser;
+    if (user == null) {
+      throw const AuthException('Нет активной сессии');
+    }
+    final Map<String, dynamic> payload = <String, dynamic>{
+      'push_enabled': ?pushEnabled,
+      'push_new_orders': ?pushNewOrders,
+    };
+    if (payload.isEmpty) return;
+    await _client.from('profiles_private').update(payload).eq('id', user.id);
     changeBeacon.value++;
   }
 }
@@ -188,6 +208,8 @@ class MyPrivate {
     required this.subscriptionTrialUsed,
     required this.subscriptionPaymentMethodId,
     required this.verificationRejectReason,
+    required this.pushEnabled,
+    required this.pushNewOrders,
   });
   final String? phone;
   final String? email;
@@ -215,6 +237,16 @@ class MyPrivate {
   /// без причины. Показывается на экране карточки исполнителя при
   /// `verification_status = rejected`.
   final String? verificationRejectReason;
+
+  /// Мастер-тумблер «Уведомления». OFF → ни один пуш не доходит до
+  /// устройства (Edge Function пропустит юзера в send-push). In-app
+  /// inbox при этом всё равно наполняется.
+  final bool pushEnabled;
+
+  /// Отдельный тумблер для класса «новый заказ рядом» (только исполнитель).
+  /// Фильтруется в SQL-функции `_enqueue_new_order_nearby_trigger`,
+  /// то есть при OFF — запись в inbox даже не создаётся.
+  final bool pushNewOrders;
 
   /// Подписка активна сейчас (включая триал) — paid_until ещё в будущем.
   bool get subscriptionActive {
@@ -249,6 +281,8 @@ class MyPrivate {
         subscriptionPaymentMethodId:
             r['subscription_payment_method_id'] as String?,
         verificationRejectReason: r['verification_reject_reason'] as String?,
+        pushEnabled: (r['push_enabled'] as bool?) ?? true,
+        pushNewOrders: (r['push_new_orders'] as bool?) ?? true,
       );
 }
 

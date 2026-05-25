@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:dispatcher_1/core/network_status.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
+import 'package:dispatcher_1/core/theme/system_bar_style.dart';
 import 'package:dispatcher_1/core/widgets/no_internet_view.dart';
 import 'package:dispatcher_1/features/catalog/catalog_categories_screen.dart';
 import 'package:dispatcher_1/features/orders/my_orders_screen.dart';
@@ -61,6 +63,21 @@ class _MainShellState extends State<MainShell> {
   @override
   Widget build(BuildContext context) {
     final int index = MainShell.selectedTab.value;
+    // Под shell нав-бар закрашивается AppColors.navBarDark и тянется до
+    // системных кнопок навигации. Через AnnotatedRegion сообщаем Android-у
+    // что фон тёмный — чтобы Xiaomi/MIUI красила свои 3-button иконки
+    // белыми (на тёмном фоне чёрные иконки сливались). Вне shell
+    // (splash, OTP, регистрация) остаётся глобальный белый стиль.
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: dispatcherSystemBarStyle(
+        navBarColor: AppColors.navBarDark,
+        navIconBrightness: Brightness.light,
+      ),
+      child: _buildScaffold(index),
+    );
+  }
+
+  Widget _buildScaffold(int index) {
     return Scaffold(
       backgroundColor: AppColors.background,
       body: AnimatedBuilder(

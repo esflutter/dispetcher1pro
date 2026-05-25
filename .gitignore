@@ -78,6 +78,11 @@ run_prod.bat
 /android/key.properties
 /android/app/*.jks
 /android/app/*.keystore
+# Firebase: google-services.json содержит project_id и Android API-ключи.
+# Они и так попадают в APK (декомпилируются легко), но в репо хранить
+# не стоит — особенно если репо станет публичным. Файл скачивается из
+# Firebase Console и кладётся локально.
+/android/app/google-services.json
 # Supabase / сертификаты
 *.pem
 *.key

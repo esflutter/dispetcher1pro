@@ -7,6 +7,11 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+    <!-- Android 13+ требует явное разрешение от пользователя на показ
+         пуш-уведомлений. На Android < 13 объявление здесь — no-op.
+         Запрос системного диалога делает PushService.registerForCurrentUser
+         после OTP-логина. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <application
         android:label="Диспетчер №1 PRO"
         android:name="${applicationName}"
@@ -73,6 +78,14 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- Дефолтный канал для FCM, если в payload пуша не указан channel_id.
+             Канал с id "default" создаётся клиентом через
+             flutter_local_notifications при старте приложения
+             (см. PushHandler.initialize). Без этого мета-флага и канала
+             на устройстве Android 8+ молча отбрасывает пуши. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="default" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

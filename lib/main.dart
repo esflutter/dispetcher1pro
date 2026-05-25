@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -8,9 +10,35 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'app.dart';
 import 'core/catalog/catalog_service.dart';
 import 'core/config/env.dart';
+import 'core/notifications/notifications_service.dart';
+import 'core/push/push_handler.dart';
+import 'core/push/push_service.dart';
 import 'core/realtime/realtime_service.dart';
 import 'core/settings/settings_service.dart';
 import 'core/theme/system_bar_style.dart';
+
+/// Обработчик пушей в фоне / при закрытом приложении.
+///
+/// КРИТИЧНО: `@pragma('vm:entry-point')` нужен в release-сборке. Без него
+/// AOT-компилятор Dart вырезает функцию как «неиспользуемую» — нативный
+/// FCM SDK не находит handler, и пуши в фоне молча не доходят. Баг
+/// проявляется только в release, debug всё показывает корректно.
+///
+/// Сама функция почти ничего не делает: FCM-SDK покажет системный баннер
+/// автоматически (notification-payload), нам остаётся только запустить
+/// Firebase в этом изоляте — handler выполняется не в основном изоляте
+/// приложения, контекст пуст.
+@pragma('vm:entry-point')
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  // try/catch обязателен: на Huawei/устройствах без GMS Firebase.initializeApp
+  // падает с PlatformException, изолят молча умирает и пуш не доходит.
+  // Тяжёлую работу не нужно — FCM SDK сам показывает системный баннер.
+  try {
+    await Firebase.initializeApp();
+  } catch (e) {
+    if (kDebugMode) debugPrint('[bg-push] Firebase init failed: $e');
+  }
+}
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -32,6 +60,22 @@ Future<void> main() async {
   // отступы для контента.
   await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   SystemChrome.setSystemUIOverlayStyle(dispatcherSystemBarStyle());
+
+  // Firebase инициализируется ДО Supabase, чтобы background-handler
+  // FCM, при срабатывании в режиме «приложение убито», мог корректно
+  // поднять Firebase в своём изоляте. Под try/catch — без сервисов
+  // Google (Huawei, Apple Silicon без Rosetta) Firebase падает, но
+  // остальная часть приложения должна продолжать работать.
+  bool firebaseReady = false;
+  try {
+    await Firebase.initializeApp();
+    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+    await PushHandler.instance.initialize();
+    PushService.instance.initTokenRefreshListener();
+    firebaseReady = true;
+  } catch (e) {
+    if (kDebugMode) debugPrint('[main] Firebase init failed: $e');
+  }
 
   if (Env.hasSupabaseConfig) {
     await Supabase.initialize(
@@ -57,6 +101,10 @@ Future<void> main() async {
     // (с уже валидным JWT), либо в auth_service.verify() после signIn.
     if (Supabase.instance.client.auth.currentSession != null) {
       RealtimeService.instance.start();
+      // Realtime-подписка на свои notifications + начальный пересчёт
+      // бейджа непрочитанных. После OTP-логина start вызывается ещё раз
+      // (внутри идемпотентно).
+      NotificationsService.instance.start();
     }
     // Глобальный listener событий авторизации Supabase. Без него
     // истёкший / отозванный токен не приводил ни к чему — экран мог
@@ -67,8 +115,23 @@ Future<void> main() async {
         .listen((AuthState event) async {
       if (event.event == AuthChangeEvent.signedOut) {
         await RealtimeService.instance.stop();
+        await NotificationsService.instance.stop();
+        // При logout помечаем FCM-токен этого устройства как invalidated
+        // (чтобы сервер не слал пуши предыдущему юзеру) и удаляем токен
+        // локально. Если Firebase не поднялся — нечего инвалидировать.
+        if (firebaseReady) {
+          await PushService.instance.clearForCurrentUser();
+        }
       }
     });
+
+    // Холодный старт с уже валидной сессией: зарегистрировать FCM-токен.
+    // У registerForCurrentUser свой дедуп — повторный вызов из
+    // post_login_bootstrap (после OTP) не задвоит регистрацию.
+    if (firebaseReady &&
+        Supabase.instance.client.auth.currentSession != null) {
+      unawaited(PushService.instance.registerForCurrentUser());
+    }
   }
 
   runApp(const DispatcherApp());

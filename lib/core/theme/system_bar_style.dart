@@ -13,12 +13,17 @@ import 'app_colors.dart';
 ///     визуально похожий на лишнюю полосу.
 ///
 /// Билдер принимает три параметра:
-///   - `navBarColor` — цвет фона под нав-баром (равен фону Scaffold);
-///   - `navIconBrightness` — яркость иконок нав-бара под цвет;
-///   - `statusIconBrightness` — яркость иконок статус-бара;
+///   - `navBarColor` — цвет фона под системными кнопками навигации;
+///   - `navIconBrightness` — яркость иконок системных кнопок под цвет фона
+///     (light = белые на тёмном, dark = чёрные на светлом);
+///   - `statusIconBrightness` — яркость иконок статус-бара.
 ///
-/// Сразу же отключает `*ContrastEnforced`, чтобы полупрозрачная полоса
-/// не появлялась.
+/// Дефолт — белый фон + чёрные иконки, потому что большинство экранов
+/// без shell (splash, OTP, регистрация, любые формы) — со светлым фоном.
+/// Экраны под `MainShell` сами оборачиваются в `AnnotatedRegion` с тёмным
+/// стилем — там нав-бар закрашивается `AppColors.navBarDark`, иконки
+/// должны быть светлыми. Без этой условности Xiaomi/MIUI красила иконки
+/// чёрными и они сливались с тёмным фоном на shell-экранах.
 SystemUiOverlayStyle dispatcherSystemBarStyle({
   Color navBarColor = AppColors.background,
   Brightness navIconBrightness = Brightness.dark,

@@ -1,4 +1,4 @@
-package com.dispatcher1.dispatcher_1
+package com.dispetcher1.dispetcher_1
 
 import io.flutter.embedding.android.FlutterActivity
 

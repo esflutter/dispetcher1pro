@@ -5,6 +5,7 @@ import 'package:dispatcher_1/core/catalog/format.dart';
 import 'package:dispatcher_1/core/catalog/models.dart';
 import 'package:dispatcher_1/core/my_orders/models.dart';
 import 'package:dispatcher_1/core/my_orders/my_orders_service.dart';
+import 'package:dispatcher_1/core/push/pending_deep_link.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/utils/phone_dial.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
@@ -52,15 +53,106 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
     // отменяют мэтчи. Без подписки список «Мои заказы» оставался
     // устаревшим до pull-to-refresh.
     MyOrdersService.changeBeacon.addListener(_refresh);
+    pendingOrderDeepLink.addListener(_onPendingDeepLink);
     _future = _fetch();
+    // Если пуш стрельнул раньше, чем экран успел подписаться — обработать
+    // отложенный orderId после первого рендера, когда _future уже стартовал.
+    if (pendingOrderDeepLink.value != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _onPendingDeepLink());
+    }
   }
 
   @override
   void dispose() {
     AccountBlock.notifier.removeListener(_refresh);
     MyOrdersService.changeBeacon.removeListener(_refresh);
+    pendingOrderDeepLink.removeListener(_onPendingDeepLink);
     _tab.dispose();
     super.dispose();
+  }
+
+  Future<void> _onPendingDeepLink() async {
+    final String? orderId = pendingOrderDeepLink.value;
+    if (orderId == null || !mounted) return;
+
+    // Ждём текущую загрузку, потом ищем мэтч с этим order_id.
+    _MyOrdersData data;
+    try {
+      data = await _future;
+    } catch (_) {
+      // Если первая загрузка упала — попробуем перезапросить.
+      data = await _fetch();
+    }
+    if (!mounted) return;
+
+    MyOrderMatch? match;
+    for (final MyOrderMatch m in data.matches) {
+      if (m.orderId == orderId) {
+        match = m;
+        break;
+      }
+    }
+
+    pendingOrderDeepLink.value = null;
+    if (match != null) {
+      _openMatchDetail(context, match, data.phones[match.customerId]);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Отклик на этот заказ не найден'),
+        ),
+      );
+    }
+  }
+
+  /// Открывает экран деталей конкретного мэтча. Вынесена отдельно
+  /// (раньше была инлайн в onTap) — переиспользуется при тапе по
+  /// карточке и при deep-link от пуша.
+  Future<void> _openMatchDetail(
+      BuildContext context, MyOrderMatch m, String? phone) async {
+    final MyOrderStatus uiStatus = _uiStatus(m.status);
+    final String rentDate = _rentDate(m);
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => MyOrderDetailScreen(
+          title: m.orderTitle,
+          equipment: m.orderMachineryTitles,
+          workCategories: m.orderCategoryTitles,
+          workDescription: m.orderWorks,
+          description: m.orderDescription,
+          photos: m.orderPhotos,
+          rentDate: rentDate,
+          address: m.orderAddress,
+          publishedAgo: formatPublishedAgo(m.statusChangedAt),
+          orderNumber:
+              '№${m.orderDisplayNumber.toString().padLeft(8, '0')}',
+          customerId: m.customerId,
+          customerName: m.customerName,
+          customerAvatarUrl: m.customerAvatarUrl,
+          customerPhone: phone ?? '',
+          customerEmail: null,
+          customerRating: m.customerRating,
+          customerReviews: m.customerReviewCount,
+          state: _detailStateForStatus(m.status),
+          rejectedStatus: uiStatus,
+          matchId: m.matchId,
+          agreedPricePerHour: m.agreedPricePerHour,
+          agreedPricePerDay: m.agreedPricePerDay,
+          serviceMachineryTitle: m.serviceMachineryTitle,
+          onWithdraw: () =>
+              _doAction(() => MyOrdersService.instance.withdraw(m.matchId)),
+          onConfirm: () => _doAction(
+            () => MyOrdersService.instance.acceptMatch(m.matchId),
+          ),
+          onDecline: () =>
+              _doAction(() => MyOrdersService.instance.declineMatch(m.matchId)),
+          onRefuse: () =>
+              _doAction(() => MyOrdersService.instance.declineMatch(m.matchId)),
+          isBlocked: _blocked,
+        ),
+      ),
+    );
+    _refresh();
   }
 
   /// Загружает мэтчи + телефоны заказчиков для accepted/completed
@@ -192,14 +284,24 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
 
   Widget _buildList(List<MyOrderMatch> items, Map<String, String?> phones) {
     if (items.isEmpty) {
+      // LayoutBuilder + ConstrainedBox(minHeight) нужны, чтобы заглушка
+      // получила полную высоту вьюпорта и сцентрировалась через
+      // mainAxisAlignment.center. Без них ListView отдаёт child его
+      // intrinsic-высоту, и заглушка прилипает к верху (визуально это
+      // выглядело как «вертикальное выравнивание сломалось»).
       return RefreshIndicator(
         color: AppColors.primary,
         onRefresh: _onRefresh,
-        child: ListView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          children: <Widget>[
-            _EmptyOrders(onGoToCatalog: widget.onGoToCatalog),
-          ],
+        child: LayoutBuilder(
+          builder: (BuildContext _, BoxConstraints constraints) {
+            return SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                child: _EmptyOrders(onGoToCatalog: widget.onGoToCatalog),
+              ),
+            );
+          },
         ),
       );
     }
@@ -245,55 +347,7 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
                 customerName: m.customerName,
                 customerPhone: phone,
                 customerAvatar: m.customerAvatarUrl,
-                onTap: () async {
-                  // После возврата из деталей перезагружаем список —
-                  // там могли измениться флаг «отзыв оставлен» (пилюля
-                  // «Завершён, оставьте отзыв» → «Завершён») или статус
-                  // мэтча (после accept/withdraw/decline). Без _refresh
-                  // карточка отдавала старый снапшот до следующего
-                  // pull-to-refresh.
-                  await Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => MyOrderDetailScreen(
-                        title: m.orderTitle,
-                        equipment: m.orderMachineryTitles,
-                        workCategories: m.orderCategoryTitles,
-                        workDescription: m.orderWorks,
-                        description: m.orderDescription,
-                        photos: m.orderPhotos,
-                        rentDate: rentDate,
-                        address: m.orderAddress,
-                        publishedAgo: formatPublishedAgo(timerSource),
-                        orderNumber:
-                            '№${m.orderDisplayNumber.toString().padLeft(8, '0')}',
-                        customerId: m.customerId,
-                        customerName: m.customerName,
-                        customerAvatarUrl: m.customerAvatarUrl,
-                        customerPhone: phone ?? '',
-                        customerEmail: null,
-                        customerRating: m.customerRating,
-                        customerReviews: m.customerReviewCount,
-                        state: _detailStateForStatus(m.status),
-                        rejectedStatus: uiStatus,
-                        matchId: m.matchId,
-                        agreedPricePerHour: m.agreedPricePerHour,
-                        agreedPricePerDay: m.agreedPricePerDay,
-                        serviceMachineryTitle: m.serviceMachineryTitle,
-                        onWithdraw: () => _doAction(() =>
-                            MyOrdersService.instance.withdraw(m.matchId)),
-                        onConfirm: () => _doAction(
-                          () => MyOrdersService.instance.acceptMatch(m.matchId),
-                        ),
-                        onDecline: () => _doAction(() =>
-                            MyOrdersService.instance.declineMatch(m.matchId)),
-                        onRefuse: () => _doAction(() =>
-                            MyOrdersService.instance.declineMatch(m.matchId)),
-                        isBlocked: _blocked,
-                      ),
-                    ),
-                  );
-                  _refresh();
-                },
+                onTap: () => _openMatchDetail(context, m, phone),
                 onContact: canCall ? () => dialPhone(context, phone) : null,
               ),
               if (!isLast)

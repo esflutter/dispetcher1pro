@@ -14,9 +14,12 @@ import '../features/catalog/order_on_map_screen.dart';
 import '../features/catalog/orders_map_screen.dart';
 import '../features/executor_card/edit_executor_card_screen.dart';
 import '../features/executor_card/executor_card_screen.dart';
+import '../features/notifications/notifications_inbox_screen.dart';
+import '../features/profile/notifications_settings_screen.dart';
 import '../features/onboarding/onboarding_screen.dart';
 import '../features/onboarding/splash_screen.dart';
 import '../features/orders/my_orders_screen.dart';
+import '../features/orders/order_detail_route_screen.dart';
 import '../features/profile/edit_profile_screen.dart';
 import '../features/profile/profile_screen.dart';
 import '../features/profile/reviews_screen.dart';
@@ -118,11 +121,30 @@ final GoRouter appRouter = GoRouter(
 
     // Заказы исполнителя
     GoRoute(path: '/orders', builder: (_, _) => const MyOrdersScreen()),
+    // Deep-link от пуша на конкретный заказ — обёртка кладёт id в
+    // pendingOrderDeepLink, переключает таб «Мои заказы» и MyOrdersScreen
+    // сам открывает детали через свою привычную логику.
+    GoRoute(
+      path: '/orders/:id',
+      builder: (_, GoRouterState state) => OrderDetailRouteScreen(
+        orderId: state.pathParameters['id'] ?? '',
+      ),
+    ),
 
     // Профиль
     GoRoute(path: '/profile', builder: (_, _) => const ProfileScreen()),
     GoRoute(path: '/profile/edit', builder: (_, _) => const EditProfileScreen()),
     GoRoute(path: '/profile/reviews', builder: (_, _) => const ReviewsScreen()),
+    GoRoute(
+      path: '/profile/notifications-settings',
+      builder: (_, _) => const NotificationsSettingsScreen(),
+    ),
+
+    // Inbox уведомлений
+    GoRoute(
+      path: '/notifications',
+      builder: (_, _) => const NotificationsInboxScreen(),
+    ),
 
     // Карточка исполнителя
     GoRoute(path: '/executor-card', builder: (_, _) => const ExecutorCardScreen()),
@@ -232,8 +254,58 @@ final GoRouter appRouter = GoRouter(
         body: Center(child: CircularProgressIndicator()),
       );
     }
-    return Scaffold(
-      body: Center(child: Text('Маршрут не найден: ${state.uri}')),
-    );
+    // Фолбэк для любого другого неизвестного route (например, тап по
+    // старому пушу с устаревшей структурой `/orders/<id>` на APK, где
+    // этот маршрут ещё не зарегистрирован). Показываем понятный экран
+    // с кнопкой «На главный», а не сырое «Маршрут не найден».
+    return _RouteNotFoundScreen(uri: state.uri);
   },
 );
+
+class _RouteNotFoundScreen extends StatelessWidget {
+  const _RouteNotFoundScreen({required this.uri});
+  final Uri uri;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF333333),
+        foregroundColor: Colors.white,
+        title: const Text('Ссылка устарела'),
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: <Widget>[
+            const Icon(Icons.link_off, size: 64, color: Color(0xFF999999)),
+            const SizedBox(height: 16),
+            const Text(
+              'Эта ссылка из старой версии приложения',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Откройте «Уведомления» в приложении — там можно увидеть свежие события и перейти к нужному заказу.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 14, color: Color(0xFF666666)),
+            ),
+            const SizedBox(height: 32),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFFF9900),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 32, vertical: 14),
+              ),
+              onPressed: () => appRouter.go('/shell'),
+              child: const Text('На главный'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

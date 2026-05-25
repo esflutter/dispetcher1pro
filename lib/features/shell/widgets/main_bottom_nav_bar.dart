@@ -36,7 +36,12 @@ class MainBottomNavBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final double bottomInset = MediaQuery.of(context).padding.bottom;
+    // viewPadding, а не padding: Scaffold обрезает `padding.bottom` для
+    // своего bottomNavigationBar до 0, считая что сам учёл SafeArea —
+    // и тогда у нас расчёт высоты ломался, под нав-баром оставалась
+    // светлая полоса фоном Scaffold. viewPadding всегда даёт реальную
+    // высоту системного 3-button bar / gesture handle.
+    final double bottomInset = MediaQuery.viewPaddingOf(context).bottom;
     return Container(
       height: 64.h + bottomInset,
       decoration: const BoxDecoration(
