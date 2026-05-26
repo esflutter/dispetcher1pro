@@ -152,7 +152,18 @@ final GoRouter appRouter = GoRouter(
 
     // Мои услуги
     GoRoute(path: '/services', builder: (_, _) => const MyServicesScreen()),
-    GoRoute(path: '/services/create', builder: (_, _) => const CreateServiceScreen()),
+    GoRoute(
+      path: '/services/create',
+      builder: (_, state) {
+        // Из чата ассистента в extra может прилететь готовый черновик —
+        // тогда форма открывается уже заполненной (см. handoff в chat_bubble).
+        final extra = state.extra;
+        final draft = (extra is Map && extra['ai_draft'] is Map<String, dynamic>)
+            ? extra['ai_draft'] as Map<String, dynamic>
+            : null;
+        return CreateServiceScreen(aiDraft: draft);
+      },
+    ),
     GoRoute(
       path: '/services/:id',
       builder: (_, state) =>
