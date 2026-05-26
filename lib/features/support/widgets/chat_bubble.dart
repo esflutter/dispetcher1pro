@@ -243,7 +243,9 @@ class _OrderTile extends StatelessWidget {
     final dateFrom = item['date_from'] as String?;
     final distance = item['distance_km'];
     return InkWell(
-      onTap: id.isEmpty ? null : () => context.push('/orders/$id'),
+      // В executor-приложении /orders/:id — это «мои отклики», а нам нужна
+      // публичная карточка заказа из каталога: /catalog/order/:id.
+      onTap: id.isEmpty ? null : () => context.push('/catalog/order/$id'),
       borderRadius: BorderRadius.circular(10.r),
       child: Container(
         margin: EdgeInsets.only(bottom: 8.h),

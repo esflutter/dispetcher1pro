@@ -289,15 +289,21 @@ class _ChatScreenState extends State<ChatScreen> {
       _cancelRecording();
       return;
     }
-    final ok = await SttRecorder.instance.ensurePermission();
-    if (!ok) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text(
-            'Нет доступа к микрофону. Откройте настройки приложения и включите его.',
-          )),
-        );
-      }
+    // Подписываемся на auto-stop по таймауту (28 сек) — отправим запись автоматически.
+    SttRecorder.instance.onAutoStop = () {
+      if (!mounted || !_isRecording) return;
+      _sendVoice();
+    };
+    final granted = await SttRecorder.instance.ensurePermission();
+    if (!granted) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: const Text('Нет доступа к микрофону.'),
+        action: SnackBarAction(
+          label: 'Настройки',
+          onPressed: () => SttRecorder.instance.openSettings(),
+        ),
+      ));
       return;
     }
     final started = await SttRecorder.instance.start();
@@ -320,34 +326,45 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _sendVoice() async {
     final File? audio = await SttRecorder.instance.stop();
     if (mounted) setState(() => _isRecording = false);
-    if (audio == null) return;
-
-    setState(() => _isProcessing = true);
-    try {
-      final text = await AiClient.instance.transcribeAudio(audio);
-      try { await audio.delete(); } catch (_) {}
-      if (!mounted) return;
-      if (text.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Не удалось распознать речь — попробуйте ещё раз')),
-        );
-        setState(() => _isProcessing = false);
-        return;
-      }
-      // Имитируем что юзер сам это написал — добавляем как сообщение и шлём в ассистент.
-      setState(() {
-        _messages.add(ChatMessage(id: _nextId(), text: text, fromUser: true));
-      });
-      _scrollToBottom();
-      await _sendToAssistant(text);
-    } catch (_) {
+    if (audio == null) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Ошибка распознавания голоса')),
+          const SnackBar(content: Text('Слишком короткое сообщение — задержите кнопку микрофона')),
         );
-        setState(() => _isProcessing = false);
       }
+      return;
     }
+
+    setState(() => _isProcessing = true);
+    String? errorMsg;
+    String? recognized;
+    try {
+      recognized = await AiClient.instance.transcribeAudio(audio);
+    } on AiQuotaExceeded catch (e) {
+      errorMsg = e.message;
+    } on AiAudioTooLargeError {
+      errorMsg = 'Слишком длинное сообщение — больше минуты.';
+    } on AiAudioNoSpeechError {
+      errorMsg = 'Не услышал речи — попробуйте ещё раз, поближе к микрофону.';
+    } catch (_) {
+      errorMsg = 'Не удалось распознать голос. Проверьте интернет.';
+    }
+    try { await audio.delete(); } catch (_) {}
+
+    if (!mounted) return;
+    if (errorMsg != null || recognized == null || recognized.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(errorMsg ?? 'Не удалось распознать речь')),
+      );
+      setState(() => _isProcessing = false);
+      return;
+    }
+    // Распознанный текст показываем как сообщение юзера и шлём ассистенту.
+    setState(() {
+      _messages.add(ChatMessage(id: _nextId(), text: recognized!, fromUser: true));
+    });
+    _scrollToBottom();
+    await _sendToAssistant(recognized);
   }
 
   @override

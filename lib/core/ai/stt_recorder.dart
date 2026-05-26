@@ -25,8 +25,17 @@ class SttRecorder {
   SttRecorder._();
   static final SttRecorder instance = SttRecorder._();
 
+  /// SpeechKit sync API принимает аудио строго до 30 секунд. Останавливаем
+  /// запись на 28с, чтобы оставить запас на сетевую задержку.
+  static const Duration maxDuration = Duration(seconds: 28);
+
   final AudioRecorder _rec = AudioRecorder();
   String? _currentPath;
+  Timer? _maxDurationTimer;
+
+  /// Callback срабатывает, когда auto-stop по maxDuration сработал.
+  /// Клиент использует его, чтобы отправить накопленную запись.
+  void Function()? onAutoStop;
 
   /// Длительность записи в секундах (для UI-таймера).
   Stream<Duration>? _durationStream;
@@ -73,6 +82,11 @@ class SttRecorder {
         ),
         path: path,
       );
+      // Автостоп по верхней границе — иначе SpeechKit отвергнет 30+ сек.
+      _maxDurationTimer?.cancel();
+      _maxDurationTimer = Timer(maxDuration, () {
+        try { onAutoStop?.call(); } catch (_) {}
+      });
       return true;
     } catch (e) {
       if (kDebugMode) debugPrint('[stt-recorder] start failed: $e');
@@ -83,6 +97,8 @@ class SttRecorder {
 
   /// Останавливает запись и возвращает файл. Если записи не было — null.
   Future<File?> stop() async {
+    _maxDurationTimer?.cancel();
+    _maxDurationTimer = null;
     try {
       final path = await _rec.stop();
       _currentPath = null;
@@ -104,6 +120,8 @@ class SttRecorder {
   }
 
   Future<void> cancel() async {
+    _maxDurationTimer?.cancel();
+    _maxDurationTimer = null;
     try {
       await _rec.cancel();
     } catch (_) {}

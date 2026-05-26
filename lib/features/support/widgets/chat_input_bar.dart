@@ -230,7 +230,8 @@ class _RecordingBar extends StatelessWidget {
   final VoidCallback? onCancel;
   final VoidCallback? onSend;
 
-  static const Duration maxDuration = Duration(seconds: 60);
+  // Синхронизировано с SttRecorder.maxDuration (лимит SpeechKit sync API).
+  static const Duration maxDuration = Duration(seconds: 28);
 
   @override
   Widget build(BuildContext context) {

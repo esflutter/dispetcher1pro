@@ -67,6 +67,12 @@ dependencies:
   flutter_local_notifications: ^17.2.3
   # Запись голоса для ИИ-ассистента. Формат OGG/Opus 16 kHz mono —
   # компактно, совместимо с Yandex SpeechKit STT v1 (sync).
+  # record 5.1.2 — последняя версия, где Android/platform_interface не
+  # разъезжаются по API hasPermission(recorderId). На 5.2.x record_linux
+  # 0.7.2 не реализует новый сигнатур и debug-сборка падает.
+  # record 5.2.1 — последняя версия (5.1.2 тоже норм). Главная проблема —
+  # транзитивная record_linux 0.7.2 застряла с устаревшей сигнатурой.
+  # Через overrides ниже подтягиваем свежий record_linux 1.3.1.
   record: ^5.1.2
   # Запрос разрешения на микрофон — у `record` свой ensurePermissions,
   # но он внутри использует permission_handler. Явная зависимость нужна
@@ -79,6 +85,13 @@ dev_dependencies:
   flutter_lints: ^6.0.0
   flutter_launcher_icons: ^0.14.3
   flutter_native_splash: ^2.4.7
+
+# record 5.1.2/5.2.1 объявляет `record_linux: ^0.7.0`, а 0.7.2 не успевает
+# за новыми сигнатурами record_platform_interface (hasPermission +
+# startStream). Через overrides подтягиваем актуальный record_linux 1.3.1,
+# где интерфейс соответствует platform_interface 1.6.x.
+dependency_overrides:
+  record_linux: ^1.3.1
 
 flutter_launcher_icons:
   android: true
