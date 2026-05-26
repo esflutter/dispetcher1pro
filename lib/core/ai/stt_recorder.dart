@@ -37,19 +37,6 @@ class SttRecorder {
   /// Клиент использует его, чтобы отправить накопленную запись.
   void Function()? onAutoStop;
 
-  /// Длительность записи в секундах (для UI-таймера).
-  Stream<Duration>? _durationStream;
-  Stream<Duration> get onDuration => _durationStream ??= _tickEverySecond();
-
-  Stream<Duration> _tickEverySecond() async* {
-    final Stopwatch sw = Stopwatch();
-    sw.start();
-    while (await _rec.isRecording()) {
-      yield sw.elapsed;
-      await Future<void>.delayed(const Duration(milliseconds: 250));
-    }
-  }
-
   Future<bool> isRecording() => _rec.isRecording();
 
   /// Запрашивает разрешение на микрофон. Возвращает true если можно писать.

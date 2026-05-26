@@ -41,7 +41,7 @@ class ChatScreen extends StatefulWidget {
   State<ChatScreen> createState() => _ChatScreenState();
 }
 
-class _ChatScreenState extends State<ChatScreen> {
+class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   // Статичное хранилище сообщений — между переходами по экранам
   // история не сбрасывается. Очищается только из resetHistory()
   // (logout / удаление аккаунта).
@@ -75,6 +75,9 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _isRecording = false;
   bool _isProcessing = false;
   bool _awaitingDocuments = false;
+  /// Защёлка от двойного тапа по микрофону / автостопа + ручной отправки
+  /// одновременно. Сбрасывается после завершения операции.
+  bool _voiceBusy = false;
 
   bool get _showQuickActions =>
       _messages.length == 1 && !_messages.first.fromUser && _pendingImages.isEmpty && !_isProcessing;
@@ -82,6 +85,7 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     final initial = widget.initialMessage?.trim();
     if (initial == null || initial.isEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom(jump: true));
@@ -215,28 +219,29 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _sendToAssistant(String text) async {
     setState(() => _isProcessing = true);
     _scrollToBottom();
+    // Таймаут 30 сек: иначе спиннер «печатает...» крутится бесконечно на
+    // подвисшей сети / Edge Function. YandexGPT обычно укладывается в 5-10 сек.
+    const Duration timeout = Duration(seconds: 30);
     try {
-      final AiReply reply;
-      switch (_mode) {
-        case AiChatKind.search:
-          reply = await AiClient.instance.search(text);
-          break;
-        case AiChatKind.slotFillService:
-          reply = await AiClient.instance.slotFillService(text);
-          break;
-        case AiChatKind.slotFillOrder:
-          // В executor-приложении заказы не создаём, fallback на chat
-          reply = await AiClient.instance.chat(text);
-          break;
-        case AiChatKind.chat:
-          reply = await AiClient.instance.chat(text);
-          break;
+      Future<AiReply> call() {
+        switch (_mode) {
+          case AiChatKind.search:
+            return AiClient.instance.search(text);
+          case AiChatKind.slotFillService:
+            return AiClient.instance.slotFillService(text);
+          case AiChatKind.slotFillOrder:
+          case AiChatKind.chat:
+            return AiClient.instance.chat(text);
+        }
       }
+      final reply = await call().timeout(timeout);
       _appendReply(reply);
     } on AiQuotaExceeded catch (e) {
       _addBotMessage(e.message);
     } on AiContentFilterError catch (e) {
       _addBotMessage(e.message);
+    } on TimeoutException {
+      _addBotMessage('Не дождался ответа. Попробуйте ещё раз.');
     } catch (_) {
       _addBotMessage(
         'Не удалось получить ответ. Проверьте интернет и попробуйте снова.',
@@ -285,15 +290,20 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _toggleRecording() async {
-    if (_isRecording) {
-      _cancelRecording();
-      return;
+    if (_voiceBusy) return;
+    _voiceBusy = true;
+    try {
+      if (_isRecording) {
+        await _cancelRecording();
+        return;
+      }
+      await _startRecording();
+    } finally {
+      _voiceBusy = false;
     }
-    // Подписываемся на auto-stop по таймауту (28 сек) — отправим запись автоматически.
-    SttRecorder.instance.onAutoStop = () {
-      if (!mounted || !_isRecording) return;
-      _sendVoice();
-    };
+  }
+
+  Future<void> _startRecording() async {
     final granted = await SttRecorder.instance.ensurePermission();
     if (!granted) {
       if (!mounted) return;
@@ -315,17 +325,33 @@ class _ChatScreenState extends State<ChatScreen> {
       }
       return;
     }
-    setState(() => _isRecording = true);
+    // Колбэк ставим ПОСЛЕ успешного start (иначе предыдущий таймер мог бы
+    // дотикать на этом колбэке, если запись из прошлого экрана не отменилась).
+    SttRecorder.instance.onAutoStop = () {
+      if (!mounted || !_isRecording) return;
+      _sendVoice();
+    };
+    if (mounted) setState(() => _isRecording = true);
   }
 
   Future<void> _cancelRecording() async {
+    // Снимаем колбэк ДО cancel, чтобы таймер, выстреливший в эту же
+    // миллисекунду, не отправил уже отменяемую запись.
+    SttRecorder.instance.onAutoStop = null;
     await SttRecorder.instance.cancel();
     if (mounted) setState(() => _isRecording = false);
   }
 
   Future<void> _sendVoice() async {
-    final File? audio = await SttRecorder.instance.stop();
+    // Защёлка: и автостоп, и ручная отправка могут дёрнуть _sendVoice
+    // почти одновременно — пускаем строго один раз.
+    if (!_isRecording) return;
+    // Сразу обнуляем флаг записи и колбэк автостопа, чтобы повторный
+    // вход (от автостопа в ту же миллисекунду) увидел !_isRecording.
+    SttRecorder.instance.onAutoStop = null;
     if (mounted) setState(() => _isRecording = false);
+
+    final File? audio = await SttRecorder.instance.stop();
     if (audio == null) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -364,11 +390,30 @@ class _ChatScreenState extends State<ChatScreen> {
       _messages.add(ChatMessage(id: _nextId(), text: recognized!, fromUser: true));
     });
     _scrollToBottom();
-    await _sendToAssistant(recognized);
+    // Лимитируем длину распознанного текста — текстовый инпут тоже ограничен 1000.
+    final String capped = recognized.length > 1000 ? recognized.substring(0, 1000) : recognized;
+    await _sendToAssistant(capped);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Уход в фон во время записи — корректно отменяем (иначе таймер
+    // дотикает в фоне, файл осиротеет, при возврате — рассинхрон UI).
+    if (state == AppLifecycleState.paused && _isRecording) {
+      SttRecorder.instance.cancel();
+      if (mounted) setState(() => _isRecording = false);
+    }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    // Закрытие экрана с активной записью — обязательно отменяем, иначе
+    // запись продолжится «в фоне», onAutoStop выстрелит на удалённом state.
+    if (_isRecording) {
+      SttRecorder.instance.cancel();
+    }
+    SttRecorder.instance.onAutoStop = null;
     _scrollController.dispose();
     super.dispose();
   }

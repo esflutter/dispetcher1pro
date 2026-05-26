@@ -212,7 +212,12 @@ class _OrderCardsHandoff extends StatelessWidget {
               ),
               SizedBox(height: 12.h),
             ],
-            ...items.take(5).map((it) => _OrderTile(item: it)),
+            // Фильтруем карточки без id — иначе пользователь видит их, но
+            // они не кликабельны (silent dead UI). Лучше скрыть совсем.
+            ...items
+                .where((it) => (it['id'] as String? ?? '').isNotEmpty)
+                .take(5)
+                .map((it) => _OrderTile(item: it)),
             if (items.length > 5)
               Padding(
                 padding: EdgeInsets.only(top: 8.h),
@@ -383,6 +388,14 @@ class _DraftReadyHandoff extends StatelessWidget {
               width: double.infinity,
               child: ElevatedButton(
                 onPressed: () {
+                  // Защита от пустого draft: иначе откроется форма без полей,
+                  // и юзер может случайно опубликовать заглушку.
+                  if (draft.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Черновик пуст — расскажите подробнее ассистенту.')),
+                    );
+                    return;
+                  }
                   if (isService) {
                     Navigator.of(context).push(MaterialPageRoute<void>(
                       builder: (_) => CreateServiceScreen(aiDraft: draft),
