@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
@@ -217,7 +218,16 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               .eq('id', user.id);
           VerificationStatus.current = VerificationStatus.inProgress;
         }
-      } catch (_) {/* silent */}
+      } catch (e) {
+        // Не молчим: иначе юзер увидит «Документы отправлены», а статус
+        // в БД останется null. Минимум — лог и поднимаем флаг локально,
+        // чтобы UI отразил «На проверке» — серверная синхронизация
+        // повторится на следующем обращении к профилю.
+        if (kDebugMode) {
+          debugPrint('[chat] profile verification_status update failed: $e');
+        }
+        VerificationStatus.current = VerificationStatus.inProgress;
+      }
       return;
     }
 
@@ -238,6 +248,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             return AiClient.instance.search(text);
           case AiChatKind.slotFillService:
             return AiClient.instance.slotFillService(text);
+          // slotFillOrder в исполнительском приложении невозможен (заказы
+          // создают только заказчики). Дополнительная защита от регрессии.
           case AiChatKind.slotFillOrder:
           case AiChatKind.chat:
             return AiClient.instance.chat(text);
@@ -361,12 +373,18 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     if (mounted) setState(() => _isRecording = false);
 
     final File? audio = await SttRecorder.instance.stop();
-    if (audio == null) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Слишком короткое сообщение — задержите кнопку микрофона')),
-        );
+    // После await — экран мог закрыться (юзер свайпнул назад). Без guard
+    // следующий setState бросит «setState() called after dispose()».
+    if (!mounted) {
+      if (audio != null) {
+        try { await audio.delete(); } catch (_) {}
       }
+      return;
+    }
+    if (audio == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Слишком короткое сообщение — задержите кнопку микрофона')),
+      );
       return;
     }
 

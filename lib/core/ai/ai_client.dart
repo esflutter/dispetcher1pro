@@ -141,62 +141,79 @@ class AiClient {
       'intent':     ?intent,
     };
 
+    // ВАЖНО: supabase_flutter functions_client@2.5.0 бросает
+    // FunctionException на ЛЮБОМ не-2xx статусе ДО того, как мы успеем
+    // прочитать res.status. Поэтому весь разбор кодов идёт в catch.
     try {
       final FunctionResponse res = await _sb.functions.invoke(
         functionName,
         body: body,
       );
-      final status = res.status;
-      final data   = res.data;
+      final data = res.data;
       final Map<String, dynamic> json = data is Map<String, dynamic>
           ? data
           : <String, dynamic>{};
 
-      // 402 — лимит запросов
+      final reply = _buildReply(json);
+      if (reply.sessionId.isNotEmpty) {
+        _sessionIds[kind] = reply.sessionId;
+      }
+      return reply;
+    } on FunctionException catch (e) {
+      // Тело ошибки лежит в e.details — там же, что вернула Edge Function.
+      final Map<String, dynamic> json = e.details is Map<String, dynamic>
+          ? e.details as Map<String, dynamic>
+          : <String, dynamic>{};
+      final int status = e.status;
+
+      // ВАЖНО: если сервер успел вернуть session_id даже при ошибке —
+      // сохраняем его, чтобы следующий запрос продолжил ту же сессию.
+      // Иначе теряем контекст разговора при content_filter.
+      final String? newSid = json['session_id'] as String?;
+      if (newSid != null && newSid.isNotEmpty) {
+        _sessionIds[kind] = newSid;
+      }
+
       if (status == 402) {
         throw AiQuotaExceeded(json['message'] as String? ?? 'Лимит исчерпан');
       }
-      // 422 — фильтр контента (сообщение для юзера, как обычный ответ)
-      if (status == 422 || (json['error'] == 'content_filter')) {
+      if (status == 422 && json['error'] == 'content_filter') {
         throw AiContentFilterError(
           json['message'] as String? ?? 'Не удалось обработать запрос',
         );
       }
-      // 503 — глобальный дневной бюджет исчерпан (защита от наплыва)
       if (status == 503) {
         throw AiQuotaExceeded(
           'Ассистент сейчас перегружен. Попробуйте через несколько минут.',
         );
       }
-      if (status >= 400) {
-        throw Exception('ai-$functionName failed: status=$status, error=${json['error']}');
+      if (kDebugMode) {
+        debugPrint('[ai-client] $functionName status=$status error=${json['error']}');
       }
-
-      final reply = AiReply(
-        sessionId: json['session_id'] as String? ?? '',
-        text:      json['reply']      as String? ?? '',
-        data:      json['data']       as Map<String, dynamic>?,
-        cached:    json['cached']     as bool?   ?? false,
-        quota: json['quota'] is Map<String, dynamic>
-            ? AiQuota(
-                used:  (json['quota']['used']  as num? ?? 0).toInt(),
-                total: (json['quota']['total'] as num? ?? 0).toInt(),
-              )
-            : null,
-      );
-
-      if (reply.sessionId.isNotEmpty) {
-        _sessionIds[kind] = reply.sessionId;
-      }
-      return reply;
+      rethrow;
     } on AiQuotaExceeded {
       rethrow;
     } on AiContentFilterError {
       rethrow;
     } catch (e) {
-      if (kDebugMode) debugPrint('[ai-client] $functionName failed: $e');
+      if (kDebugMode) debugPrint('[ai-client] $functionName failed: ${e.runtimeType}');
       rethrow;
     }
+  }
+
+  AiReply _buildReply(Map<String, dynamic> json) {
+    return AiReply(
+      sessionId: json['session_id'] as String? ?? '',
+      text:      json['reply']      as String? ?? '',
+      data:      json['data']       as Map<String, dynamic>?,
+      cached:    json['cached']     as bool?   ?? false,
+      quota: json['quota'] is Map<String, dynamic>
+          ? AiQuota(
+              used:  (json['quota']['used']  as num? ?? 0).toInt(),
+              total: (json['quota']['total'] as num? ?? 0).toInt(),
+            )
+          : null,
+    );
   }
 
   /// Распознавание голоса через stt-yandex.
@@ -216,47 +233,49 @@ class AiClient {
         body:          bytes,
         queryParameters: <String, dynamic>{ 'format': format },
       );
-      final status = res.status;
-      final data   = res.data;
+      final data = res.data;
       final Map<String, dynamic> json = data is Map<String, dynamic>
           ? data
           : <String, dynamic>{};
-
+      if (json['text'] is String) {
+        return (json['text'] as String).trim();
+      }
+      return '';
+    } on FunctionException catch (e) {
+      // Все не-2xx статусы прилетают сюда — раньше мы их разбирали
+      // ПОСЛЕ invoke, но supabase_flutter бросает FunctionException
+      // и до проверки status дело не доходит.
+      final Map<String, dynamic> json = e.details is Map<String, dynamic>
+          ? e.details as Map<String, dynamic>
+          : <String, dynamic>{};
+      final int status = e.status;
       if (status == 402) {
         throw AiQuotaExceeded(json['message'] as String? ?? 'Лимит исчерпан');
       }
       if (status == 413 || json['error'] == 'audio_too_large') {
         throw AiAudioTooLargeError();
       }
-      if (status == 422 && json['error'] == 'no_speech') {
-        throw AiAudioNoSpeechError();
-      }
       if (status == 422 && json['error'] == 'invalid_format') {
         throw AiAudioInvalidFormatError();
       }
       if (status == 422) {
-        // audio_too_short и прочие — общая ветка
         throw AiAudioNoSpeechError();
       }
       if (status == 500 && json['error'] == 'stt_auth_error') {
-        // Серверная проблема, не интернет
         throw Exception('Ассистент временно недоступен (auth).');
       }
-      if (status >= 400) {
-        throw Exception('stt-yandex failed: status=$status, error=${json['error']}');
-      }
-      if (json['text'] is String) {
-        return (json['text'] as String).trim();
-      }
-      return '';
+      if (kDebugMode) debugPrint('[ai-client] transcribe status=$status error=${json['error']}');
+      rethrow;
     } on AiQuotaExceeded {
       rethrow;
     } on AiAudioTooLargeError {
       rethrow;
     } on AiAudioNoSpeechError {
       rethrow;
+    } on AiAudioInvalidFormatError {
+      rethrow;
     } catch (e) {
-      if (kDebugMode) debugPrint('[ai-client] transcribe failed: $e');
+      if (kDebugMode) debugPrint('[ai-client] transcribe failed: ${e.runtimeType}');
       rethrow;
     }
   }
