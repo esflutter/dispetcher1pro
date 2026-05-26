@@ -54,8 +54,8 @@ class SupportHomeScreen extends StatelessWidget {
                     ),
                     SizedBox(height: 8.h),
                     _ActionChip(
-                      label: 'Создать карточку исполнителя',
-                      onTap: () => _openChat(context, initialMessage: 'Создать карточку исполнителя'),
+                      label: 'Найти заказы',
+                      onTap: () => _openChat(context, initialMessage: 'Найти заказы'),
                     ),
                   ],
                 ),

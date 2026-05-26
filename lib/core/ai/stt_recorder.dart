@@ -55,6 +55,16 @@ class SttRecorder {
     final granted = await ensurePermission();
     if (!granted) return false;
     try {
+      // Проверка поддержки Opus. На части устройств Xiaomi/Huawei/MediaTek
+      // нативный энкодер Opus отсутствует — record-пакет молча фолбэчится
+      // на AAC, файл получает расширение .ogg, но внутри AAC, SpeechKit
+      // его отвергает с непонятной ошибкой. Лучше отказать сразу с
+      // понятным сообщением и попросить юзера написать текстом.
+      final opusOk = await _rec.isEncoderSupported(AudioEncoder.opus);
+      if (!opusOk) {
+        if (kDebugMode) debugPrint('[stt-recorder] device does not support Opus');
+        return false;
+      }
       // Уникальное имя файла, чтобы не было коллизии при быстрых перезаписях.
       final dir = await getTemporaryDirectory();
       final path = '${dir.path}/voice_${DateTime.now().microsecondsSinceEpoch}.ogg';
@@ -94,8 +104,10 @@ class SttRecorder {
       // Если пустой файл — удалим и вернём null.
       if (!await f.exists()) return null;
       final len = await f.length();
-      if (len < 500) {
-        // меньше ~0.5 KB — слишком короткая запись, smysl нет.
+      // Опускаем порог до 200 байт — короткие «да», «нет», «ага» в
+      // OGG/Opus 16k mono весят ~200-400 байт. Раньше с порогом 500
+      // их обрезали и юзер видел «слишком короткое сообщение».
+      if (len < 200) {
         try { await f.delete(); } catch (_) {}
         return null;
       }

@@ -15,6 +15,7 @@ import 'core/push/push_handler.dart';
 import 'core/push/push_service.dart';
 import 'core/realtime/realtime_service.dart';
 import 'core/settings/settings_service.dart';
+import 'features/support/chat_screen.dart';
 import 'core/theme/system_bar_style.dart';
 
 /// Обработчик пушей в фоне / при закрытом приложении.
@@ -116,9 +117,9 @@ Future<void> main() async {
       if (event.event == AuthChangeEvent.signedOut) {
         await RealtimeService.instance.stop();
         await NotificationsService.instance.stop();
-        // При logout помечаем FCM-токен этого устройства как invalidated
-        // (чтобы сервер не слал пуши предыдущему юзеру) и удаляем токен
-        // локально. Если Firebase не поднялся — нечего инвалидировать.
+        // Чистим переписку ассистента и идентификаторы сессий — иначе
+        // следующий юзер на этом устройстве увидит чужие сообщения.
+        ChatScreen.resetHistory();
         if (firebaseReady) {
           await PushService.instance.clearForCurrentUser();
         }

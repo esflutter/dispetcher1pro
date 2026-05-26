@@ -162,6 +162,12 @@ class AiClient {
           json['message'] as String? ?? 'Не удалось обработать запрос',
         );
       }
+      // 503 — глобальный дневной бюджет исчерпан (защита от наплыва)
+      if (status == 503) {
+        throw AiQuotaExceeded(
+          'Ассистент сейчас перегружен. Попробуйте через несколько минут.',
+        );
+      }
       if (status >= 400) {
         throw Exception('ai-$functionName failed: status=$status, error=${json['error']}');
       }
@@ -222,8 +228,19 @@ class AiClient {
       if (status == 413 || json['error'] == 'audio_too_large') {
         throw AiAudioTooLargeError();
       }
-      if (status == 422) {
+      if (status == 422 && json['error'] == 'no_speech') {
         throw AiAudioNoSpeechError();
+      }
+      if (status == 422 && json['error'] == 'invalid_format') {
+        throw AiAudioInvalidFormatError();
+      }
+      if (status == 422) {
+        // audio_too_short и прочие — общая ветка
+        throw AiAudioNoSpeechError();
+      }
+      if (status == 500 && json['error'] == 'stt_auth_error') {
+        // Серверная проблема, не интернет
+        throw Exception('Ассистент временно недоступен (auth).');
       }
       if (status >= 400) {
         throw Exception('stt-yandex failed: status=$status, error=${json['error']}');
@@ -255,4 +272,10 @@ class AiAudioTooLargeError implements Exception {
 class AiAudioNoSpeechError implements Exception {
   @override
   String toString() => 'AiAudioNoSpeechError';
+}
+
+/// SpeechKit отверг формат (например, AAC вместо Opus на старых Xiaomi).
+class AiAudioInvalidFormatError implements Exception {
+  @override
+  String toString() => 'AiAudioInvalidFormatError';
 }

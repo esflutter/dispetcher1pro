@@ -88,6 +88,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     final initial = widget.initialMessage?.trim();
     if (initial == null || initial.isEmpty) {
+      // Открытие чата без intent — это «обычный разговор». Сбрасываем
+      // режим, иначе предыдущий slot-fill / search режим залипает и
+      // следующее сообщение пойдёт не в ai-chat.
+      _mode = AiChatKind.chat;
       WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom(jump: true));
       return;
     }
@@ -128,16 +132,21 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   }
 
   void _addBotMessage(String text, {Map<String, dynamic>? data, ChatMessageType type = ChatMessageType.text}) {
-    if (!mounted) return;
-    setState(() {
-      _messages.add(ChatMessage(
-        id:   _nextId(),
-        text: text,
-        fromUser: false,
-        type: type,
-        data: data,
-      ));
-    });
+    // Если экран уже не активен (юзер ушёл, пока шёл LLM-запрос) — всё равно
+    // добавляем сообщение в статичный список, чтобы при возврате юзер его увидел.
+    // setState вызываем только когда mounted, иначе будет исключение.
+    final msg = ChatMessage(
+      id:   _nextId(),
+      text: text,
+      fromUser: false,
+      type: type,
+      data: data,
+    );
+    if (!mounted) {
+      _messages.add(msg);
+      return;
+    }
+    setState(() => _messages.add(msg));
     _scrollToBottom();
   }
 
@@ -372,6 +381,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       errorMsg = 'Слишком длинное сообщение — больше минуты.';
     } on AiAudioNoSpeechError {
       errorMsg = 'Не услышал речи — попробуйте ещё раз, поближе к микрофону.';
+    } on AiAudioInvalidFormatError {
+      errorMsg = 'Запись в неподдерживаемом формате. Напишите, пожалуйста, текстом.';
     } catch (_) {
       errorMsg = 'Не удалось распознать голос. Проверьте интернет.';
     }
@@ -489,7 +500,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                       label: 'Разместить услугу',
                       onTap: () {
                         _mode = AiChatKind.slotFillService;
-                        _handleSend('Хочу разместить услугу');
+                        _addBotMessage('Опишите услугу — текстом или голосом, я заполню всё за вас.');
                       },
                     ),
                     SizedBox(height: 8.h),
@@ -497,7 +508,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                       label: 'Найти заказы',
                       onTap: () {
                         _mode = AiChatKind.search;
-                        _handleSend('Найди подходящие заказы');
+                        _addBotMessage('Опишите какой заказ ищете — техника, регион, даты. Можно голосом.');
                       },
                     ),
                     SizedBox(height: 8.h),
