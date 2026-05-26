@@ -65,6 +65,13 @@ dependencies:
   firebase_core: ^3.6.0
   firebase_messaging: ^15.1.3
   flutter_local_notifications: ^17.2.3
+  # Запись голоса для ИИ-ассистента. Формат OGG/Opus 16 kHz mono —
+  # компактно, совместимо с Yandex SpeechKit STT v1 (sync).
+  record: ^5.1.2
+  # Запрос разрешения на микрофон — у `record` свой ensurePermissions,
+  # но он внутри использует permission_handler. Явная зависимость нужна
+  # для проверки rationale + открытия настроек при denied-permanent.
+  permission_handler: ^11.3.1
 
 dev_dependencies:
   flutter_test:

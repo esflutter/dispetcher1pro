@@ -12,6 +12,9 @@
          Запрос системного диалога делает PushService.registerForCurrentUser
          после OTP-логина. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- Микрофон для голосовых сообщений в ИИ-ассистенте.
+         Запись идёт через record-пакет → отправка в Yandex SpeechKit STT. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <application
         android:label="Диспетчер №1 PRO"
         android:name="${applicationName}"

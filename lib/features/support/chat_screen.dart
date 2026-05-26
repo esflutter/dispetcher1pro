@@ -1,8 +1,13 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:dispatcher_1/core/ai/ai_client.dart';
+import 'package:dispatcher_1/core/ai/stt_recorder.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
 import 'package:dispatcher_1/core/utils/photo_source.dart';
@@ -11,100 +16,125 @@ import 'package:dispatcher_1/features/support/widgets/chat_bubble.dart';
 import 'package:dispatcher_1/features/support/widgets/chat_input_bar.dart';
 
 /// Экран чата с ИИ-ассистентом «Поддержка».
+///
+/// Поддерживает 3 режима:
+///   - chat              — обычный FAQ / общий разговор (по умолчанию)
+///   - slotFillService   — создание услуги пошагово (initialMessage='create_service')
+///   - search            — поиск заказов по описанию (через quick action или
+///                         когда юзер пишет «найди заказы…»)
+///
+/// Для `initialMessage='verify_documents'` — отдельный flow отправки фото
+/// документов (на сервер пишет profiles.verification_status='pending').
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key, this.initialMessage});
 
   final String? initialMessage;
 
-  /// Сбрасывает историю чата к начальному приветствию. Вызывается из
-  /// [auth_reset._clearAll] при logout/удалении аккаунта.
-  static void resetHistory() => _ChatScreenState.resetHistory();
+  /// Сбрасывает историю чата к начальному приветствию.
+  /// Вызывается при logout/удалении аккаунта.
+  static void resetHistory() {
+    _ChatScreenState.resetHistory();
+    AiClient.instance.resetSessions();
+  }
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
 }
 
 class _ChatScreenState extends State<ChatScreen> {
+  // Статичное хранилище сообщений — между переходами по экранам
+  // история не сбрасывается. Очищается только из resetHistory()
+  // (logout / удаление аккаунта).
   static final List<ChatMessage> _messages = <ChatMessage>[
     const ChatMessage(
       id: 'm1',
-      text: 'Здравствуйте! Чем могу помочь?',
+      text: 'Здравствуйте! Я помогу найти заказы, создать услугу, заполнить '
+            'карточку или ответить на вопрос по приложению. С чего начнём?',
       fromUser: false,
     ),
   ];
 
+  static AiChatKind _mode = AiChatKind.chat;
   static int _idCounter = 0;
 
-  /// Сбрасывает историю чата к начальному состоянию (одно приветствие
-  /// от ассистента). Вызывается из [auth_reset._clearAll], чтобы при
-  /// смене пользователя на устройстве чат был чистый.
   static void resetHistory() {
     _messages
       ..clear()
       ..add(const ChatMessage(
         id: 'm1',
-        text: 'Здравствуйте! Чем могу помочь?',
+        text: 'Здравствуйте! Я помогу найти заказы, создать услугу, заполнить '
+              'карточку или ответить на вопрос по приложению. С чего начнём?',
         fromUser: false,
       ));
+    _mode = AiChatKind.chat;
     _idCounter = 0;
   }
 
   final List<String> _pendingImages = <String>[];
   final ScrollController _scrollController = ScrollController();
   bool _isRecording = false;
+  bool _isProcessing = false;
+  bool _awaitingDocuments = false;
 
   bool get _showQuickActions =>
-      _messages.length == 1 && !_messages.first.fromUser && _pendingImages.isEmpty;
-
-  bool _awaitingDocuments = false;
+      _messages.length == 1 && !_messages.first.fromUser && _pendingImages.isEmpty && !_isProcessing;
 
   @override
   void initState() {
     super.initState();
-    final initial = widget.initialMessage;
-    if (initial != null && initial.trim().isNotEmpty) {
-      if (initial.trim() == 'verify_documents') {
-        _awaitingDocuments = true;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          setState(() {
-            _messages.add(ChatMessage(
-              id: _nextId(),
-              text: 'Отправьте, пожалуйста, фото документов, чтобы мы могли '
-                  'подтвердить ваш профиль:\n\n'
-                  '• ФИО или название организации\n'
-                  '• Паспорт (первая страница)\n'
-                  '• Фото техники\n'
-                  '• Документы на технику\n'
-                  '• Удостоверение на право управления техникой\n'
-                  '• Водительское удостоверение\n\n'
-                  'Можно отправить всё одним сообщением или по отдельности.',
-              fromUser: false,
-            ));
-            _scrollToBottom();
-          });
-        });
-      } else if (initial.trim() == 'create_service') {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          setState(() {
-            _messages.add(ChatMessage(
-              id: _nextId(),
-              text: 'Опишите услугу — текстом или голосом, я заполню всё за вас',
-              fromUser: false,
-            ));
-            _scrollToBottom();
-          });
-        });
-      } else {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          _handleSend(initial.trim());
-        });
-      }
+    final initial = widget.initialMessage?.trim();
+    if (initial == null || initial.isEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom(jump: true));
+      return;
     }
+
+    if (initial == 'verify_documents') {
+      _awaitingDocuments = true;
+      _addBotMessage(
+        'Отправьте, пожалуйста, фото документов, чтобы мы могли '
+        'подтвердить ваш профиль:\n\n'
+        '• ФИО или название организации\n'
+        '• Паспорт (первая страница)\n'
+        '• Фото техники\n'
+        '• Документы на технику\n'
+        '• Удостоверение на право управления техникой\n'
+        '• Водительское удостоверение\n\n'
+        'Можно отправить всё одним сообщением или по отдельности.',
+      );
+      return;
+    }
+
+    if (initial == 'create_service' || initial == 'Разместить услугу') {
+      _mode = AiChatKind.slotFillService;
+      _addBotMessage('Опишите услугу — текстом или голосом, я заполню всё за вас.');
+      return;
+    }
+
+    if (initial == 'find_orders' || initial == 'Найти заказы') {
+      _mode = AiChatKind.search;
+      _addBotMessage('Опишите какой заказ ищете — техника, регион, даты.');
+      return;
+    }
+
+    // Любой другой initial = реальный запрос юзера, отправляем как chat.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
-        _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
-      }
+      _mode = AiChatKind.chat;
+      _handleSend(initial);
     });
+  }
+
+  void _addBotMessage(String text, {Map<String, dynamic>? data, ChatMessageType type = ChatMessageType.text}) {
+    if (!mounted) return;
+    setState(() {
+      _messages.add(ChatMessage(
+        id:   _nextId(),
+        text: text,
+        fromUser: false,
+        type: type,
+        data: data,
+      ));
+    });
+    _scrollToBottom();
   }
 
   String _nextId() {
@@ -112,116 +142,140 @@ class _ChatScreenState extends State<ChatScreen> {
     return 'm${DateTime.now().millisecondsSinceEpoch}_$_idCounter';
   }
 
-  void _scrollToBottom() {
-    if (!_scrollController.hasClients) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _scrollController.animateTo(
-        _scrollController.position.maxScrollExtent,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOut,
-      );
-    });
+  void _scrollToBottom({bool jump = false}) {
+    if (!_scrollController.hasClients) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom(jump: jump));
+      return;
+    }
+    final pos = _scrollController.position.maxScrollExtent;
+    if (jump) {
+      _scrollController.jumpTo(pos);
+    } else {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!_scrollController.hasClients) return;
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOut,
+        );
+      });
+    }
   }
 
-  void _handleSend(String text) {
+  Future<void> _handleSend(String text) async {
     final hasImages = _pendingImages.isNotEmpty;
     if (text.isEmpty && !hasImages) return;
+    if (_isProcessing) return;
 
     setState(() {
       if (hasImages) {
         if (_awaitingDocuments) {
           VerificationStatus.current = VerificationStatus.inProgress;
         }
-        _messages.add(
-          ChatMessage(
-            id: _nextId(),
-            text: '',
-            fromUser: true,
-            type: ChatMessageType.image,
-            imageAssets: List<String>.from(_pendingImages),
-          ),
-        );
+        _messages.add(ChatMessage(
+          id:   _nextId(),
+          text: '',
+          fromUser: true,
+          type: ChatMessageType.image,
+          imageAssets: List<String>.from(_pendingImages),
+        ));
         _pendingImages.clear();
       }
       if (text.isNotEmpty) {
-        _messages.add(
-          ChatMessage(id: _nextId(), text: text, fromUser: true),
-        );
+        _messages.add(ChatMessage(id: _nextId(), text: text, fromUser: true));
       }
-      _scrollToBottom();
     });
+    _scrollToBottom();
 
-    // Заглушка ответа ассистента
-    Future<void>.delayed(const Duration(milliseconds: 800), () async {
-      if (!mounted) return;
-      final bool documentsSentNow = _awaitingDocuments && hasImages;
-      setState(() {
-        if (documentsSentNow) {
-          _awaitingDocuments = false;
-          _messages.add(
-            ChatMessage(
-              id: _nextId(),
-              text: 'Документы отправлены 👍\n'
-                  'Результат проверки появится в профиле.\n'
-                  'Мы также пришлём уведомление.',
-              fromUser: false,
-            ),
-          );
-        } else if (text.toLowerCase().contains('экскават')) {
-          _messages.add(
-            ChatMessage(
-              id: _nextId(),
-              text: 'В каком городе вы ищите заказ?',
-              fromUser: false,
-            ),
-          );
-        } else {
-          _messages.add(
-            ChatMessage(
-              id: _nextId(),
-              text: 'Спасибо! Я уточню детали и вернусь с ответом.',
-              fromUser: false,
-            ),
-          );
+    // Отправка документов (отдельный flow, без LLM).
+    if (_awaitingDocuments && hasImages) {
+      _awaitingDocuments = false;
+      _addBotMessage(
+        'Документы отправлены 👍\n'
+        'Результат проверки появится в профиле.\n'
+        'Мы также пришлём уведомление.',
+      );
+      try {
+        final user = Supabase.instance.client.auth.currentUser;
+        if (user != null) {
+          await Supabase.instance.client
+              .from('profiles')
+              .update(<String, dynamic>{'verification_status': 'pending'})
+              .eq('id', user.id);
+          VerificationStatus.current = VerificationStatus.inProgress;
         }
-        _scrollToBottom();
-      });
-      // Реальная фиксация сабмита: переводим
-      // profiles.verification_status в 'pending'. До интеграции
-      // полноценного UI загрузки документов — этого достаточно,
-      // чтобы статус в профиле и каталоге обновился.
-      if (documentsSentNow) {
-        try {
-          final user = Supabase.instance.client.auth.currentUser;
-          if (user != null) {
-            await Supabase.instance.client
-                .from('profiles')
-                .update(<String, dynamic>{
-              'verification_status': 'pending',
-            }).eq('id', user.id);
-            VerificationStatus.current = VerificationStatus.inProgress;
-          }
-        } catch (_) {/* silent */}
+      } catch (_) {/* silent */}
+      return;
+    }
+
+    if (text.isEmpty) return;
+    await _sendToAssistant(text);
+  }
+
+  Future<void> _sendToAssistant(String text) async {
+    setState(() => _isProcessing = true);
+    _scrollToBottom();
+    try {
+      final AiReply reply;
+      switch (_mode) {
+        case AiChatKind.search:
+          reply = await AiClient.instance.search(text);
+          break;
+        case AiChatKind.slotFillService:
+          reply = await AiClient.instance.slotFillService(text);
+          break;
+        case AiChatKind.slotFillOrder:
+          // В executor-приложении заказы не создаём, fallback на chat
+          reply = await AiClient.instance.chat(text);
+          break;
+        case AiChatKind.chat:
+          reply = await AiClient.instance.chat(text);
+          break;
       }
-    });
+      _appendReply(reply);
+    } on AiQuotaExceeded catch (e) {
+      _addBotMessage(e.message);
+    } on AiContentFilterError catch (e) {
+      _addBotMessage(e.message);
+    } catch (_) {
+      _addBotMessage(
+        'Не удалось получить ответ. Проверьте интернет и попробуйте снова.',
+      );
+    } finally {
+      if (mounted) setState(() => _isProcessing = false);
+    }
+  }
+
+  void _appendReply(AiReply reply) {
+    final kind = reply.dataKind;
+    if (kind == 'order_cards' && reply.items.isNotEmpty) {
+      _addBotMessage(reply.text, type: ChatMessageType.orderCards, data: reply.data);
+      return;
+    }
+    if (kind == 'executor_cards' && reply.items.isNotEmpty) {
+      _addBotMessage(reply.text, type: ChatMessageType.executorCards, data: reply.data);
+      return;
+    }
+    if ((kind == 'order_draft' || kind == 'service_draft') && reply.isDraftReady) {
+      _addBotMessage(reply.text, type: ChatMessageType.draftReady, data: reply.data);
+      return;
+    }
+    // slot_progress / error / обычный текст
+    _addBotMessage(reply.text);
   }
 
   Future<void> _handleAttach() async {
     final int remaining = 8 - _pendingImages.length;
     if (remaining <= 0) return;
-    final List<String> picked =
-        await pickMultipleImagesFromGallery(limit: remaining, context: context);
+    final picked = await pickMultipleImagesFromGallery(limit: remaining, context: context);
     if (picked.isEmpty || !mounted) return;
-    final List<String> kept =
-        picked.length > remaining ? picked.sublist(0, remaining) : picked;
+    final kept = picked.length > remaining ? picked.sublist(0, remaining) : picked;
     setState(() => _pendingImages.addAll(kept));
     if (picked.length > remaining) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Можно добавить не более 8 фото. Добавлены первые ${kept.length}.',
-          ),
-        ),
+        SnackBar(content: Text(
+          'Можно добавить не более 8 фото. Добавлены первые ${kept.length}.',
+        )),
       );
     }
   }
@@ -230,26 +284,70 @@ class _ChatScreenState extends State<ChatScreen> {
     setState(() => _pendingImages.removeAt(index));
   }
 
-  void _toggleRecording() {
-    setState(() => _isRecording = !_isRecording);
+  Future<void> _toggleRecording() async {
+    if (_isRecording) {
+      _cancelRecording();
+      return;
+    }
+    final ok = await SttRecorder.instance.ensurePermission();
+    if (!ok) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text(
+            'Нет доступа к микрофону. Откройте настройки приложения и включите его.',
+          )),
+        );
+      }
+      return;
+    }
+    final started = await SttRecorder.instance.start();
+    if (!started) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Не удалось начать запись')),
+        );
+      }
+      return;
+    }
+    setState(() => _isRecording = true);
   }
 
-  void _cancelRecording() {
-    setState(() => _isRecording = false);
+  Future<void> _cancelRecording() async {
+    await SttRecorder.instance.cancel();
+    if (mounted) setState(() => _isRecording = false);
   }
 
-  void _sendVoice() {
-    setState(() {
-      _isRecording = false;
-      _messages.add(
-        ChatMessage(
-          id: _nextId(),
-          text: '*Текст голосового сообщения*',
-          fromUser: true,
-        ),
-      );
+  Future<void> _sendVoice() async {
+    final File? audio = await SttRecorder.instance.stop();
+    if (mounted) setState(() => _isRecording = false);
+    if (audio == null) return;
+
+    setState(() => _isProcessing = true);
+    try {
+      final text = await AiClient.instance.transcribeAudio(audio);
+      try { await audio.delete(); } catch (_) {}
+      if (!mounted) return;
+      if (text.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Не удалось распознать речь — попробуйте ещё раз')),
+        );
+        setState(() => _isProcessing = false);
+        return;
+      }
+      // Имитируем что юзер сам это написал — добавляем как сообщение и шлём в ассистент.
+      setState(() {
+        _messages.add(ChatMessage(id: _nextId(), text: text, fromUser: true));
+      });
       _scrollToBottom();
-    });
+      await _sendToAssistant(text);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Ошибка распознавания голоса')),
+        );
+        setState(() => _isProcessing = false);
+      }
+    }
   }
 
   @override
@@ -306,10 +404,13 @@ class _ChatScreenState extends State<ChatScreen> {
             child: ListView.separated(
               controller: _scrollController,
               padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 16.h),
-              itemCount: _messages.length,
-              separatorBuilder: (_, _) => SizedBox.shrink(),
+              itemCount: _messages.length + (_isProcessing ? 1 : 0),
+              separatorBuilder: (_, _) => const SizedBox.shrink(),
               itemBuilder: (context, index) {
-                return ChatBubble(message: _messages[index]);
+                if (index < _messages.length) {
+                  return ChatBubble(message: _messages[index]);
+                }
+                return const TypingBubble();
               },
             ),
           ),
@@ -317,22 +418,36 @@ class _ChatScreenState extends State<ChatScreen> {
             Align(
               alignment: Alignment.centerLeft,
               child: Padding(
-              padding: EdgeInsets.fromLTRB(16.w, 0, 16.w, 54.h),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _QuickActionChip(
-                    label: 'Разместить услугу',
-                    onTap: () => _handleSend('Разместить услугу'),
-                  ),
-                  SizedBox(height: 8.h),
-                  _QuickActionChip(
-                    label: 'Создать карточку исполнителя',
-                    onTap: () => _handleSend('Создать карточку исполнителя'),
-                  ),
-                ],
-              ),
+                padding: EdgeInsets.fromLTRB(16.w, 0, 16.w, 54.h),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _QuickActionChip(
+                      label: 'Разместить услугу',
+                      onTap: () {
+                        _mode = AiChatKind.slotFillService;
+                        _handleSend('Хочу разместить услугу');
+                      },
+                    ),
+                    SizedBox(height: 8.h),
+                    _QuickActionChip(
+                      label: 'Найти заказы',
+                      onTap: () {
+                        _mode = AiChatKind.search;
+                        _handleSend('Найди подходящие заказы');
+                      },
+                    ),
+                    SizedBox(height: 8.h),
+                    _QuickActionChip(
+                      label: 'Заполнить карточку',
+                      onTap: () {
+                        _mode = AiChatKind.chat;
+                        _handleSend('Как заполнить карточку исполнителя?');
+                      },
+                    ),
+                  ],
+                ),
               ),
             ),
           ChatInputBar(

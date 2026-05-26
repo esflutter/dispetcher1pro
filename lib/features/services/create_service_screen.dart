@@ -39,9 +39,13 @@ String hoursWord(String text) {
 /// Экран «Создание / редактирование услуги».
 /// При передаче [serviceId] работает в режиме редактирования.
 class CreateServiceScreen extends StatefulWidget {
-  const CreateServiceScreen({super.key, this.serviceId});
+  const CreateServiceScreen({super.key, this.serviceId, this.aiDraft});
 
   final String? serviceId;
+
+  /// Черновик от ИИ-ассистента (slot-fill). Если передан — поля
+  /// заполняются автоматически.
+  final Map<String, dynamic>? aiDraft;
 
   @override
   State<CreateServiceScreen> createState() => _CreateServiceScreenState();
@@ -126,6 +130,76 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
     }
     if (mc == null || cc == null) {
       _loadDirectories();
+    }
+    if (widget.aiDraft != null && !_isEdit) {
+      _applyAiDraft(widget.aiDraft!, mc, cc);
+    }
+  }
+
+  /// Применяет ИИ-черновик к полям формы (best-effort).
+  void _applyAiDraft(
+    Map<String, dynamic> draft,
+    List<cat.MachineryRef>? mcCached,
+    List<cat.CategoryRef>? ccCached,
+  ) {
+    final title = (draft['title'] as String? ?? '').trim();
+    final desc  = (draft['description'] as String? ?? '').trim();
+    if (title.isNotEmpty) _titleCtrl.text = title;
+    if (desc.isNotEmpty)  _descCtrl.text  = desc;
+
+    final ph = draft['price_per_hour'];
+    final pd = draft['price_per_day'];
+    final mh = draft['min_hours'];
+    if (ph is num) _priceHourCtrl.text = ph.toString();
+    if (pd is num) _priceDayCtrl.text  = pd.toString();
+    if (mh is num) _minHoursCtrl.text  = mh.toString();
+
+    final machIds = (draft['machinery_ids'] is List)
+        ? (draft['machinery_ids'] as List).whereType<int>().toSet()
+        : <int>{};
+    final catIds = (draft['category_ids'] is List)
+        ? (draft['category_ids'] as List).whereType<int>().toSet()
+        : <int>{};
+
+    void mapIds() {
+      final mc = mcCached ?? CatalogService.instance.cachedMachinery;
+      final cc = ccCached ?? CatalogService.instance.cachedCategories;
+      if (mc != null) {
+        // Услуга — максимум одна техника. Берём первый матч.
+        for (final m in mc) {
+          if (machIds.contains(m.id)) {
+            _selMach.add(m.title);
+            if (_selMach.isNotEmpty) break;
+          }
+        }
+      }
+      if (cc != null) {
+        for (final c in cc) {
+          if (catIds.contains(c.id)) _selCat.add(c.title);
+        }
+      }
+    }
+
+    mapIds();
+    if (mcCached == null || ccCached == null) {
+      Future<void>.delayed(const Duration(milliseconds: 100), () {
+        if (!mounted) return;
+        setState(mapIds);
+      });
+    }
+
+    final radius = draft['radius_km'];
+    if (radius is int) {
+      const map = <int, int>{10: 0, 20: 1, 50: 2};
+      _radiusIndex = map[radius] ?? -1;
+    }
+
+    final addr = (draft['address'] as String? ?? '').trim();
+    final city = (draft['city']    as String? ?? '').trim();
+    if (addr.isNotEmpty) {
+      _address = addr;
+    } else if (city.isNotEmpty) {
+      _address = city;
     }
   }
 
