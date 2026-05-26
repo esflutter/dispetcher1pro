@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:go_router/go_router.dart';
 
+import 'package:dispatcher_1/core/ai/ai_navigation.dart';
 import 'package:dispatcher_1/core/catalog/format.dart';
 import 'package:dispatcher_1/core/my_orders/models.dart';
 import 'package:dispatcher_1/core/my_orders/my_orders_service.dart';
@@ -761,7 +761,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       ),
       floatingActionButton: Padding(
         padding: EdgeInsets.only(bottom: 88.h),
-        child: AiAssistantFab(onTap: () => context.push('/assistant/chat')),
+        child: AiAssistantFab(onTap: () => openAssistantChat(context)),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       body: SafeArea(

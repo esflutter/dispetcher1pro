@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:go_router/go_router.dart';
 
+import 'package:dispatcher_1/core/ai/ai_navigation.dart';
 import 'package:dispatcher_1/core/network_status.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/system_bar_style.dart';
@@ -57,7 +57,7 @@ class _MainShellState extends State<MainShell> {
     // Стартовый экран ассистента («С чего хотите начать?») показывается
     // только один раз — сразу после регистрации (см. registration_screen.dart).
     // По FAB всегда открываем чат напрямую.
-    context.push('/assistant/chat');
+    openAssistantChat(context);
   }
 
   @override

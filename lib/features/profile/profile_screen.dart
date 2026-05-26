@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:dispatcher_1/core/ai/ai_navigation.dart';
 import 'package:dispatcher_1/core/profile/profile_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_spacing.dart';
@@ -263,7 +264,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 _PrimaryActionButton(
                   label: 'Пройти верификацию',
                   onPressed: () async {
-                    await context.push('/assistant/chat', extra: <String, Object?>{'initial': 'verify_documents'});
+                    await openAssistantChat(context, extra: <String, Object?>{'initial': 'verify_documents'});
                     if (mounted) setState(() => _status = VerificationStatus.current);
                   },
                 ),
@@ -273,7 +274,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 _PrimaryActionButton(
                   label: 'Пройти ещё раз',
                   onPressed: () async {
-                    await context.push('/assistant/chat', extra: <String, Object?>{'initial': 'verify_documents'});
+                    await openAssistantChat(context, extra: <String, Object?>{'initial': 'verify_documents'});
                     if (mounted) setState(() => _status = VerificationStatus.current);
                   },
                 ),

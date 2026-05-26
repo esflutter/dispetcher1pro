@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:go_router/go_router.dart';
 
+import 'package:dispatcher_1/core/ai/ai_navigation.dart';
 import 'package:dispatcher_1/core/dadata/dadata_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_spacing.dart';
@@ -138,7 +138,7 @@ class _DaySettingsScreenState extends State<DaySettingsScreen> {
       appBar: const DarkSubAppBar(title: 'Параметры дня'),
       floatingActionButton: Padding(
         padding: EdgeInsets.only(bottom: 88.h),
-        child: AiAssistantFab(onTap: () => context.push('/assistant/chat')),
+        child: AiAssistantFab(onTap: () => openAssistantChat(context)),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       body: SafeArea(

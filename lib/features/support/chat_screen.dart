@@ -242,6 +242,20 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     // подвисшей сети / Edge Function. YandexGPT обычно укладывается в 5-10 сек.
     const Duration timeout = Duration(seconds: 30);
     try {
+      // Для обычного chat-режима используем стрим — юзер видит как
+      // ассистент «печатает по словам», не молчит 3-5 секунд.
+      // Search / slot-fill — пока sync (стрим не даёт выигрыша:
+      // ответ короткий, плюс приходит handoff-card).
+      //
+      // ВАЖНО: _streamChatReply сам отрисовывает ошибку в placeholder и
+      // НЕ должен rethrow — иначе outer-catch ниже добавит дубль-бабл с
+      // тем же текстом. Поэтому await без try.
+      if (_mode == AiChatKind.chat) {
+        await _streamChatReply(text).timeout(timeout, onTimeout: () {
+          _replaceStreamMessage('__last_stream__', 'Не дождался ответа. Попробуйте ещё раз.');
+        });
+        return;
+      }
       Future<AiReply> call() {
         switch (_mode) {
           case AiChatKind.search:
@@ -270,6 +284,59 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
+  }
+
+  /// Стриминговый вариант chat. Создаёт пустое bot-сообщение и
+  /// обновляет его текст по мере прихода delta-кусков от YandexGPT.
+  /// Все ошибки рисуются прямо в placeholder — НЕ rethrow, иначе
+  /// outer-catch добавит дубликат-бабл.
+  String _lastStreamId = '';
+  Future<void> _streamChatReply(String text) async {
+    _idCounter++;
+    final id = 'stream_$_idCounter';
+    _lastStreamId = id;
+    _messages.add(ChatMessage(id: id, text: '', fromUser: false));
+    if (mounted) setState(() {});
+    _scrollToBottom();
+
+    try {
+      await for (final chunk in AiClient.instance.chatStream(text)) {
+        final idx = _messages.indexWhere((m) => m.id == id);
+        if (idx < 0) return;
+        _messages[idx] = ChatMessage(
+          id: id,
+          text: chunk.text,
+          fromUser: false,
+        );
+        if (mounted) setState(() {});
+        if (chunk.done) {
+          _scrollToBottom();
+          return;
+        }
+      }
+    } on AiQuotaExceeded catch (e) {
+      _replaceStreamMessage(id, e.message);
+    } on AiContentFilterError catch (e) {
+      _replaceStreamMessage(id, e.message);
+    } catch (_) {
+      _replaceStreamMessage(
+        id,
+        'Не удалось получить ответ. Проверьте интернет и попробуйте снова.',
+      );
+    }
+  }
+
+  void _replaceStreamMessage(String id, String text) {
+    // Сентинел: '__last_stream__' — для timeout-handler'а, который не
+    // знает id текущего стрима.
+    final realId = (id == '__last_stream__') ? _lastStreamId : id;
+    final idx = _messages.indexWhere((m) => m.id == realId);
+    if (idx < 0) {
+      _addBotMessage(text);
+      return;
+    }
+    _messages[idx] = ChatMessage(id: realId, text: text, fromUser: false);
+    if (mounted) setState(() {});
   }
 
   void _appendReply(AiReply reply) {

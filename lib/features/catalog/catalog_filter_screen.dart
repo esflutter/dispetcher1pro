@@ -3,9 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:go_router/go_router.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
+import 'package:dispatcher_1/core/ai/ai_navigation.dart';
 import 'package:dispatcher_1/core/catalog/catalog_service.dart';
 import 'package:dispatcher_1/core/catalog/models.dart';
 import 'package:dispatcher_1/core/dadata/dadata_service.dart';
@@ -191,7 +191,7 @@ class _CatalogFilterScreenState extends State<CatalogFilterScreen> {
       floatingActionButton: Padding(
         padding: EdgeInsets.only(bottom: 88.h),
         child: AiAssistantFab(
-          onTap: () => GoRouter.of(context).push('/assistant/chat'),
+          onTap: () => openAssistantChat(context),
         ),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,

@@ -10,10 +10,14 @@
 // =====================================================================
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+import 'package:dispatcher_1/core/config/env.dart';
 
 /// Тип чата с ассистентом — определяет какая Edge Function вызывается.
 enum AiChatKind { chat, search, slotFillOrder, slotFillService }
@@ -73,6 +77,25 @@ class AiReply {
   }
 }
 
+/// Один chunk потока ответа ассистента в стриминговом режиме.
+@immutable
+class AiChatChunk {
+  const AiChatChunk({
+    required this.text,
+    required this.delta,
+    required this.done,
+    this.quota,
+  });
+
+  /// Полный накопленный текст к моменту chunk'а.
+  final String text;
+  /// Новые символы, добавленные этим chunk'ом.
+  final String delta;
+  /// true для финального chunk'а — на нём заполнен quota.
+  final bool done;
+  final AiQuota? quota;
+}
+
 @immutable
 class AiQuota {
   const AiQuota({required this.used, required this.total});
@@ -118,6 +141,124 @@ class AiClient {
 
   Future<AiReply> chat(String message) =>
       _invoke('ai-chat', message, AiChatKind.chat, null);
+
+  /// Стрим версия chat — присылает delta-куски по мере генерации.
+  /// Эмитит первое событие AiChatChunk(text: '...', done: false) с
+  /// частичным текстом, последнее — AiChatChunk(done: true) с полным
+  /// текстом и квотой.
+  ///
+  /// Используется в UI для эффекта «ассистент печатает».
+  /// Подписаться на возвращённый Stream через listen / await for.
+  /// Если стрим-функция не задеплоена или сетевая ошибка — бросает
+  /// исключение в Stream.
+  Stream<AiChatChunk> chatStream(String message) async* {
+    final sb = _sb;
+    final session = sb.auth.currentSession;
+    if (session == null) {
+      throw Exception('unauthorized');
+    }
+    final url = '${Env.supabaseUrl}/functions/v1/ai-chat-stream';
+    final req = http.Request('POST', Uri.parse(url));
+    req.headers['Content-Type']  = 'application/json';
+    req.headers['Authorization'] = 'Bearer ${session.accessToken}';
+    req.headers['apikey']        = Env.supabaseAnonKey;
+    req.body = jsonEncode(<String, dynamic>{
+      'message': message,
+      'app':     app,
+      'session_id': ?_sessionIds[AiChatKind.chat],
+    });
+
+    // ВАЖНО: держим Client в переменной, чтобы закрыть его в finally —
+    // иначе на каждое сообщение в чате утекает Client + сокет из
+    // keep-alive пула.
+    final client = http.Client();
+    try {
+      final resp = await client.send(req);
+      if (resp.statusCode == 402) {
+        throw AiQuotaExceeded('Лимит исчерпан');
+      }
+      if (resp.statusCode != 200) {
+        throw Exception('ai_chat_stream_${resp.statusCode}');
+      }
+
+      // NDJSON: одно событие на строку.
+      // Локально аккумулируем fullText из delta-кусков (сервер шлёт
+      // только новые символы).
+      String buf = '';
+      String fullText = '';
+      bool sawDone = false;
+
+      Iterable<AiChatChunk> processLine(String line) sync* {
+        if (line.isEmpty) return;
+        Map<String, dynamic> obj;
+        try {
+          obj = jsonDecode(line) as Map<String, dynamic>;
+        } catch (_) { return; }
+
+        final kind = obj['kind'] as String?;
+        if (kind == 'session') {
+          final sid = obj['session_id'] as String?;
+          if (sid != null && sid.isNotEmpty) {
+            _sessionIds[AiChatKind.chat] = sid;
+          }
+        } else if (kind == 'delta') {
+          final delta = obj['text'] as String? ?? '';
+          fullText += delta;
+          yield AiChatChunk(text: fullText, delta: delta, done: false);
+        } else if (kind == 'done') {
+          sawDone = true;
+          final quotaMap = obj['quota'] is Map<String, dynamic>
+              ? obj['quota'] as Map<String, dynamic> : null;
+          yield AiChatChunk(
+            text:  fullText,
+            delta: '',
+            done:  true,
+            quota: quotaMap == null
+                ? null
+                : AiQuota(
+                    used:  (quotaMap['used']  as num? ?? 0).toInt(),
+                    total: (quotaMap['total'] as num? ?? 0).toInt(),
+                  ),
+          );
+        } else if (kind == 'error') {
+          final code = obj['code'] as String?;
+          final msg  = obj['message'] as String? ?? 'Ошибка ассистента';
+          if (code == 'content_filter') {
+            throw AiContentFilterError(msg);
+          }
+          throw Exception(code ?? 'stream_error');
+        }
+      }
+
+      await for (final chunk in resp.stream.transform(utf8.decoder)) {
+        buf += chunk;
+        int nl;
+        while ((nl = buf.indexOf('\n')) >= 0) {
+          final line = buf.substring(0, nl).trim();
+          buf = buf.substring(nl + 1);
+          for (final c in processLine(line)) {
+            yield c;
+            if (c.done) return;
+          }
+        }
+      }
+      // Хвост без финального \n — обработать остаток buf, иначе теряем
+      // done-событие, если сервер забыл переносы строк.
+      final tail = buf.trim();
+      if (tail.isNotEmpty) {
+        for (final c in processLine(tail)) {
+          yield c;
+        }
+      }
+      // Если done так и не пришёл — синтезируем его, чтобы UI закрыл
+      // «печатает...» и зафиксировал результат.
+      if (!sawDone) {
+        yield AiChatChunk(text: fullText, delta: '', done: true);
+      }
+    } finally {
+      client.close();
+    }
+  }
 
   Future<AiReply> search(String message) =>
       _invoke('ai-search', message, AiChatKind.search, null);

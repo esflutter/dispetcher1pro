@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:dispatcher_1/core/ai/ai_navigation.dart';
 import 'package:dispatcher_1/core/payments/payment_service.dart';
 import 'package:dispatcher_1/core/profile/profile_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
@@ -192,7 +193,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
       appBar: const DarkSubAppBar(title: 'Информация о подписке'),
       floatingActionButton: Padding(
         padding: EdgeInsets.only(bottom: showAnyBottomButton ? 88.h : 24.h),
-        child: AiAssistantFab(onTap: () => context.push('/assistant/chat')),
+        child: AiAssistantFab(onTap: () => openAssistantChat(context)),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       body: SafeArea(

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:dispatcher_1/core/ai/ai_navigation.dart';
 import 'package:dispatcher_1/core/my_services/models.dart';
 import 'package:dispatcher_1/core/my_services/my_services_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
@@ -46,7 +47,7 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
       appBar: const DarkSubAppBar(title: 'Детали услуги'),
       floatingActionButton: Padding(
         padding: EdgeInsets.only(bottom: 88.h),
-        child: AiAssistantFab(onTap: () => context.push('/assistant/chat')),
+        child: AiAssistantFab(onTap: () => openAssistantChat(context)),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       body: FutureBuilder<MyServiceDetail?>(

@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:dispatcher_1/core/ai/ai_navigation.dart';
 import 'package:dispatcher_1/core/dadata/dadata_service.dart';
 import 'package:dispatcher_1/core/executor_card/executor_card_service.dart';
 import 'package:dispatcher_1/core/profile/profile_service.dart';
@@ -208,7 +209,7 @@ class _EditExecutorCardScreenState extends State<EditExecutorCardScreen> {
       appBar: const DarkSubAppBar(title: 'Моя карточка исполнителя'),
       floatingActionButton: Padding(
         padding: EdgeInsets.only(bottom: 88.h),
-        child: AiAssistantFab(onTap: () => context.push('/assistant/chat')),
+        child: AiAssistantFab(onTap: () => openAssistantChat(context)),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       body: SafeArea(
