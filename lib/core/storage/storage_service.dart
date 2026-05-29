@@ -94,6 +94,29 @@ class StorageService {
     return path;
   }
 
+  /// Загружает фото документа для верификации в приватный бакет
+  /// `assistant-attachments`. Возвращает ПУТЬ (не URL): его записываем в
+  /// verification_documents, а админ смотрит файл через Supabase Studio
+  /// (приватный бакет, только владелец + service_role).
+  /// Путь: `<user_id>/verification/<uuid>.webp` — RLS на INSERT проверяет
+  /// первый сегмент = auth.uid().
+  Future<String> uploadVerificationDocument(File file) async {
+    final User? user = _client.auth.currentUser;
+    if (user == null) {
+      throw const AuthException('Нет активной сессии');
+    }
+    _ensureUnderMaxSize(file);
+    final File compressed = await _compress(file);
+    final String fileName = '${_uniqueId()}.webp';
+    final String path = '${user.id}/verification/$fileName';
+    await _client.storage.from('assistant-attachments').upload(
+          path,
+          compressed,
+          fileOptions: const FileOptions(contentType: 'image/webp'),
+        );
+    return path;
+  }
+
   /// Бросает [FileTooLargeException] если файл больше [maxFileBytes].
   /// Проверяем до сжатия — даже сжатие 100-мегабайтного файла занимает
   /// ощутимое время и память, его нет смысла даже пытаться.

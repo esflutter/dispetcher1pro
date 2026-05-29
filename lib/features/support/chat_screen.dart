@@ -9,6 +9,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:dispatcher_1/core/ai/ai_client.dart';
 import 'package:dispatcher_1/core/ai/stt_recorder.dart';
+import 'package:dispatcher_1/core/storage/storage_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
 import 'package:dispatcher_1/core/utils/photo_source.dart';
@@ -181,6 +182,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     if (text.isEmpty && !hasImages) return;
     if (_isProcessing) return;
 
+    // Снимок путей к выбранным фото ДО того, как setState их очистит —
+    // нужны для загрузки документов верификации в хранилище.
+    final List<String> docImagePaths = (_awaitingDocuments && hasImages)
+        ? List<String>.from(_pendingImages)
+        : const <String>[];
+
     setState(() {
       if (hasImages) {
         if (_awaitingDocuments) {
@@ -201,32 +208,41 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     });
     _scrollToBottom();
 
-    // Отправка документов (отдельный flow, без LLM).
+    // Отправка документов (отдельный flow, без LLM): реально грузим фото
+    // в приватный бакет assistant-attachments и регистрируем на сервере
+    // через ai_submit_verification (он же ставит статус 'pending').
+    // «Отправлено» показываем ТОЛЬКО при успехе — иначе фото потерялись бы,
+    // а юзер думал бы, что отправил.
     if (_awaitingDocuments && hasImages) {
       _awaitingDocuments = false;
-      _addBotMessage(
-        'Документы отправлены 👍\n'
-        'Результат проверки появится в профиле.\n'
-        'Мы также пришлём уведомление.',
-      );
+      setState(() => _isProcessing = true);
       try {
-        final user = Supabase.instance.client.auth.currentUser;
-        if (user != null) {
-          await Supabase.instance.client
-              .from('profiles')
-              .update(<String, dynamic>{'verification_status': 'pending'})
-              .eq('id', user.id);
-          VerificationStatus.current = VerificationStatus.inProgress;
+        final List<String> paths = <String>[];
+        for (final String localPath in docImagePaths) {
+          final String storagePath = await StorageService.instance
+              .uploadVerificationDocument(File(localPath));
+          paths.add(storagePath);
         }
-      } catch (e) {
-        // Не молчим: иначе юзер увидит «Документы отправлены», а статус
-        // в БД останется null. Минимум — лог и поднимаем флаг локально,
-        // чтобы UI отразил «На проверке» — серверная синхронизация
-        // повторится на следующем обращении к профилю.
-        if (kDebugMode) {
-          debugPrint('[chat] profile verification_status update failed: $e');
-        }
+        await Supabase.instance.client.rpc(
+          'ai_submit_verification',
+          params: <String, dynamic>{'p_paths': paths},
+        );
         VerificationStatus.current = VerificationStatus.inProgress;
+        _addBotMessage(
+          'Документы отправлены 👍\n'
+          'Результат проверки появится в профиле.\n'
+          'Мы также пришлём уведомление.',
+        );
+      } catch (e) {
+        if (kDebugMode) {
+          debugPrint('[chat] verification submit failed: ${e.runtimeType}');
+        }
+        _addBotMessage(
+          'Не удалось отправить документы. Проверьте интернет и '
+          'попробуйте ещё раз — фото пока не загрузились.',
+        );
+      } finally {
+        if (mounted) setState(() => _isProcessing = false);
       }
       return;
     }
@@ -301,6 +317,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
     try {
       await for (final chunk in AiClient.instance.chatStream(text)) {
+        // Экран закрыли посреди генерации — прекращаем читать поток.
+        // Выход из await for отменяет подписку, и http-клиент закрывается
+        // в finally внутри chatStream (иначе сокет висел бы до конца ответа).
+        if (!mounted) return;
         final idx = _messages.indexWhere((m) => m.id == id);
         if (idx < 0) return;
         _messages[idx] = ChatMessage(
