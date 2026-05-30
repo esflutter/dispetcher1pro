@@ -24,7 +24,12 @@ class ChatInputBar extends StatefulWidget {
     this.isRecording = false,
     this.showAttach = true,
     this.hint = 'Написать...',
+    this.controller,
   });
+
+  /// Необязательный внешний контроллер поля. Когда задан — им владеет
+  /// родитель (экран чата), чтобы вставлять туда распознанный голос.
+  final TextEditingController? controller;
 
   final ValueChanged<String> onSend;
   final VoidCallback? onAttach;
@@ -42,13 +47,19 @@ class ChatInputBar extends StatefulWidget {
 }
 
 class _ChatInputBarState extends State<ChatInputBar> {
-  final TextEditingController _ctrl = TextEditingController();
+  // Если родитель передал контроллер — используем его (он же им и владеет).
+  // Иначе создаём свой. Так экран чата может вставить в поле распознанный
+  // голос, а пользователь увидит текст и отправит/поправит сам.
+  TextEditingController? _internalCtrl;
+  TextEditingController get _ctrl => widget.controller ?? _internalCtrl!;
   bool _hasText = false;
 
   @override
   void initState() {
     super.initState();
+    if (widget.controller == null) _internalCtrl = TextEditingController();
     _ctrl.addListener(_onTextChanged);
+    _hasText = _ctrl.text.trim().isNotEmpty;
   }
 
   void _onTextChanged() {
@@ -59,7 +70,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
   @override
   void dispose() {
     _ctrl.removeListener(_onTextChanged);
-    _ctrl.dispose();
+    _internalCtrl?.dispose(); // внешний контроллер диспозит владелец (экран)
     super.dispose();
   }
 

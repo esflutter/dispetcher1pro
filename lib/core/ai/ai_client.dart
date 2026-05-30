@@ -391,12 +391,15 @@ class AiClient {
   ///  - [Exception] на прочие ошибки сети / API.
   Future<String> transcribeAudio(File audio, {String format = 'oggopus'}) async {
     final bytes = await audio.readAsBytes();
+    final Map<String, dynamic> qp = <String, dynamic>{'format': format};
+    // Для сырого PCM (фолбэк без Opus) серверу нужна частота дискретизации.
+    if (format == 'lpcm') qp['sample_rate'] = '16000';
     try {
       final FunctionResponse res = await _sb.functions.invoke(
         'stt-yandex',
         method:        HttpMethod.post,
         body:          bytes,
-        queryParameters: <String, dynamic>{ 'format': format },
+        queryParameters: qp,
       );
       final data = res.data;
       final Map<String, dynamic> json = data is Map<String, dynamic>
