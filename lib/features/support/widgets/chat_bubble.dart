@@ -107,6 +107,13 @@ class ChatBubble extends StatelessWidget {
       );
     }
 
+    // Пустой текст ассистента = плейсхолдер стрима до прихода первого слова.
+    // Показываем анимацию «печатает» прямо в этом облачке, чтобы рядом не
+    // висело второе пустое облачко с точками.
+    if (!isUser && message.type == ChatMessageType.text && message.text.isEmpty) {
+      return const TypingBubble();
+    }
+
     return Align(
       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
