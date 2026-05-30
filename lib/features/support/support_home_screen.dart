@@ -57,6 +57,11 @@ class SupportHomeScreen extends StatelessWidget {
                       label: 'Найти заказы',
                       onTap: () => _openChat(context, initialMessage: 'Найти заказы'),
                     ),
+                    SizedBox(height: 8.h),
+                    _ActionChip(
+                      label: 'Создать карточку',
+                      onTap: () => _openChat(context, initialMessage: 'Создать карточку'),
+                    ),
                   ],
                 ),
               ),
