@@ -327,6 +327,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           id: id,
           text: chunk.text,
           fromUser: false,
+          // nav приходит только на финальном chunk'е — тогда под ответом
+          // появляется кнопка «Перейти». На промежуточных он null.
+          navAction: chunk.nav?.action,
+          navLabel: chunk.nav?.label,
         );
         if (mounted) setState(() {});
         if (chunk.done) {

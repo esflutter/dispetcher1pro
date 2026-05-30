@@ -32,6 +32,7 @@ class AiReply {
     this.error,
     this.quota,
     this.cached = false,
+    this.nav,
   });
 
   final String sessionId;
@@ -40,6 +41,8 @@ class AiReply {
   final String? error;
   final AiQuota? quota;
   final bool cached;
+  /// Подсказка перехода в раздел (кнопка «Перейти» под ответом).
+  final AiNav? nav;
 
   /// Поле data.kind показывает, как клиент должен отрисовать ответ:
   ///   - null / "" — обычный текст
@@ -77,6 +80,22 @@ class AiReply {
   }
 }
 
+/// Подсказка перехода в раздел приложения — кнопка «Перейти» под ответом.
+/// action — стабильный ключ от сервера; UI сам сопоставляет его с экраном.
+@immutable
+class AiNav {
+  const AiNav({required this.action, required this.label});
+  final String action;
+  final String label;
+
+  static AiNav? fromJson(dynamic j) {
+    if (j is Map && j['action'] is String && j['label'] is String) {
+      return AiNav(action: j['action'] as String, label: j['label'] as String);
+    }
+    return null;
+  }
+}
+
 /// Один chunk потока ответа ассистента в стриминговом режиме.
 @immutable
 class AiChatChunk {
@@ -85,15 +104,18 @@ class AiChatChunk {
     required this.delta,
     required this.done,
     this.quota,
+    this.nav,
   });
 
   /// Полный накопленный текст к моменту chunk'а.
   final String text;
   /// Новые символы, добавленные этим chunk'ом.
   final String delta;
-  /// true для финального chunk'а — на нём заполнен quota.
+  /// true для финального chunk'а — на нём заполнены quota и nav.
   final bool done;
   final AiQuota? quota;
+  /// Подсказка перехода (приходит только на done-chunk'е, если сервер прислал).
+  final AiNav? nav;
 }
 
 @immutable
@@ -219,6 +241,7 @@ class AiClient {
                     used:  (quotaMap['used']  as num? ?? 0).toInt(),
                     total: (quotaMap['total'] as num? ?? 0).toInt(),
                   ),
+            nav: AiNav.fromJson(obj['nav']),
           );
         } else if (kind == 'error') {
           final code = obj['code'] as String?;
@@ -348,6 +371,7 @@ class AiClient {
       text:      json['reply']      as String? ?? '',
       data:      json['data']       as Map<String, dynamic>?,
       cached:    json['cached']     as bool?   ?? false,
+      nav:       AiNav.fromJson(json['nav']),
       quota: json['quota'] is Map<String, dynamic>
           ? AiQuota(
               used:  (json['quota']['used']  as num? ?? 0).toInt(),
