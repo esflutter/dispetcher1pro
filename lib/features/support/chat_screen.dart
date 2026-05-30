@@ -70,6 +70,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       ));
     _mode = AiChatKind.chat;
     _idCounter = 0;
+    _awaitingDocuments = false;
   }
 
   final List<String> _pendingImages = <String>[];
@@ -79,7 +80,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   final TextEditingController _inputController = TextEditingController();
   bool _isRecording = false;
   bool _isProcessing = false;
-  bool _awaitingDocuments = false;
+  // Статичный (как _messages/_mode): флоу «отправьте документы» переживает
+  // уход с экрана и возврат. Раньше был обычным полем — при возврате на чат
+  // приглашение оставалось в истории, а флаг сбрасывался, и приложенные фото
+  // молча терялись (не загружались). Сбрасывается после отправки и в logout.
+  static bool _awaitingDocuments = false;
   /// Защёлка от двойного тапа по микрофону / автостопа + ручной отправки
   /// одновременно. Сбрасывается после завершения операции.
   bool _voiceBusy = false;
@@ -406,6 +411,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   Future<void> _toggleRecording() async {
     if (_voiceBusy) return;
+    // Пока ассистент отвечает — не начинаем новую запись (иначе два потока
+    // правят индикатор «печатает…» и список сообщений). Отмену уже идущей
+    // записи разрешаем.
+    if (_isProcessing && !_isRecording) return;
     _voiceBusy = true;
     try {
       if (_isRecording) {

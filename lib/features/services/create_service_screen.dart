@@ -201,6 +201,14 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
     } else if (city.isNotEmpty) {
       _address = city;
     }
+    // Координаты города от ассистента — иначе услуга без гео не находится
+    // в поиске по радиусу. Точный адрес пользователь может уточнить сам.
+    final lat = draft['latitude'];
+    final lng = draft['longitude'];
+    if (lat is num && lng is num) {
+      _addressLat = lat.toDouble();
+      _addressLng = lng.toDouble();
+    }
   }
 
   Future<void> _loadDirectories() async {
