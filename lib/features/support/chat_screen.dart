@@ -371,8 +371,17 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         if (mounted) setState(() {});
         if (chunk.done) {
           _scrollToBottom();
-          return;
+          break;
         }
+      }
+      // Защита: если поток завершился с пустым текстом, плейсхолдер иначе
+      // остался бы вечными точками (он рисуется как индикатор «печатает»).
+      final idx = _messages.indexWhere((m) => m.id == id);
+      if (idx >= 0 && _messages[idx].text.trim().isEmpty) {
+        _replaceStreamMessage(
+          id,
+          'Не получилось сформировать ответ. Попробуйте переформулировать.',
+        );
       }
     } on AiQuotaExceeded catch (e) {
       _replaceStreamMessage(id, e.message);
