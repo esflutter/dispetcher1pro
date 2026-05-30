@@ -9,6 +9,7 @@ import 'package:dispatcher_1/core/theme/app_text_styles.dart';
 import 'package:dispatcher_1/core/ai/ai_navigation.dart';
 import 'package:dispatcher_1/core/utils/photo_source.dart';
 import 'package:dispatcher_1/features/services/create_service_screen.dart';
+import 'package:dispatcher_1/features/executor_card/edit_executor_card_screen.dart';
 
 enum ChatMessageType { text, image, orderCards, executorCards, draftReady }
 
@@ -396,6 +397,22 @@ class _DraftReadyHandoff extends StatelessWidget {
     final kind  = data['kind']  as String? ?? '';
     final draft = data['draft'] as Map<String, dynamic>? ?? const <String, dynamic>{};
     final isService = kind == 'service_draft';
+    final isCard = kind == 'card_draft';
+    final String title = isService
+        ? 'Черновик услуги готов'
+        : isCard
+            ? 'Карточка готова'
+            : 'Черновик заказа готов';
+    final String subtitle = isService
+        ? 'Откройте форму услуги — проверьте поля и опубликуйте.'
+        : isCard
+            ? 'Откройте карточку — проверьте поля и сохраните. Чтобы вас находили, нужны пройденная проверка и активная подписка.'
+            : 'Откройте форму заказа — проверьте поля и опубликуйте.';
+    final String buttonLabel = isService
+        ? 'Открыть форму услуги'
+        : isCard
+            ? 'Открыть карточку'
+            : 'Открыть форму заказа';
     return Align(
       alignment: Alignment.centerLeft,
       child: Container(
@@ -419,16 +436,14 @@ class _DraftReadyHandoff extends StatelessWidget {
               SizedBox(height: 12.h),
             ],
             Text(
-              isService ? 'Черновик услуги готов' : 'Черновик заказа готов',
+              title,
               style: AppTextStyles.body.copyWith(
                 color: AppColors.textBlack, fontSize: 14.sp, fontWeight: FontWeight.w600,
               ),
             ),
             SizedBox(height: 4.h),
             Text(
-              isService
-                  ? 'Откройте форму услуги — проверьте поля и опубликуйте.'
-                  : 'Откройте форму заказа — проверьте поля и опубликуйте.',
+              subtitle,
               style: AppTextStyles.body.copyWith(
                 color: AppColors.textTertiary, fontSize: 13.sp,
               ),
@@ -450,6 +465,10 @@ class _DraftReadyHandoff extends StatelessWidget {
                     Navigator.of(context).push(MaterialPageRoute<void>(
                       builder: (_) => CreateServiceScreen(aiDraft: draft),
                     ));
+                  } else if (isCard) {
+                    Navigator.of(context).push(MaterialPageRoute<void>(
+                      builder: (_) => EditExecutorCardScreen(aiDraft: draft),
+                    ));
                   } else {
                     // В executor-приложении заказы не создают — на всякий
                     // случай (если LLM вернёт order_draft) показываем сообщение.
@@ -465,7 +484,7 @@ class _DraftReadyHandoff extends StatelessWidget {
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8.r)),
                 ),
                 child: Text(
-                  isService ? 'Открыть форму услуги' : 'Открыть форму заказа',
+                  buttonLabel,
                   style: AppTextStyles.body.copyWith(
                     color: Colors.white, fontSize: 15.sp, fontWeight: FontWeight.w600,
                   ),

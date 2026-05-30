@@ -20,7 +20,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:dispatcher_1/core/config/env.dart';
 
 /// Тип чата с ассистентом — определяет какая Edge Function вызывается.
-enum AiChatKind { chat, search, slotFillOrder, slotFillService }
+enum AiChatKind { chat, search, slotFillOrder, slotFillService, slotFillCard }
 
 /// Результат одного обмена с ассистентом.
 @immutable
@@ -291,6 +291,10 @@ class AiClient {
 
   Future<AiReply> slotFillService(String message) =>
       _invoke('ai-slot-fill', message, AiChatKind.slotFillService, 'create_service');
+
+  /// Пошаговое заполнение карточки исполнителя через ассистента.
+  Future<AiReply> slotFillCard(String message) =>
+      _invoke('ai-slot-fill', message, AiChatKind.slotFillCard, 'create_card');
 
   Future<AiReply> _invoke(
     String functionName,

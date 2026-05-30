@@ -31,9 +31,15 @@ import 'widgets/executor_card_alerts.dart';
 /// Поля из Figma: ФИО, телефон, местоположение (радиус), спецтехника,
 /// категории услуг, опыт работы, статус, о себе.
 class EditExecutorCardScreen extends StatefulWidget {
-  const EditExecutorCardScreen({super.key, this.editing = true});
+  const EditExecutorCardScreen({super.key, this.editing = true, this.aiDraft});
 
   final bool editing;
+
+  /// Черновик карточки, собранный ИИ-ассистентом (kind='card_draft').
+  /// Если задан — предзаполняем форму его полями. Затрагиваем только те
+  /// поля, что реально пришли: пустой черновик не должен затирать уже
+  /// сохранённые значения карточки.
+  final Map<String, dynamic>? aiDraft;
 
   @override
   State<EditExecutorCardScreen> createState() => _EditExecutorCardScreenState();
@@ -111,8 +117,75 @@ class _EditExecutorCardScreenState extends State<EditExecutorCardScreen> {
     // ignore: discarded_futures
     _loadSavedCoords();
 
+    // Предзаполнение из черновика ассистента. Выполняется синхронно до
+    // первого build и до того, как _loadSavedCoords дождётся БД, поэтому
+    // флаг _userPickedNewAddress успевает защитить координаты от перетирания.
+    final draft = widget.aiDraft;
+    if (draft != null && draft.isNotEmpty) _applyAiDraft(draft);
+
     _nameFocus.addListener(_onNameFocusChanged);
     _emailFocus.addListener(_onEmailFocusChanged);
+  }
+
+  /// Переносит поля черновика ассистента в контроллеры формы. Меняем только
+  /// присутствующие поля — пустые значения не затирают сохранённую карточку.
+  void _applyAiDraft(Map<String, dynamic> draft) {
+    // Адрес: предпочитаем полный address, иначе город.
+    final String? address = (draft['address'] as String?)?.trim();
+    final String? city = (draft['city'] as String?)?.trim();
+    final String? loc = (address != null && address.isNotEmpty)
+        ? address
+        : (city != null && city.isNotEmpty ? city : null);
+    if (loc != null) _location.text = loc;
+
+    // Координаты из геокодера ассистента. Ставим флаг, чтобы асинхронная
+    // загрузка из БД их не перетёрла.
+    final double? lat = _draftDouble(draft['latitude']);
+    final double? lng = _draftDouble(draft['longitude']);
+    if (lat != null && lng != null) {
+      _locationLat = lat;
+      _locationLng = lng;
+      _userPickedNewAddress = true;
+    }
+
+    // Радиус: 10/20/50 км → индекс 0/1/2.
+    final int? radiusKm = _draftInt(draft['radius_km']);
+    if (radiusKm != null) {
+      final int idx = switch (radiusKm) { 10 => 0, 20 => 1, 50 => 2, _ => -1 };
+      if (idx >= 0) _radiusIndex = idx;
+    }
+
+    // Правовой статус: код сервера → подпись в форме.
+    final String? statusCode = (draft['legal_status'] as String?)?.trim();
+    final String? statusLabel = switch (statusCode) {
+      'individual' => 'Физ. лицо',
+      'self_employed' => 'Самозанятый',
+      'ip' => 'ИП',
+      'legal_entity' => 'Юр. лицо',
+      _ => null,
+    };
+    if (statusLabel != null) _selectedStatus = statusLabel;
+
+    // Опыт в годах.
+    final int? exp = _draftInt(draft['experience_years']);
+    if (exp != null && exp >= 0) _experience.text = exp.toString();
+
+    // О себе.
+    final String? about = (draft['about'] as String?)?.trim();
+    if (about != null && about.isNotEmpty) _about.text = about;
+  }
+
+  static double? _draftDouble(Object? v) {
+    if (v is num) return v.toDouble();
+    if (v is String) return double.tryParse(v);
+    return null;
+  }
+
+  static int? _draftInt(Object? v) {
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    if (v is String) return int.tryParse(v);
+    return null;
   }
 
   Future<void> _onNameFocusChanged() async {

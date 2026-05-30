@@ -124,13 +124,21 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
     if (initial == 'create_service' || initial == 'Разместить услугу') {
       _mode = AiChatKind.slotFillService;
-      _addBotMessage('Опишите услугу — текстом или голосом, я заполню всё за вас.');
+      _addBotMessage('Давайте оформлю услугу. С какой техникой вы работаете? Можно ответить голосом.');
       return;
     }
 
     if (initial == 'find_orders' || initial == 'Найти заказы') {
       _mode = AiChatKind.search;
-      _addBotMessage('Опишите какой заказ ищете — техника, регион, даты.');
+      _addBotMessage('Что ищете? Назовите технику и город — например, «экскаватор в Москве». Можно голосом.');
+      return;
+    }
+
+    if (initial == 'create_card' ||
+        initial == 'Заполнить карточку' ||
+        initial == 'Создать карточку') {
+      _mode = AiChatKind.slotFillCard;
+      _addBotMessage('Заполню вашу карточку исполнителя. В каком городе вы работаете? Можно ответить голосом.');
       return;
     }
 
@@ -286,6 +294,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             return AiClient.instance.search(text);
           case AiChatKind.slotFillService:
             return AiClient.instance.slotFillService(text);
+          case AiChatKind.slotFillCard:
+            return AiClient.instance.slotFillCard(text);
           // slotFillOrder в исполнительском приложении невозможен (заказы
           // создают только заказчики). Дополнительная защита от регрессии.
           case AiChatKind.slotFillOrder:
@@ -381,7 +391,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       _addBotMessage(reply.text, type: ChatMessageType.executorCards, data: reply.data);
       return;
     }
-    if ((kind == 'order_draft' || kind == 'service_draft') && reply.isDraftReady) {
+    if ((kind == 'order_draft' || kind == 'service_draft' || kind == 'card_draft') &&
+        reply.isDraftReady) {
       _addBotMessage(reply.text, type: ChatMessageType.draftReady, data: reply.data);
       return;
     }
@@ -626,7 +637,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                       label: 'Разместить услугу',
                       onTap: () {
                         _mode = AiChatKind.slotFillService;
-                        _addBotMessage('Опишите услугу — текстом или голосом, я заполню всё за вас.');
+                        _addBotMessage('Давайте оформлю услугу. С какой техникой вы работаете? Можно ответить голосом.');
                       },
                     ),
                     SizedBox(height: 8.h),
@@ -634,15 +645,15 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                       label: 'Найти заказы',
                       onTap: () {
                         _mode = AiChatKind.search;
-                        _addBotMessage('Опишите какой заказ ищете — техника, регион, даты. Можно голосом.');
+                        _addBotMessage('Что ищете? Назовите технику и город — например, «экскаватор в Москве». Можно голосом.');
                       },
                     ),
                     SizedBox(height: 8.h),
                     _QuickActionChip(
                       label: 'Заполнить карточку',
                       onTap: () {
-                        _mode = AiChatKind.chat;
-                        _handleSend('Как заполнить карточку исполнителя?');
+                        _mode = AiChatKind.slotFillCard;
+                        _addBotMessage('Заполню вашу карточку исполнителя. В каком городе вы работаете? Можно ответить голосом.');
                       },
                     ),
                   ],

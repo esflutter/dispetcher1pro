@@ -66,6 +66,8 @@ run_dev.sh
 run_dev.bat
 run_prod.sh
 run_prod.bat
+run_debug.sh
+run_debug.bat
 # VSCode launch-конфиг может содержать --dart-define=SUPABASE_ANON_KEY=...
 .vscode/launch.json
 # MCP-конфиг может содержать Basic auth с реальным паролем от Supabase.
