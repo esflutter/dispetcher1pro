@@ -127,6 +127,27 @@ async function chargeSavedCard(
   }
 }
 
+// Сколько дней после окончания подписки даём на повторные попытки списания,
+// прежде чем отписать. Cron — раз в сутки, значит это ≈ число ретраев.
+const RENEW_GRACE_DAYS = 3;
+
+function overdueDays(paidUntil: string | null): number {
+  if (!paidUntil) return 999;
+  const t = Date.parse(paidUntil);
+  if (!Number.isFinite(t)) return 999;
+  return (Date.now() - t) / 86_400_000;
+}
+
+/// Обработать неудачную попытку списания: НЕ отписываем сразу — даём
+/// несколько суточных ретраев (вдруг сегодня нет денег / временный сбой
+/// банка). Отписываем только когда подписка просрочена дольше grace-периода.
+async function handleChargeFailure(s: DueSubscriber): Promise<void> {
+  if (overdueDays(s.paid_until) >= RENEW_GRACE_DAYS) {
+    await disableAutoRenew(s.user_id);
+  }
+  // иначе оставляем auto_renew=true — завтрашний cron попробует снова.
+}
+
 async function disableAutoRenew(userId: string): Promise<void> {
   await dbFetch(
     `/rest/v1/profiles_private?id=eq.${encodeURIComponent(userId)}`,
@@ -217,10 +238,10 @@ Deno.serve(async (req) => {
       console.error(
         `[charge-due] charge failed user=${s.user_id}: ${result.error}`,
       );
-      // Карта не сработала (истекла, недостаточно средств, заблокирована
-      // банком и т.п.) — выключаем auto_renew, юзер пропадёт из каталога
-      // и увидит «Возобновить подписку» в /subscription/manage.
-      await disableAutoRenew(s.user_id);
+      // Карта не сработала (истекла, нет средств, банк отклонил и т.п.).
+      // НЕ отписываем сразу — даём суточные ретраи в пределах grace-периода,
+      // и только если подписка просрочена дольше — выключаем auto_renew.
+      await handleChargeFailure(s);
       failed++;
       continue;
     }
@@ -242,8 +263,8 @@ Deno.serve(async (req) => {
     if (ourStatus === "succeeded") {
       charged++;
     } else if (ourStatus === "failed") {
-      // YK сразу отказался — выключаем auto_renew, как при http-ошибке.
-      await disableAutoRenew(s.user_id);
+      // YK сразу отказался — обрабатываем как сбой, но тоже с grace-ретраями.
+      await handleChargeFailure(s);
       failed++;
     } else {
       // pending — webhook сам продлит, считаем как charged для отчёта.

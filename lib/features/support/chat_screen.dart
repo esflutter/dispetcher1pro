@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:dispatcher_1/core/ai/ai_client.dart';
+import 'package:dispatcher_1/core/ai/chat_intent.dart';
 import 'package:dispatcher_1/core/ai/stt_recorder.dart';
 import 'package:dispatcher_1/core/storage/storage_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
@@ -103,6 +104,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _salvageOrphanPlaceholders();
     final initial = widget.initialMessage?.trim();
     if (initial == null || initial.isEmpty) {
       // Открытие чата без intent — это «обычный разговор». Сбрасываем
@@ -137,7 +139,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
     if (initial == 'find_orders' || initial == 'Найти заказы') {
       _mode = AiChatKind.search;
-      _addBotMessage('Что ищете? Назовите технику и город — например, «экскаватор в Москве». Можно голосом.');
+      _addBotMessage('Что ищете? Можно просто «заказы поблизости на неделю» — подберу под вашу технику рядом с вами. Или назовите технику и город. Можно голосом.');
       return;
     }
 
@@ -156,7 +158,32 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     });
   }
 
+  /// Подчистка при открытии экрана: список сообщений статический и переживает
+  /// уход/возврат и ремаунт (поворот экрана). Прерванный стрим мог оставить в
+  /// нём пустой пузырь ассистента, который рисуется как вечные «печатает…».
+  /// Заменяем такие пузыри понятным текстом.
+  void _salvageOrphanPlaceholders() {
+    for (var i = 0; i < _messages.length; i++) {
+      final m = _messages[i];
+      if (!m.fromUser &&
+          m.type == ChatMessageType.text &&
+          m.text.trim().isEmpty) {
+        _messages[i] = ChatMessage(
+          id: m.id,
+          text: 'Ответ прервался — спросите, пожалуйста, ещё раз.',
+          fromUser: false,
+        );
+      }
+    }
+  }
+
   void _addBotMessage(String text, {Map<String, dynamic>? data, ChatMessageType type = ChatMessageType.text}) {
+    // Защита от вечных точек: пустой текст ассистента пузырь рисует как
+    // индикатор «печатает». На неstreaming-пути (поиск/slot-fill) заменить
+    // его нечем, поэтому пустой текстовый ответ подменяем понятным фолбэком.
+    if (type == ChatMessageType.text && text.trim().isEmpty) {
+      text = 'Не получилось сформировать ответ. Попробуйте переформулировать.';
+    }
     // Если экран уже не активен (юзер ушёл, пока шёл LLM-запрос) — всё равно
     // добавляем сообщение в статичный список, чтобы при возврате юзер его увидел.
     // setState вызываем только когда mounted, иначе будет исключение.
@@ -204,6 +231,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     final hasImages = _pendingImages.isNotEmpty;
     if (text.isEmpty && !hasImages) return;
     if (_isProcessing) return;
+    // Идёт запись голоса — не отправляем текст параллельно (иначе два потока
+    // правят список сообщений и _isProcessing). Голос завершит сам себя.
+    if (_isRecording) return;
 
     // Снимок путей к выбранным фото ДО того, как setState их очистит —
     // нужны для загрузки документов верификации в хранилище.
@@ -288,6 +318,17 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   Future<void> _sendToAssistant(String text) async {
     setState(() => _isProcessing = true);
     _scrollToBottom();
+
+    // Поиск прямо из обычного чата: если пользователь в режиме болтовни явно
+    // просит найти заказы — уводим в поиск (карточки), а не в FAQ-ответ.
+    // И наоборот: если в режиме поиска задают вопрос-FAQ — возвращаемся в чат.
+    // Slot-fill (пошаговый сбор) не трогаем — там свой сценарий.
+    if (_mode == AiChatKind.chat && looksLikeCatalogSearch(text, isCustomer: false)) {
+      _mode = AiChatKind.search;
+    } else if (_mode == AiChatKind.search && looksLikeFaqQuestion(text)) {
+      _mode = AiChatKind.chat;
+    }
+
     // Таймаут 30 сек: иначе спиннер «печатает...» крутится бесконечно на
     // подвисшей сети / Edge Function. YandexGPT обычно укладывается в 5-10 сек.
     const Duration timeout = Duration(seconds: 30);
@@ -421,6 +462,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     if ((kind == 'order_draft' || kind == 'service_draft' || kind == 'card_draft') &&
         reply.isDraftReady) {
       _addBotMessage(reply.text, type: ChatMessageType.draftReady, data: reply.data);
+      // Slot-fill завершён черновиком. Возвращаем режим в обычный чат, иначе
+      // следующий свободный вопрос ушёл бы снова в пошаговый сбор, а не в FAQ.
+      _mode = AiChatKind.chat;
       return;
     }
     // slot_progress / error / обычный текст
@@ -672,7 +716,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                       label: 'Найти заказы',
                       onTap: () {
                         _mode = AiChatKind.search;
-                        _addBotMessage('Что ищете? Назовите технику и город — например, «экскаватор в Москве». Можно голосом.');
+                        _addBotMessage('Что ищете? Можно просто «заказы поблизости на неделю» — подберу под вашу технику рядом с вами. Или назовите технику и город. Можно голосом.');
                       },
                     ),
                     SizedBox(height: 8.h),

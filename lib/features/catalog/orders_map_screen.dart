@@ -333,7 +333,12 @@ class _OrdersMapFullScreenState extends State<OrdersMapFullScreen>
       machineryTitles: AppliedFilter.equipment,
       categoryTitles: AppliedFilter.categories,
       dateFrom: AppliedFilter.dateFrom,
-      dateTo: AppliedFilter.exactDate ? null : AppliedFilter.dateTo,
+      // «Точная дата» = строго один день (верхняя граница = тот же день), как в
+      // списке. Раньше тут было null — карта снимала верхнюю границу и
+      // показывала все заказы начиная с выбранного дня, не совпадая со списком.
+      dateTo: AppliedFilter.exactDate
+          ? AppliedFilter.dateFrom
+          : AppliedFilter.dateTo,
       addressContains: radiusActive ? null : AppliedFilter.address,
       wholeDay: AppliedFilter.wholeDay ? true : null,
       originLat: radiusActive ? AppliedFilter.addressLat : null,

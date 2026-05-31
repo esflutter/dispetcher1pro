@@ -237,11 +237,12 @@ class CatalogService {
     if (searchOrderIds != null) {
       q = q.inFilter('id', searchOrderIds.toList());
     }
-    if (dateFrom != null) {
-      q = q.gte('date_from', _isoDate(dateFrom));
-    }
+    // Грубая серверная отсечка по дате: заказ, начинающийся ПОЗЖЕ конца окна,
+    // точно не пересекается. Точную проверку пересечения диапазонов (с учётом
+    // многодневных заказов) и фильтр по времени (с учётом «весь день», у
+    // которого время = NULL) делаем на клиенте ниже — PostgREST неудобен для
+    // coalesce/NULL-логики и легко скрывает половину заказов.
     if (dateTo != null) {
-      // Заказ начинается не позже выбранной верхней даты диапазона.
       q = q.lte('date_from', _isoDate(dateTo));
     }
     if (addressContains != null && addressContains.trim().isNotEmpty) {
@@ -250,12 +251,6 @@ class CatalogService {
     }
     if (wholeDay == true) {
       q = q.eq('whole_day', true);
-    }
-    if (timeFrom != null && timeFrom.isNotEmpty) {
-      q = q.gte('time_from', '$timeFrom:00');
-    }
-    if (timeTo != null && timeTo.isNotEmpty) {
-      q = q.lte('time_to', '$timeTo:00');
     }
 
     final List<Map<String, dynamic>> rows = await q
@@ -327,6 +322,33 @@ class CatalogService {
                   end.year, end.month, end.day, h, m);
               if (endTs.isBefore(nowLocal)) return false;
             }
+          }
+        }
+        // Фильтр по ДАТЕ окна — пересечение диапазонов. Заказ подходит, если
+        // его интервал [date_from..end] пересекается с выбранным окном. Это
+        // ловит многодневные заказы, начавшиеся ДО окна, но активные в нём.
+        if (dateFrom != null) {
+          final DateTime f =
+              DateTime(dateFrom.year, dateFrom.month, dateFrom.day);
+          if (end.isBefore(f)) return false; // заказ закончился до окна
+        }
+        if (dateTo != null) {
+          final DateTime t = DateTime(dateTo.year, dateTo.month, dateTo.day);
+          if (o.dateFrom.isAfter(t)) return false; // начинается после окна
+        }
+        // Фильтр по ВРЕМЕНИ: заказ «на весь день» подходит под любое окно;
+        // иначе его время должно укладываться в [timeFrom, timeTo].
+        if (!o.wholeDay && (timeFrom != null || timeTo != null)) {
+          String? norm(String? t) => (t != null && t.length >= 5)
+              ? t.substring(0, 5)
+              : t;
+          final String? otf = norm(o.timeFrom);
+          final String? ott = norm(o.timeTo);
+          if (timeFrom != null && timeFrom.isNotEmpty) {
+            if (otf == null || otf.compareTo(timeFrom) < 0) return false;
+          }
+          if (timeTo != null && timeTo.isNotEmpty) {
+            if (ott == null || ott.compareTo(timeTo) > 0) return false;
           }
         }
         return true;

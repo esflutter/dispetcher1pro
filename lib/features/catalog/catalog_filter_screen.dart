@@ -372,9 +372,16 @@ class _CatalogFilterScreenState extends State<CatalogFilterScreen> {
                         value: _wholeDay,
                         onChanged: (bool v) => setState(() {
                           _wholeDay = v;
-                          if (v && (_openPicker == 'timeFrom' ||
-                              _openPicker == 'timeTo')) {
-                            _openPicker = null;
+                          if (v) {
+                            // «Весь день» исключает конкретное время —
+                            // чистим выбор, иначе фильтр скомбинирует
+                            // взаимоисключающие условия и выдаст пусто.
+                            _timeFrom = null;
+                            _timeTo = null;
+                            if (_openPicker == 'timeFrom' ||
+                                _openPicker == 'timeTo') {
+                              _openPicker = null;
+                            }
                           }
                         }),
                       ),

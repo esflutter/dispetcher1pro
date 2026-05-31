@@ -7,6 +7,7 @@ import 'package:dispatcher_1/core/profile/profile_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_spacing.dart';
 import 'package:dispatcher_1/core/utils/plural.dart';
+import 'package:dispatcher_1/core/utils/support_contact.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
 import 'package:dispatcher_1/core/widgets/avatar_circle.dart';
 import 'package:dispatcher_1/core/widgets/cropped_avatar.dart';
@@ -430,8 +431,11 @@ class _SupportFooter extends StatelessWidget {
         SizedBox(height: 8.h),
         Row(
           children: [
-            Image.asset('assets/icons/profile/max.webp',
-                width: 40.r, height: 40.r),
+            GestureDetector(
+              onTap: () => openSupportMessenger(context),
+              child: Image.asset('assets/icons/profile/max.webp',
+                  width: 40.r, height: 40.r),
+            ),
           ],
         ),
       ],

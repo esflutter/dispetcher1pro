@@ -244,6 +244,12 @@ class _OrderCardsHandoff extends StatelessWidget {
     final items = (data['items'] is List ? data['items'] as List : const [])
         .whereType<Map<String, dynamic>>()
         .toList();
+    // Карточки без id не кликабельны — фильтруем заранее, чтобы и срез до 5,
+    // и счётчик «И ещё N» считались по реально показываемым (а не по сырому
+    // списку с сервера). У заказчика так уже сделано — выравниваем.
+    final visible = items
+        .where((it) => (it['id'] as String? ?? '').isNotEmpty)
+        .toList();
 
     return Align(
       alignment: Alignment.centerLeft,
@@ -270,17 +276,15 @@ class _OrderCardsHandoff extends StatelessWidget {
               ),
               SizedBox(height: 12.h),
             ],
-            // Фильтруем карточки без id — иначе пользователь видит их, но
-            // они не кликабельны (silent dead UI). Лучше скрыть совсем.
-            ...items
-                .where((it) => (it['id'] as String? ?? '').isNotEmpty)
+            // Карточки без id уже отфильтрованы в `visible` (не кликабельны).
+            ...visible
                 .take(5)
                 .map((it) => _OrderTile(item: it)),
-            if (items.length > 5)
+            if (visible.length > 5)
               Padding(
                 padding: EdgeInsets.only(top: 8.h),
                 child: Text(
-                  'И ещё ${items.length - 5} — введите запрос точнее, чтобы их сузить.',
+                  'И ещё ${visible.length - 5} — введите запрос точнее, чтобы их сузить.',
                   style: AppTextStyles.body.copyWith(
                     color: AppColors.textTertiary,
                     fontSize: 13.sp,

@@ -105,7 +105,12 @@ class _OrderFeedScreenState extends State<OrderFeedScreen> {
       categoryTitles: AppliedFilter.categories,
       search: _query.trim().isEmpty ? null : _query,
       dateFrom: AppliedFilter.dateFrom,
-      dateTo: AppliedFilter.exactDate ? null : AppliedFilter.dateTo,
+      // «Точная дата» = окно из одного дня [dateFrom, dateFrom], чтобы
+      // показывались заказы, активные ИМЕННО в этот день (включая многодневные,
+      // накрывающие его), а не «начиная с этого дня».
+      dateTo: AppliedFilter.exactDate
+          ? AppliedFilter.dateFrom
+          : AppliedFilter.dateTo,
       addressContains: radiusActive ? null : AppliedFilter.address,
       timeFrom: _hhmm(AppliedFilter.timeFrom),
       timeTo: _hhmm(AppliedFilter.timeTo),
