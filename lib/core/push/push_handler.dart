@@ -155,6 +155,13 @@ class PushHandler {
         appRouter.go('/shell');
         return;
       }
+      // Пуш об истечении подписки кладёт route='/subscription', но в
+      // роутере есть только конкретные подэкраны — ведём на управление
+      // подпиской, иначе тап попадал в заглушку «ссылка устарела».
+      if (route == '/subscription') {
+        appRouter.push('/subscription/manage');
+        return;
+      }
       // Остальные маршруты (`/orders/<id>`, `/catalog/order/<id>`,
       // `/profile/reviews`, `/profile/notifications-settings` и т.п.)
       // открываются как полно-экранные с back-кнопкой.

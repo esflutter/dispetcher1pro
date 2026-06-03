@@ -82,7 +82,15 @@ class MyOrdersService {
         .order('status_changed_at', ascending: false)
         .limit(limit);
 
-    return rows.map(_fromRow).toList();
+    // Изолируем битую строку: если у одной записи нет вложенного заказа
+    // или сломано поле, не роняем весь список — пропускаем только её.
+    final List<MyOrderMatch> out = <MyOrderMatch>[];
+    for (final Map<String, dynamic> r in rows) {
+      try {
+        out.add(_fromRow(r));
+      } catch (_) {/* битая строка — пропускаем, остальные показываем */}
+    }
+    return out;
   }
 
   /// Исполнитель отзывает свой отклик из `awaiting_customer`. FSM-
@@ -238,7 +246,7 @@ class MyOrdersService {
       for (final CategoryRef c in catCache) c.id: c.title,
     };
     final List<int> machineryIds =
-        List<int>.from(order['machinery_ids'] as List);
+        List<int>.from((order['machinery_ids'] as List?) ?? const <dynamic>[]);
     final List<String> machineryTitles = machineryIds
         .map((int id) => machineryById[id] ?? '')
         .where((String t) => t.isNotEmpty)

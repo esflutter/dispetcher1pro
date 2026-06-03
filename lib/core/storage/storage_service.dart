@@ -216,6 +216,26 @@ class StorageService {
     return _client.storage.from(bucket).getPublicUrl(path);
   }
 
+  /// Удаляет файл аватара из публичного бакета `avatars` по его public URL.
+  /// Тихо игнорирует ошибки (файл мог быть уже удалён/перезаписан).
+  Future<void> deleteAvatarByUrl(String publicUrl) async {
+    final String? path = _publicBucketPath(publicUrl, 'avatars');
+    if (path == null) return;
+    try {
+      await _client.storage.from('avatars').remove(<String>[path]);
+    } catch (_) {/* уже удалён — не критично */}
+  }
+
+  /// Путь внутри бакета из public URL вида
+  /// `.../storage/v1/object/public/<bucket>/<path>`.
+  String? _publicBucketPath(String url, String bucket) {
+    final String marker = '/object/public/$bucket/';
+    final int i = url.indexOf(marker);
+    if (i < 0) return null;
+    final String path = url.substring(i + marker.length);
+    return path.isEmpty ? null : Uri.decodeFull(path);
+  }
+
   /// Уникальный ID файла — micros + 6 hex-символов случайных. Раньше брали
   /// просто `microsecondsSinceEpoch`, но при двух последовательных
   /// загрузках в одну микросекунду (тапы по галерее на быстром девайсе)

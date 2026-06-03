@@ -111,6 +111,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       // режим, иначе предыдущий slot-fill / search режим залипает и
       // следующее сообщение пойдёт не в ai-chat.
       _mode = AiChatKind.chat;
+      // История переживает закрытие экрана (static _messages). Если же
+      // приложение перезапускали и в памяти только приветствие — подтянем
+      // сохранённую переписку из БД, чтобы история не терялась.
+      if (_messages.length <= 1) {
+        unawaited(_restoreHistory());
+      }
       WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom(jump: true));
       return;
     }
@@ -243,9 +249,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
     setState(() {
       if (hasImages) {
-        if (_awaitingDocuments) {
-          VerificationStatus.current = VerificationStatus.inProgress;
-        }
+        // Статус «на проверке» выставляем ТОЛЬКО после успешной отправки
+        // (ниже, после ai_submit_verification). Раньше его ставили
+        // оптимистично здесь — при обрыве сети он залипал, и отклик ложно
+        // блокировался «документы на проверке», хотя на сервер ничего не ушло.
         _messages.add(ChatMessage(
           id:   _nextId(),
           text: '',
@@ -327,6 +334,14 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       _mode = AiChatKind.search;
     } else if (_mode == AiChatKind.search && looksLikeFaqQuestion(text)) {
       _mode = AiChatKind.chat;
+    } else if ((_mode == AiChatKind.slotFillService ||
+                _mode == AiChatKind.slotFillCard ||
+                _mode == AiChatKind.slotFillOrder) &&
+               looksLikeFaqQuestion(text)) {
+      // Явный вопрос посреди пошагового сбора — выходим из сбора в обычный
+      // чат. Иначе при обрыве сети режим slot-fill залипал, и следующий
+      // вопрос модель пыталась впихнуть в поля черновика.
+      _mode = AiChatKind.chat;
     }
 
     // Таймаут 30 сек: иначе спиннер «печатает...» крутится бесконечно на
@@ -393,7 +408,14 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _scrollToBottom();
 
     try {
-      await for (final chunk in AiClient.instance.chatStream(text)) {
+      await for (final chunk
+          in AiClient.instance.chatStream(text).timeout(
+        // Таймаут МЕЖДУ чанками: если сервер завис и перестал слать данные,
+        // прерываем await for → finally внутри chatStream закроет http-клиент.
+        // Раньше .timeout() стоял на внешнем Future и подписку не отменял —
+        // сокет висел до конца ответа сервера (до 45 сек).
+        const Duration(seconds: 35),
+      )) {
         // Экран закрыли посреди генерации — прекращаем читать поток.
         // Выход из await for отменяет подписку, и http-клиент закрывается
         // в finally внутри chatStream (иначе сокет висел бы до конца ответа).
@@ -447,6 +469,50 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
     _messages[idx] = ChatMessage(id: realId, text: text, fromUser: false);
     if (mounted) setState(() {});
+  }
+
+  /// Восстановление переписки из БД (последние сообщения сессии). Вызывается
+  /// при первом открытии чата после перезапуска приложения. Заменяет
+  /// стартовое приветствие реальной историей (текст + карточки заказов/
+  /// исполнителей из сохранённого data).
+  Future<void> _restoreHistory() async {
+    await AiClient.instance.restoreChatSession();
+    final List<Map<String, dynamic>> rows = await AiClient.instance.loadHistory();
+    if (rows.isEmpty || !mounted) return;
+    final List<ChatMessage> restored = <ChatMessage>[];
+    for (final Map<String, dynamic> r in rows) {
+      final String? role = r['role'] as String?;
+      if (role != 'user' && role != 'assistant') continue;
+      final bool fromUser = role == 'user';
+      final String content = (r['content'] as String?) ?? '';
+      final Map<String, dynamic>? data = r['data'] as Map<String, dynamic>?;
+      final String? kind = data?['kind'] as String?;
+      ChatMessageType type = ChatMessageType.text;
+      if (!fromUser && data != null) {
+        final dynamic items = data['items'];
+        if (kind == 'order_cards' && items is List && items.isNotEmpty) {
+          type = ChatMessageType.orderCards;
+        } else if (kind == 'executor_cards' && items is List && items.isNotEmpty) {
+          type = ChatMessageType.executorCards;
+        }
+      }
+      // Пустые служебные строки без карточек не показываем.
+      if (content.trim().isEmpty && type == ChatMessageType.text) continue;
+      restored.add(ChatMessage(
+        id: _nextId(),
+        text: content,
+        fromUser: fromUser,
+        type: type,
+        data: type == ChatMessageType.text ? null : data,
+      ));
+    }
+    if (restored.isEmpty || !mounted) return;
+    setState(() {
+      _messages
+        ..clear()
+        ..addAll(restored);
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom(jump: true));
   }
 
   void _appendReply(AiReply reply) {
@@ -689,7 +755,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               separatorBuilder: (_, _) => const SizedBox.shrink(),
               itemBuilder: (context, index) {
                 if (index < _messages.length) {
-                  return ChatBubble(message: _messages[index]);
+                  final ChatMessage m = _messages[index];
+                  // Ключ по id: при стриминге ответа и добавлении сообщений
+                  // Flutter переиспользует уже отрисованные пузыри, а не
+                  // путает их состояние при изменении списка.
+                  return ChatBubble(key: ValueKey<String>(m.id), message: m);
                 }
                 return const TypingBubble();
               },

@@ -400,6 +400,9 @@ class _OrdersMapFullScreenState extends State<OrdersMapFullScreen>
       _lastViewedCenter = _mapController.camera.center;
       _lastViewedZoom = _mapController.camera.zoom;
     } catch (_) {/* карта не успела отрендериться */}
+    // Отменяем активную анимацию камеры до dispose контроллера, иначе её
+    // тикер переживёт State (утечка + ассерт в debug).
+    _mapController.cancelAnimatedMove();
     // MapController внутри ChangeNotifier — без явного dispose ссылка
     // на его внутренние подписки живёт до конца процесса. На устройствах
     // со слабой памятью многократные заходы на карту копят объекты.

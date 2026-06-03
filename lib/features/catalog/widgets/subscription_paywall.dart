@@ -149,14 +149,18 @@ class _SubscriptionPaywallState extends State<SubscriptionPaywall>
                   );
                 },
                 child: PaymentMethodCard(
-                  // Активация триала идёт через card_binding (1 ₽ + рефанд):
-                  // юзер привязывает карту, webhook ставит paid_until=now+30d
-                  // и trial_used=true, через 30 дней cron снимет 1 000 ₽
-                  // с этой карты автоматически. См. activateTrial в
-                  // payment_method_card.dart и webhook activateTrial().
-                  kind: PaymentKind.cardBinding,
-                  amount: 1,
-                  activateTrial: true,
+                  // Новый юзер: триал через card_binding (1 ₽ + рефанд) —
+                  // webhook ставит paid_until=now+30д, trial_used=true,
+                  // привязывает карту; через 30 дней cron спишет подписку.
+                  // Вернувшийся (триал уже использован): card_binding не продлил
+                  // бы подписку (activate_trial вернёт false), поэтому берём
+                  // ПРЯМУЮ оплату подписки — триггер apply_payment_success
+                  // продлит paid_until и привяжет карту для автопродления.
+                  kind: _trialUsed
+                      ? PaymentKind.subscription
+                      : PaymentKind.cardBinding,
+                  amount: _trialUsed ? (_priceRub ?? 1000) : 1,
+                  activateTrial: !_trialUsed,
                 ),
               ),
             ),

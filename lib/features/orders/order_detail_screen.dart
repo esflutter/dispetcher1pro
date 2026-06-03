@@ -642,7 +642,7 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
                 if (_busy) return;
                 if (!VerificationStatus.hasSubscription) {
                   final bool? go = await showSubscriptionPausedDialog(context);
-                  if (go == true && mounted) context.push('/subscription');
+                  if (go == true && mounted) context.push('/subscription/manage');
                   return;
                 }
                 // На `waiting_executor` → `accepted` уже зафиксирована
@@ -786,6 +786,7 @@ class _PhotosGrid extends StatelessWidget {
                 width: 72.r,
                 height: 72.r,
                 fit: BoxFit.cover,
+                cacheWidth: 300,
               ),
             ),
           ),

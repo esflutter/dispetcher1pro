@@ -6,7 +6,6 @@ import '../../features/profile/widgets/verification_badge.dart';
 import '../../features/services/my_services_screen.dart';
 import '../auth/phone_format.dart';
 import '../executor_card/executor_card_service.dart';
-import '../notifications/notifications_service.dart';
 import '../profile/profile_service.dart';
 import '../push/push_service.dart';
 
@@ -42,9 +41,6 @@ Future<void> runPostLoginBootstrap() async {
     // валидной сессией) не задвоит работу.
     PushService.instance.registerForCurrentUser(),
   ]);
-  // Realtime по своим notifications + первый пересчёт бейджа.
-  // Вызываем после Future.wait, чтобы не блокировать боевые загрузки.
-  NotificationsService.instance.start();
 }
 
 Future<void> _bootstrapSubscription() async {

@@ -309,7 +309,7 @@ class _PhotosGrid extends StatelessWidget {
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(8.r),
-          child: imageFromPath(photos[i], fit: BoxFit.cover),
+          child: imageFromPath(photos[i], fit: BoxFit.cover, cacheWidth: 300),
         ),
       ),
     );

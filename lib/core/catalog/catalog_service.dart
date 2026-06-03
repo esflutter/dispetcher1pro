@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:dispatcher_1/core/my_orders/my_orders_service.dart'
@@ -137,77 +139,20 @@ class CatalogService {
     Set<String>? searchOrderIds;
     final String? s = search?.trim();
     if (s != null && s.isNotEmpty) {
-      final String esc = _escapeLike(s).replaceAll(',', ' ');
-      final String pattern = '%$esc%';
-      final int hardLimit = limit * 4;
-      final Set<String> orderIds = <String>{};
-
-      // (1) Прямые поля заказа: title / address / description.
-      final List<Map<String, dynamic>> own = await _client
-          .from('orders')
-          .select('id')
-          .eq('status', 'published')
-          .or('title.ilike.$pattern,address.ilike.$pattern,'
-              'description.ilike.$pattern')
-          .limit(hardLimit);
-      for (final Map<String, dynamic> r in own) {
-        orderIds.add(r['id'] as String);
-      }
-
-      // (2) Имя заказчика → его orders.
-      final List<Map<String, dynamic>> custIds = await _client
-          .from('profiles')
-          .select('id')
-          .ilike('name', pattern)
-          .limit(hardLimit);
-      if (custIds.isNotEmpty) {
-        final List<String> ids = <String>[
-          for (final Map<String, dynamic> r in custIds) r['id'] as String,
-        ];
-        final List<Map<String, dynamic>> byCust = await _client
-            .from('orders')
-            .select('id')
-            .eq('status', 'published')
-            .inFilter('customer_id', ids)
-            .limit(hardLimit);
-        for (final Map<String, dynamic> r in byCust) {
-          orderIds.add(r['id'] as String);
-        }
-      }
-
-      // (3) Совпадение со справочником: техника / категория работ.
-      final String sLower = s.toLowerCase();
-      final List<int> matchedMachIds = <int>[
-        for (final MapEntry<String, int> e in _machineryTitleToId.entries)
-          if (e.key.toLowerCase().contains(sLower)) e.value,
-      ];
-      final List<int> matchedCatIds = <int>[
-        for (final MapEntry<String, int> e in _categoryTitleToId.entries)
-          if (e.key.toLowerCase().contains(sLower)) e.value,
-      ];
-      if (matchedMachIds.isNotEmpty) {
-        final List<Map<String, dynamic>> r = await _client
-            .from('orders')
-            .select('id')
-            .eq('status', 'published')
-            .overlaps('machinery_ids', matchedMachIds)
-            .limit(hardLimit);
-        for (final Map<String, dynamic> x in r) {
-          orderIds.add(x['id'] as String);
-        }
-      }
-      if (matchedCatIds.isNotEmpty) {
-        final List<Map<String, dynamic>> r = await _client
-            .from('orders')
-            .select('id')
-            .eq('status', 'published')
-            .overlaps('category_ids', matchedCatIds)
-            .limit(hardLimit);
-        for (final Map<String, dynamic> x in r) {
-          orderIds.add(x['id'] as String);
-        }
-      }
-
+      // Один серверный RPC вместо 5-7 последовательных запросов: он сам
+      // объединяет поиск по полям заказа (title/address/description), имени
+      // заказчика и справочникам техники/категорий (см. миграцию
+      // 041_search_rpc). Экранирование ILIKE — внутри функции.
+      final dynamic resp = await _client.rpc(
+        'search_published_order_ids',
+        params: <String, dynamic>{'q': s},
+      );
+      final List<dynamic> found =
+          (resp as List<dynamic>?) ?? const <dynamic>[];
+      final Set<String> orderIds = <String>{
+        for (final dynamic r in found)
+          if (r is Map && r['order_id'] != null) r['order_id'].toString(),
+      };
       if (orderIds.isEmpty) {
         return <OrderListItem>[];
       }
@@ -253,11 +198,34 @@ class CatalogService {
       q = q.eq('whole_day', true);
     }
 
+    if (radiusActive) {
+      // Серверная отсечка по bounding-box вокруг точки поиска: круг радиуса
+      // целиком лежит в этом прямоугольнике, поэтому ни один заказ в радиусе
+      // не теряется, а haversine ниже уточняет до круга. Без этого тянули
+      // ×6 случайных строк по всей стране и почти всё отсеивали на клиенте.
+      final double latDelta = radiusKm / 111.0;
+      final double cosLat = math.cos(originLat * math.pi / 180.0).abs();
+      final double lngDelta =
+          radiusKm / (111.0 * (cosLat < 0.01 ? 0.01 : cosLat));
+      q = q
+          .gte('latitude', originLat - latDelta)
+          .lte('latitude', originLat + latDelta)
+          .gte('longitude', originLng - lngDelta)
+          .lte('longitude', originLng + lngDelta);
+    }
+
     final List<Map<String, dynamic>> rows = await q
         .order('published_at', ascending: false)
         .limit(effectiveLimit);
-    List<OrderListItem> items =
-        rows.map(_orderListItemFromRow).toList();
+    // Изолируем битую строку: одна аномальная запись (например, кривое
+    // поле) не должна ронять весь экран ленты — пропускаем только её,
+    // остальные заказы показываем.
+    List<OrderListItem> items = <OrderListItem>[];
+    for (final Map<String, dynamic> r in rows) {
+      try {
+        items.add(_orderListItemFromRow(r));
+      } catch (_) {/* битая строка — пропускаем */}
+    }
 
     // Отсеиваем заказы, по которым «мэтч исполнителя с заказчиком уже
     // случился» (либо заказчик уже выбрал кого-то конкретно). На карте
@@ -379,7 +347,8 @@ class CatalogService {
       '${d.day.toString().padLeft(2, '0')}';
 
   OrderListItem _orderListItemFromRow(Map<String, dynamic> r) {
-    final List<int> machineryIds = List<int>.from(r['machinery_ids'] as List);
+    final List<int> machineryIds =
+        List<int>.from((r['machinery_ids'] as List?) ?? const <dynamic>[]);
     final List<String> titles = machineryIds
         .map((int id) => _machineryIdToTitle[id] ?? '')
         .where((String t) => t.isNotEmpty)
@@ -740,7 +709,14 @@ class CatalogService {
         .eq('status', 'published')
         .order('published_at', ascending: false)
         .limit(limit);
-    return rows.map(_orderListItemFromRow).toList();
+    // Битая строка пропускается, остальные заказы заказчика показываем.
+    final List<OrderListItem> out = <OrderListItem>[];
+    for (final Map<String, dynamic> r in rows) {
+      try {
+        out.add(_orderListItemFromRow(r));
+      } catch (_) {/* пропускаем аномальную запись */}
+    }
+    return out;
   }
 
   /// Последние отзывы о заказчике (subject='customer').

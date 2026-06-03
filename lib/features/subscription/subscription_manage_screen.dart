@@ -13,7 +13,7 @@ import 'package:dispatcher_1/features/catalog/widgets/subscription_paywall.dart'
 import 'package:dispatcher_1/core/widgets/dialog_close_button.dart';
 import 'package:dispatcher_1/features/schedule/schedule_screen.dart' show ScheduleToggle;
 
-/// Экран «Информация о подписке».
+/// Экран «Подписка и оплата».
 ///
 /// Состояния:
 ///   • active   — `paid_until > now()` && `auto_renew=true`. Тумблер ON.
@@ -36,9 +36,8 @@ class _SubscriptionManageScreenState extends State<SubscriptionManageScreen> {
   late Future<MyPrivate?> _future;
   bool _busy = false;
 
-  /// Показывать ли кнопку «Способы оплаты». Логика повторяет старый
-  /// `subscription_screen.dart`: показываем если у юзера есть хотя бы
-  /// одна привязанная карта ИЛИ был хоть один успешный платёж (даже
+  /// Показывать ли кнопку «Способы оплаты»: показываем если у юзера есть
+  /// хотя бы одна привязанная карта ИЛИ был хоть один успешный платёж (даже
   /// если карта не сохранилась — например, оплачивал через YooMoney).
   /// Любая ошибка чтения трактуется как «не показывать», чтобы юзер
   /// не упёрся в пустой экран.
@@ -131,7 +130,7 @@ class _SubscriptionManageScreenState extends State<SubscriptionManageScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: const DarkSubAppBar(title: 'Информация о подписке'),
+      appBar: const DarkSubAppBar(title: 'Подписка и оплата'),
       body: SafeArea(
         top: false,
         child: FutureBuilder<MyPrivate?>(

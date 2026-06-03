@@ -162,13 +162,14 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
     // отзыв, оставленный в 02:00 МСК (= 23:00 UTC предыдущих суток),
     // показывался юзеру датой на день раньше.
     final DateTime created =
-        DateTime.parse(r['created_at'] as String).toLocal();
+        DateTime.tryParse((r['created_at'] as String?) ?? '')?.toLocal() ??
+            DateTime.now();
     final String date =
         '${created.day.toString().padLeft(2, '0')}/${created.month.toString().padLeft(2, '0')}/${created.year}';
     return Review(
       author: authorName,
       date: date,
-      rating: r['rating'] as int,
+      rating: (r['rating'] as num?)?.toInt() ?? 0,
       text: (r['text'] as String?) ?? '',
       authorAvatarUrl: authorAvatarUrl,
     );

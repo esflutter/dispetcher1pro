@@ -82,6 +82,15 @@ class OpenFreeMapMarker {
 /// lat/lng/zoom между стартовой и целевой точкой и зовём `move()`.
 /// Контроллер диспозим в `addStatusListener` по `completed`, чтобы не
 /// течь.
+/// Активная анимация камеры для каждого [MapController]. Храним, чтобы:
+///   1) новая анимация отменяла предыдущую (нет накопления контроллеров);
+///   2) экран мог отменить её в `dispose()` — иначе `AnimationController`
+///      с vsync уже мёртвого State продолжает жить, течёт и роняет ассерт
+///      «Ticker disposed with an active Ticker» (видно при смене фильтра/
+///      реалтайм-обновлении ленты во время 400-мс анимации свайпа).
+final Map<MapController, AnimationController> _activeMapAnimations =
+    <MapController, AnimationController>{};
+
 extension AnimatedMapMove on MapController {
   void animatedMove(
     LatLng dest,
@@ -99,8 +108,11 @@ extension AnimatedMapMove on MapController {
       // анимацию, иначе словим NoCameraException на первом кадре.
       return;
     }
+    // Отменяем предыдущую анимацию этого контроллера, если ещё идёт.
+    _activeMapAnimations.remove(this)?.dispose();
     final AnimationController ctrl =
         AnimationController(duration: duration, vsync: vsync);
+    _activeMapAnimations[this] = ctrl;
     final CurvedAnimation anim =
         CurvedAnimation(parent: ctrl, curve: Curves.easeInOut);
     ctrl.addListener(() {
@@ -117,10 +129,18 @@ extension AnimatedMapMove on MapController {
     });
     anim.addStatusListener((AnimationStatus s) {
       if (s == AnimationStatus.completed || s == AnimationStatus.dismissed) {
+        _activeMapAnimations.remove(this);
         ctrl.dispose();
       }
     });
     ctrl.forward();
+  }
+
+  /// Отменить активную анимацию камеры и освободить её контроллер.
+  /// ОБЯЗАТЕЛЬНО звать в `dispose()` экрана ПЕРЕД `dispose()` самого
+  /// [MapController] — иначе тикер анимации переживает State.
+  void cancelAnimatedMove() {
+    _activeMapAnimations.remove(this)?.dispose();
   }
 }
 
@@ -212,6 +232,8 @@ class _OpenFreeMapViewState extends State<OpenFreeMapView>
   @override
   void dispose() {
     _positionSub?.cancel();
+    // Отменяем активную анимацию камеры («лети к моей точке») до dispose.
+    _controller.cancelAnimatedMove();
     // Диспозим только внутренний контроллер. Если он передан извне
     // (widget.mapController != null), родитель сам отвечает за dispose.
     if (widget.mapController == null) {

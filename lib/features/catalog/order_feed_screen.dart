@@ -82,6 +82,10 @@ class _OrderFeedScreenState extends State<OrderFeedScreen> {
     _debounceTimer?.cancel();
     _searchCtrl.dispose();
     RealtimeService.ordersFeedBeacon.removeListener(_onFeedChanged);
+    // Отменяем активную анимацию камеры до dispose контроллера, иначе её
+    // тикер переживёт State (утечка + ассерт в debug при смене фильтра во
+    // время анимации свайпа карточек).
+    _mapController.cancelAnimatedMove();
     // MapController — ChangeNotifier; без явного dispose накапливает
     // ссылки между заходами в ленту.
     _mapController.dispose();

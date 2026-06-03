@@ -1,3 +1,5 @@
+import 'package:dispatcher_1/core/utils/plural.dart';
+
 import 'models.dart';
 
 /// Форматирование даты/времени заказа для карточек каталога.
@@ -90,29 +92,8 @@ String formatPublishedAgo(DateTime publishedAt, {DateTime? now}) {
   return '$days ${_daysWord(days)} назад';
 }
 
-String _minutesWord(int n) {
-  final int n10 = n % 10;
-  final int n100 = n % 100;
-  if (n100 >= 11 && n100 <= 14) return 'минут';
-  if (n10 == 1) return 'минуту';
-  if (n10 >= 2 && n10 <= 4) return 'минуты';
-  return 'минут';
-}
+String _minutesWord(int n) => pluralForms(n, 'минуту', 'минуты', 'минут');
 
-String _hoursWord(int n) {
-  final int n10 = n % 10;
-  final int n100 = n % 100;
-  if (n100 >= 11 && n100 <= 14) return 'часов';
-  if (n10 == 1) return 'час';
-  if (n10 >= 2 && n10 <= 4) return 'часа';
-  return 'часов';
-}
+String _hoursWord(int n) => pluralForms(n, 'час', 'часа', 'часов');
 
-String _daysWord(int n) {
-  final int n10 = n % 10;
-  final int n100 = n % 100;
-  if (n100 >= 11 && n100 <= 14) return 'дней';
-  if (n10 == 1) return 'день';
-  if (n10 >= 2 && n10 <= 4) return 'дня';
-  return 'дней';
-}
+String _daysWord(int n) => pluralForms(n, 'день', 'дня', 'дней');

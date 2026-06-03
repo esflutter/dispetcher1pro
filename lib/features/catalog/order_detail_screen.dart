@@ -134,7 +134,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     if (!VerificationStatus.hasSubscription) {
       if (VerificationStatus.subscriptionPaidUntilText != null) {
         final bool? go = await showSubscriptionPausedDialog(context);
-        if (go == true && mounted) context.push('/subscription');
+        if (go == true && mounted) context.push('/subscription/manage');
         return;
       }
       // Paywall сам уводит юзера в реальный экран оплаты — отсюда

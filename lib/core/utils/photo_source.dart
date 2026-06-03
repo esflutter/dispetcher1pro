@@ -210,14 +210,31 @@ Widget imageFromPath(
   BoxFit? fit,
   double? width,
   double? height,
+  int? cacheWidth,
+  int? cacheHeight,
 }) {
   if (isAssetPath(path)) {
-    return Image.asset(path, fit: fit, width: width, height: height);
+    return Image.asset(path,
+        fit: fit,
+        width: width,
+        height: height,
+        cacheWidth: cacheWidth,
+        cacheHeight: cacheHeight);
   }
   if (isNetworkPath(path)) {
-    return Image.network(path, fit: fit, width: width, height: height);
+    return Image.network(path,
+        fit: fit,
+        width: width,
+        height: height,
+        cacheWidth: cacheWidth,
+        cacheHeight: cacheHeight);
   }
-  return Image.file(File(path), fit: fit, width: width, height: height);
+  return Image.file(File(path),
+      fit: fit,
+      width: width,
+      height: height,
+      cacheWidth: cacheWidth,
+      cacheHeight: cacheHeight);
 }
 
 /// Кэш signed-URL для путей в приватных бакетах. Подпись живёт 1 час,
@@ -293,6 +310,8 @@ class SignedStorageImage extends StatelessWidget {
     this.fit,
     this.width,
     this.height,
+    this.cacheWidth,
+    this.cacheHeight,
   });
 
   final String bucket;
@@ -300,6 +319,12 @@ class SignedStorageImage extends StatelessWidget {
   final BoxFit? fit;
   final double? width;
   final double? height;
+  // Размер декодирования в физических пикселях. Для миниатюр в сетках
+  // задаём небольшой — иначе фото из бакета (до 2560px) разворачивается
+  // в RAM целиком ради плашки 70–90px. Для полноэкранной галереи не
+  // передаём — там нужен полный размер под зум.
+  final int? cacheWidth;
+  final int? cacheHeight;
 
   @override
   Widget build(BuildContext context) {
@@ -324,7 +349,12 @@ class SignedStorageImage extends StatelessWidget {
                 color: Color(0xFFB0B0B0)),
           );
         }
-        return Image.network(url, fit: fit, width: width, height: height);
+        return Image.network(url,
+            fit: fit,
+            width: width,
+            height: height,
+            cacheWidth: cacheWidth,
+            cacheHeight: cacheHeight);
       },
     );
   }
@@ -340,12 +370,24 @@ Widget photoSmartImage(
   BoxFit? fit,
   double? width,
   double? height,
+  int? cacheWidth,
+  int? cacheHeight,
 }) {
   if (isAssetPath(path)) {
-    return Image.asset(path, fit: fit, width: width, height: height);
+    return Image.asset(path,
+        fit: fit,
+        width: width,
+        height: height,
+        cacheWidth: cacheWidth,
+        cacheHeight: cacheHeight);
   }
   if (isNetworkPath(path)) {
-    return Image.network(path, fit: fit, width: width, height: height);
+    return Image.network(path,
+        fit: fit,
+        width: width,
+        height: height,
+        cacheWidth: cacheWidth,
+        cacheHeight: cacheHeight);
   }
   if (bucket != null && isStoragePath(path)) {
     return SignedStorageImage(
@@ -354,7 +396,14 @@ Widget photoSmartImage(
       fit: fit,
       width: width,
       height: height,
+      cacheWidth: cacheWidth,
+      cacheHeight: cacheHeight,
     );
   }
-  return Image.file(File(path), fit: fit, width: width, height: height);
+  return Image.file(File(path),
+      fit: fit,
+      width: width,
+      height: height,
+      cacheWidth: cacheWidth,
+      cacheHeight: cacheHeight);
 }

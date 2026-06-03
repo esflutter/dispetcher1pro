@@ -10,6 +10,7 @@ import 'package:dispatcher_1/core/auth/auth_service.dart';
 import 'package:dispatcher_1/core/storage/storage_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
+import 'package:dispatcher_1/core/utils/avatar_crop.dart';
 import 'package:dispatcher_1/core/utils/photo_source.dart';
 import 'package:dispatcher_1/core/widgets/cropped_avatar.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
@@ -51,8 +52,18 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
       final String? avatarPath = _cropResult?.imagePath;
       if (avatarPath != null && !avatarPath.startsWith('assets/')) {
         try {
-          avatarUrl = await StorageService.instance
-              .uploadAvatar(File(avatarPath));
+          // Впекаем выбранную область в файл, чтобы аватар был одинаков
+          // у автора и у всех остальных.
+          final File cropped = await renderCroppedAvatar(
+            sourcePath: avatarPath,
+            center: _cropResult!.center,
+            radius: _cropResult!.radius,
+            area: _cropResult!.screenSize,
+          );
+          avatarUrl = await StorageService.instance.uploadAvatar(cropped);
+          try {
+            await cropped.delete();
+          } catch (_) {}
         } on FileTooLargeException catch (e) {
           avatarFailMsg =
               'Фото больше ${e.maxMb.toStringAsFixed(0)} МБ. Профиль сохранён без аватара — добавьте фото поменьше в настройках.';

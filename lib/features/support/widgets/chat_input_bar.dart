@@ -252,8 +252,11 @@ class _RecordingBar extends StatelessWidget {
           child: SizedBox(
             height: 40.h,
             child: _Waveform(
+              // onComplete намеренно не передаём: автоотправку голоса по
+              // достижении лимита делает сам SttRecorder (onAutoStop в
+              // chat_screen). Раньше волна и рекордер слали голос двумя
+              // независимыми триггерами — лишняя гонка. Волна — только индикатор.
               duration: maxDuration,
-              onComplete: onSend,
             ),
           ),
         ),
@@ -281,9 +284,8 @@ class _RecordingBar extends StatelessWidget {
 }
 
 class _Waveform extends StatefulWidget {
-  const _Waveform({required this.duration, this.onComplete});
+  const _Waveform({required this.duration});
   final Duration duration;
-  final VoidCallback? onComplete;
 
   @override
   State<_Waveform> createState() => _WaveformState();
@@ -296,12 +298,10 @@ class _WaveformState extends State<_Waveform>
   @override
   void initState() {
     super.initState();
+    // Волна — чистый индикатор: просто проигрываем анимацию. Автоотправку
+    // голоса на лимите делает SttRecorder (onAutoStop в chat_screen),
+    // колбэк завершения здесь больше не нужен.
     _progress = AnimationController(vsync: this, duration: widget.duration)
-      ..addStatusListener((status) {
-        if (status == AnimationStatus.completed) {
-          widget.onComplete?.call();
-        }
-      })
       ..forward();
   }
 

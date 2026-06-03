@@ -118,8 +118,10 @@ class ScheduleService {
         // больше не резолвится в id. Молча отфильтровывали — у пользователя
         // часть техники пропадала из override'а без объяснения. Логируем,
         // чтобы это всплыло в отладке/телеметрии.
-        debugPrint(
-            '[ScheduleService] machinery title not in catalog: "$t"');
+        if (kDebugMode) {
+          debugPrint(
+              '[ScheduleService] machinery title not in catalog: "$t"');
+        }
         continue;
       }
       machineryIds.add(id);
@@ -128,7 +130,9 @@ class ScheduleService {
     for (final String t in categoryTitles) {
       final int? id = categoryByTitle[t];
       if (id == null) {
-        debugPrint('[ScheduleService] category title not in catalog: "$t"');
+        if (kDebugMode) {
+          debugPrint('[ScheduleService] category title not in catalog: "$t"');
+        }
         continue;
       }
       categoryIds.add(id);

@@ -14,8 +14,10 @@ import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_spacing.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
 import 'package:dispatcher_1/core/utils/email_validation.dart';
+import 'package:dispatcher_1/core/utils/avatar_crop.dart';
 import 'package:dispatcher_1/core/utils/photo_source.dart';
 import 'package:dispatcher_1/core/utils/plural.dart';
+import 'package:dispatcher_1/core/widgets/avatar_action_sheet.dart';
 import 'package:dispatcher_1/core/widgets/avatar_circle.dart';
 import 'package:dispatcher_1/core/widgets/dark_sub_app_bar.dart';
 import 'package:dispatcher_1/core/widgets/cropped_avatar.dart';
@@ -46,6 +48,9 @@ class EditExecutorCardScreen extends StatefulWidget {
 }
 
 class _EditExecutorCardScreenState extends State<EditExecutorCardScreen> {
+  // Защита кнопки «Сохранить» от двойного тапа: без неё уходило два UPSERT
+  // и два Navigator.pop() (закрывался лишний экран под формой).
+  bool _saving = false;
   static const int _nameMaxLen = 60;
   static const int _emailMaxLen = 50;
 
@@ -521,7 +526,7 @@ class _EditExecutorCardScreenState extends State<EditExecutorCardScreen> {
               padding: EdgeInsets.fromLTRB(16.w, 12.h, 16.w, 16.h),
               child: PrimaryButton(
                 label: 'Сохранить',
-                onPressed: () async {
+                onPressed: _saving ? null : () async {
                   // Без местоположения карточка не попадает в каталог —
                   // матчинг работает по координатам + радиусу. Поэтому
                   // явно предупреждаем юзера, чтобы он понимал
@@ -534,17 +539,7 @@ class _EditExecutorCardScreenState extends State<EditExecutorCardScreen> {
                     if (proceed != true) return;
                     if (!context.mounted) return;
                   }
-
-                  // Локальное обновление моковых сторов — чтобы экраны,
-                  // которые ещё на них смотрят, сразу увидели новые данные.
-                  ExecutorCardData.location = _location.text;
-                  ExecutorCardData.radius = _radiusIndex >= 0
-                      ? _radiusOptions[_radiusIndex]
-                      : null;
-                  ExecutorCardData.experience = _experience.text;
-                  ExecutorCardData.status = _selectedStatus;
-                  ExecutorCardData.about = _about.text;
-                  ExecutorCardScreen.cardCreated = true;
+                  setState(() => _saving = true);
 
                   // Реальный UPSERT в БД. Радиус — 10/20/50 км в int
                   // (колонка `executor_cards.radius_km`).
@@ -581,11 +576,24 @@ class _EditExecutorCardScreenState extends State<EditExecutorCardScreen> {
                     );
                   } catch (e) {
                     if (!context.mounted) return;
+                    setState(() => _saving = false);
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(content: Text('Не удалось сохранить: $e')),
                     );
                     return;
                   }
+                  // Локальные сторы обновляем ТОЛЬКО после успешного UPSERT —
+                  // иначе при сбое сети флаг «карточка создана» залипал, и
+                  // гейт отклика локально считался пройденным без реальной БД.
+                  ExecutorCardData.location = _location.text;
+                  ExecutorCardData.radius = _radiusIndex >= 0
+                      ? _radiusOptions[_radiusIndex]
+                      : null;
+                  ExecutorCardData.experience = _experience.text;
+                  ExecutorCardData.status = _selectedStatus;
+                  ExecutorCardData.about = _about.text;
+                  ExecutorCardScreen.cardCreated = true;
+
                   if (!context.mounted) return;
                   Navigator.of(context).pop();
                 },
@@ -644,21 +652,63 @@ class _HeaderRowState extends State<_HeaderRow> {
     setState(() => CropResult.saved = result);
     final String? path = result.imagePath;
     if (path != null && !path.startsWith('assets/')) {
-      _uploadAvatar(path);
+      _uploadAvatar(result);
     }
   }
 
   /// Заливает выбранный аватар в storage `avatars` и пишет URL в
-  /// `profiles.avatar_url`. Без этого аватар, выбранный в карточке
-  /// исполнителя, существовал только в памяти `CropResult.saved` —
-  /// после Hot Restart исчезал.
-  Future<void> _uploadAvatar(String path) async {
+  /// `profiles.avatar_url`. Кроп впекается в сам файл, чтобы аватар был
+  /// одинаков у автора и у всех остальных, а не жил только в памяти
+  /// `CropResult.saved` (после перезапуска он там пропадал).
+  Future<void> _uploadAvatar(CropResult crop) async {
+    final String? path = crop.imagePath;
+    if (path == null) return;
     try {
-      final String url =
-          await StorageService.instance.uploadAvatar(File(path));
+      final File cropped = await renderCroppedAvatar(
+        sourcePath: path,
+        center: crop.center,
+        radius: crop.radius,
+        area: crop.screenSize,
+      );
+      final String url = await StorageService.instance.uploadAvatar(cropped);
+      try {
+        await cropped.delete();
+      } catch (_) {}
       await ProfileService.instance.update(avatarUrl: url);
       if (mounted) setState(() => _avatarUrl = url);
     } catch (_) {/* silent */}
+  }
+
+  /// Тап по аватару: если фото уже есть — шторка «Обновить/Удалить»,
+  /// иначе сразу выбор нового фото.
+  Future<void> _onAvatarTap() async {
+    final bool hasAvatar =
+        (_avatarUrl != null && _avatarUrl!.isNotEmpty) ||
+            CropResult.saved != null;
+    if (!hasAvatar) {
+      await _openCrop();
+      return;
+    }
+    final AvatarAction? action = await showAvatarActionSheet(context);
+    if (action == AvatarAction.update) {
+      await _openCrop();
+    } else if (action == AvatarAction.delete) {
+      await _deleteAvatar();
+    }
+  }
+
+  Future<void> _deleteAvatar() async {
+    try {
+      await ProfileService.instance.clearAvatar();
+      CropResult.saved = null;
+      if (mounted) setState(() => _avatarUrl = null);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Не удалось удалить фото')),
+        );
+      }
+    }
   }
 
   String _fmtRating(double v) =>
@@ -673,7 +723,7 @@ class _HeaderRowState extends State<_HeaderRow> {
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         GestureDetector(
-          onTap: _openCrop,
+          onTap: _onAvatarTap,
           child: SizedBox(
             width: 80.r,
             height: 80.r,

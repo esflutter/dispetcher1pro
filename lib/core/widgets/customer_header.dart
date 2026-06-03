@@ -3,6 +3,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/utils/plural.dart';
+import 'package:dispatcher_1/core/widgets/avatar_circle.dart';
 
 /// Шапка заказчика в деталях заказа: аватар + имя + звезда с рейтингом
 /// и подчёркнутая кликабельная «N отзывов». Используется в каталоге
@@ -38,8 +39,6 @@ class CustomerHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bool hasAvatar =
-        avatarUrl != null && avatarUrl!.trim().isNotEmpty;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: <Widget>[
@@ -51,28 +50,10 @@ class CustomerHeader extends StatelessWidget {
                 // Тот же стиль fallback-аватара, что в AvatarCircle и
                 // на экране регистрации: серый круг с нейтральным
                 // силуэтом человечка. Никаких моковых лиц.
-                Container(
-                  width: 56.r,
-                  height: 56.r,
-                  decoration: const BoxDecoration(
-                    color: Color(0xFFEAEAEA),
-                    shape: BoxShape.circle,
-                  ),
-                  clipBehavior: Clip.hardEdge,
-                  child: hasAvatar
-                      ? Image.network(
-                          avatarUrl!,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, _, _) => Image.asset(
-                            'assets/icons/ui/avatar.webp',
-                            fit: BoxFit.cover,
-                          ),
-                        )
-                      : Image.asset(
-                          'assets/icons/ui/avatar.webp',
-                          fit: BoxFit.cover,
-                        ),
-                ),
+                // Общий AvatarCircle: кэш сетевого фото и декод уменьшенной
+                // копии под размер кружка (раньше тут был «голый»
+                // Image.network — полный размер в RAM и без кэша).
+                AvatarCircle(size: 56.r, avatarUrl: avatarUrl),
                 SizedBox(width: 10.w),
                 Expanded(
                   child: Column(

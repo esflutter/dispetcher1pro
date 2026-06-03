@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:dispatcher_1/core/storage/storage_service.dart';
+
 /// Чтение/запись моего профиля (`public.profiles` + `profiles_private`).
 /// Публичная часть (имя/аватар/about/рейтинги) читается одним запросом,
 /// приватная (телефон/email/дата рождения) — отдельным, чтобы при
@@ -76,6 +78,29 @@ class ProfileService {
     };
     if (payload.isEmpty) return;
     await _client.from('profiles').update(payload).eq('id', user.id);
+    changeBeacon.value++;
+  }
+
+  /// Удаляет аватар: обнуляет `avatar_url` и удаляет сам файл из публичного
+  /// бакета, чтобы фото не осталось доступным по прямой ссылке. Обычный
+  /// [update] так не умеет — он пропускает `null`-поля (не затирает их).
+  Future<void> clearAvatar() async {
+    final User? user = _client.auth.currentUser;
+    if (user == null) {
+      throw const AuthException('Нет активной сессии');
+    }
+    final Map<String, dynamic>? row = await _client
+        .from('profiles')
+        .select('avatar_url')
+        .eq('id', user.id)
+        .maybeSingle();
+    await _client
+        .from('profiles')
+        .update(<String, dynamic>{'avatar_url': null}).eq('id', user.id);
+    final String? oldUrl = row?['avatar_url'] as String?;
+    if (oldUrl != null && oldUrl.isNotEmpty) {
+      await StorageService.instance.deleteAvatarByUrl(oldUrl);
+    }
     changeBeacon.value++;
   }
 

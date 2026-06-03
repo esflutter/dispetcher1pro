@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 
@@ -140,6 +141,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
   // перезапуска. Реальная верификация идёт через админ-flow на бэке.
   // TODO: убрать перед релизом — это сейчас чисто debug-affordance.
   void _cycleStatus() {
+    // Только для отладки веток UI. В релизе тап по плашке статуса ничего
+    // не переключает — реальная верификация идёт через админа на сервере.
+    // Без этого guard пользователь мог случайно показать себе
+    // «на проверке/заблокирован».
+    if (!kDebugMode) return;
     const List<VerificationStatus> order = <VerificationStatus>[
       VerificationStatus.notVerified,
       VerificationStatus.inProgress,
@@ -299,7 +305,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
             SizedBox(height: 16.h),
             _ProfileMenuItem(
-              label: 'Информация о подписке',
+              label: 'Подписка и оплата',
               onTap: () => context.push('/subscription/manage'),
             ),
             SizedBox(height: 20.h),

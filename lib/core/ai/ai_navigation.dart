@@ -16,6 +16,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:dispatcher_1/core/utils/support_contact.dart';
 import 'package:dispatcher_1/features/shell/main_shell.dart';
 
 const String _kAssistantChat = '/assistant/chat';
@@ -56,7 +57,7 @@ void navigateAssistantAction(BuildContext context, String action) {
     case 'open_cards':
       context.push('/subscription/cards');
     case 'open_subscription':
-      context.push('/subscription');
+      context.push('/subscription/manage');
     case 'open_executor_card':
     case 'start_verification':
       // Карточка исполнителя — отсюда же запускается отправка документов.
@@ -74,10 +75,10 @@ void navigateAssistantAction(BuildContext context, String action) {
       MainShell.selectedTab.value = 0;
       context.go('/shell');
     case 'contact_support':
-      // Живой человек — ведём на вкладку «Профиль», там внизу блок
-      // «Возникли вопросы? Напишите нам» с иконкой мессенджера.
-      MainShell.selectedTab.value = 2;
-      context.go('/shell');
+      // Живой человек — открываем мессенджер поддержки прямо из чата.
+      // Быстрее, чем вести в «Профиль» и искать там иконку. Пока ссылка
+      // не задана (kSupportMessengerUrl) — показывается мягкая заглушка.
+      openSupportMessenger(context);
     default:
       break;
   }

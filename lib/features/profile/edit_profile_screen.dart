@@ -12,7 +12,9 @@ import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_spacing.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
 import 'package:dispatcher_1/core/utils/email_validation.dart';
+import 'package:dispatcher_1/core/utils/avatar_crop.dart';
 import 'package:dispatcher_1/core/utils/photo_source.dart';
+import 'package:dispatcher_1/core/widgets/avatar_action_sheet.dart';
 import 'package:dispatcher_1/core/widgets/avatar_circle.dart';
 import 'package:dispatcher_1/core/widgets/cropped_avatar.dart';
 import 'package:dispatcher_1/core/widgets/dark_sub_app_bar.dart';
@@ -286,18 +288,62 @@ class _PhotoPickerState extends State<_PhotoPicker> {
       setState(() => CropResult.saved = result);
       final String? path = result.imagePath;
       if (path != null && !path.startsWith('assets/')) {
-        _uploadAvatar(path);
+        _uploadAvatar(result);
       }
     }
   }
 
-  Future<void> _uploadAvatar(String path) async {
+  Future<void> _uploadAvatar(CropResult crop) async {
+    final String? path = crop.imagePath;
+    if (path == null) return;
     try {
-      final String url =
-          await StorageService.instance.uploadAvatar(File(path));
+      // Впекаем выбранную область в файл, чтобы аватар был одинаков у автора
+      // и у всех остальных (а не только в памяти автора до перезапуска).
+      final File cropped = await renderCroppedAvatar(
+        sourcePath: path,
+        center: crop.center,
+        radius: crop.radius,
+        area: crop.screenSize,
+      );
+      final String url = await StorageService.instance.uploadAvatar(cropped);
+      try {
+        await cropped.delete();
+      } catch (_) {}
       await ProfileService.instance.update(avatarUrl: url);
       if (mounted) setState(() => _dbAvatarUrl = url);
     } catch (_) {/* silent */}
+  }
+
+  /// Тап по аватару: если фото уже есть — шторка «Обновить/Удалить»,
+  /// иначе сразу выбор нового фото.
+  Future<void> _onAvatarTap() async {
+    final bool hasAvatar =
+        (_dbAvatarUrl != null && _dbAvatarUrl!.isNotEmpty) ||
+            CropResult.saved != null;
+    if (!hasAvatar) {
+      await _openCrop();
+      return;
+    }
+    final AvatarAction? action = await showAvatarActionSheet(context);
+    if (action == AvatarAction.update) {
+      await _openCrop();
+    } else if (action == AvatarAction.delete) {
+      await _deleteAvatar();
+    }
+  }
+
+  Future<void> _deleteAvatar() async {
+    try {
+      await ProfileService.instance.clearAvatar();
+      CropResult.saved = null;
+      if (mounted) setState(() => _dbAvatarUrl = null);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Не удалось удалить фото')),
+        );
+      }
+    }
   }
 
   @override
@@ -308,7 +354,7 @@ class _PhotoPickerState extends State<_PhotoPicker> {
         ? CroppedAvatar(size: 104.r)
         : AvatarCircle(size: 104.r, avatarUrl: _dbAvatarUrl);
     return GestureDetector(
-      onTap: _openCrop,
+      onTap: _onAvatarTap,
       child: SizedBox(
         width: 104.r,
         height: 104.r,

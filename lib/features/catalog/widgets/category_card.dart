@@ -58,6 +58,10 @@ class CategoryCard extends StatelessWidget {
                               imageAsset!,
                               fit: BoxFit.contain,
                               alignment: Alignment.bottomRight,
+                              // Картинки техники крупные (до ~1275px), а плашка
+                              // мелкая — декодируем уменьшенную копию, чтобы
+                              // сетка категорий не ела память при скролле.
+                              cacheWidth: 500,
                               errorBuilder:
                                   (BuildContext _, Object _, StackTrace? _) =>
                                       Icon(

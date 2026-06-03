@@ -14,7 +14,6 @@ import '../features/catalog/order_on_map_screen.dart';
 import '../features/catalog/orders_map_screen.dart';
 import '../features/executor_card/edit_executor_card_screen.dart';
 import '../features/executor_card/executor_card_screen.dart';
-import '../features/notifications/notifications_inbox_screen.dart';
 import '../features/profile/notifications_settings_screen.dart';
 import '../features/onboarding/onboarding_screen.dart';
 import '../features/onboarding/splash_screen.dart';
@@ -32,7 +31,6 @@ import '../features/shell/main_shell.dart';
 import '../features/subscription/add_card_screen.dart';
 import '../features/subscription/payment_result_screen.dart';
 import '../features/subscription/subscription_manage_screen.dart';
-import '../features/subscription/subscription_screen.dart';
 import '../features/support/chat_screen.dart';
 import '../features/support/support_home_screen.dart';
 
@@ -140,12 +138,6 @@ final GoRouter appRouter = GoRouter(
       builder: (_, _) => const NotificationsSettingsScreen(),
     ),
 
-    // Inbox уведомлений
-    GoRoute(
-      path: '/notifications',
-      builder: (_, _) => const NotificationsInboxScreen(),
-    ),
-
     // Карточка исполнителя
     GoRoute(path: '/executor-card', builder: (_, _) => const ExecutorCardScreen()),
     GoRoute(path: '/executor-card/edit', builder: (_, _) => const EditExecutorCardScreen()),
@@ -192,7 +184,6 @@ final GoRouter appRouter = GoRouter(
     ),
 
     // Подписка
-    GoRoute(path: '/subscription', builder: (_, _) => const SubscriptionScreen()),
     GoRoute(
       path: '/subscription/manage',
       builder: (_, _) => const SubscriptionManageScreen(),

@@ -158,7 +158,7 @@ class _PaymentResultScreenState extends State<PaymentResultScreen> {
   void _onClose() {
     if (widget.binding) {
       appRouter.go('/shell');
-      appRouter.push('/subscription');
+      appRouter.push('/subscription/manage');
       appRouter.push('/subscription/cards');
     } else {
       // ServicePaywall и подобные открываются через
@@ -189,7 +189,7 @@ class _PaymentResultScreenState extends State<PaymentResultScreen> {
         '/profile',
         '/services',
         '/executor-card',
-        '/subscription',
+        '/subscription/manage',
         '/subscription/cards',
       };
       final String? rp = widget.returnPath;
