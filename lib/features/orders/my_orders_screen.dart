@@ -385,6 +385,12 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
       );
       _refresh();
       return false;
+    } on MatchEngageBlockedException catch (e) {
+      if (!mounted) return false;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message)),
+      );
+      return false;
     } catch (e) {
       if (!mounted) return false;
       ScaffoldMessenger.of(context).showSnackBar(

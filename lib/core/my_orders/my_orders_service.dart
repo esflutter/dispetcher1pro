@@ -27,6 +27,18 @@ class AlreadyRespondedException implements Exception {
   String toString() => 'Already responded to this order';
 }
 
+/// Сервер отклонил подтверждение приглашения, потому что у исполнителя не
+/// выполнены условия для работы: неактивна подписка, не пройдена верификация
+/// или не опубликована карточка. Несёт готовый к показу русский текст —
+/// триггер `enforce_executor_engage_requires_subscription` бросает технические
+/// коды (`subscription_inactive` и т.п.), которые нельзя показывать как есть.
+class MatchEngageBlockedException implements Exception {
+  const MatchEngageBlockedException(this.message);
+  final String message;
+  @override
+  String toString() => message;
+}
+
 /// Чтение/обновление моих откликов (`order_matches` WHERE executor_id = me).
 /// FSM-переходы статуса валидирует триггер `validate_match_transition`
 /// в БД — клиент только пишет целевой статус.
@@ -128,8 +140,28 @@ class MyOrdersService {
       if (e.code == '23505') {
         throw const MatchAlreadyTakenException();
       }
+      final String? blocked = _engageBlockMessage(e.message);
+      if (blocked != null) {
+        throw MatchEngageBlockedException(blocked);
+      }
       rethrow;
     }
+  }
+
+  /// Сопоставляет технические коды серверных проверок «может ли исполнитель
+  /// браться за заказ» с человеческими сообщениями. Возвращает `null`, если
+  /// ошибка не про эти проверки (тогда вызывающий пробрасывает её дальше).
+  static String? _engageBlockMessage(String serverMessage) {
+    if (serverMessage.contains('subscription_inactive')) {
+      return 'Подписка неактивна. Продлите её, чтобы принимать заказы.';
+    }
+    if (serverMessage.contains('executor_not_verified')) {
+      return 'Аккаунт ещё не верифицирован — дождитесь проверки документов.';
+    }
+    if (serverMessage.contains('card_not_published')) {
+      return 'Опубликуйте карточку исполнителя, чтобы принимать заказы.';
+    }
+    return null;
   }
 
   /// Отказаться от заказа, которого мы ждали подтверждать
@@ -183,17 +215,21 @@ class MyOrdersService {
   }
 
   /// Контакты заказчика (телефон/email) — доступны только после
-  /// `accepted`/`completed` через RLS-политику на `profiles_private`.
-  /// Возвращает `null`, если нет доступа.
+  /// `accepted`/`completed`. Идёт через RPC `get_partner_contacts`, который
+  /// на сервере проверяет, что вызывающий действительно партнёр по заказу,
+  /// и отдаёт РОВНО phone+email (остальная приватная строка — токен карты,
+  /// дата рождения, даты подписки — недоступна). Возвращает `null` без доступа.
   Future<({String? phone, String? email})?> getCustomerContacts(
       String customerId) async {
     try {
-      final Map<String, dynamic>? row = await _client
-          .from('profiles_private')
-          .select('phone, email')
-          .eq('id', customerId)
-          .maybeSingle();
-      if (row == null) return null;
+      final List<dynamic> rows = await _client.rpc(
+        'get_partner_contacts',
+        params: <String, dynamic>{
+          'target_ids': <String>[customerId],
+        },
+      ) as List<dynamic>;
+      if (rows.isEmpty) return null;
+      final Map<String, dynamic> row = rows.first as Map<String, dynamic>;
       return (
         phone: row['phone'] as String?,
         email: row['email'] as String?,
@@ -203,24 +239,24 @@ class MyOrdersService {
     }
   }
 
-  /// Bulk-вариант — один запрос на список customerId вместо отдельного
-  /// `eq().maybeSingle()` на каждого. Раньше «Мои заказы» исполнителя
-  /// делал 20 параллельных запросов для 20 заказов; теперь — один.
-  /// RLS отдаёт только те записи, к которым у текущего auth есть доступ.
+  /// Bulk-вариант — один RPC на список customerId вместо отдельного запроса
+  /// на каждого. Раньше «Мои заказы» исполнителя делал 20 параллельных
+  /// запросов для 20 заказов; теперь — один. Сервер сам отфильтрует тех,
+  /// с кем у текущего пользователя нет подтверждённого заказа.
   Future<Map<String, ({String? phone, String? email})>>
       getCustomerContactsBulk(Iterable<String> customerIds) async {
     final List<String> ids = customerIds.toSet().toList();
     if (ids.isEmpty) return <String, ({String? phone, String? email})>{};
     try {
-      final List<Map<String, dynamic>> rows = await _client
-          .from('profiles_private')
-          .select('id, phone, email')
-          .inFilter('id', ids);
+      final List<dynamic> rows = await _client.rpc(
+        'get_partner_contacts',
+        params: <String, dynamic>{'target_ids': ids},
+      ) as List<dynamic>;
       return <String, ({String? phone, String? email})>{
-        for (final Map<String, dynamic> row in rows)
-          row['id'] as String: (
-            phone: row['phone'] as String?,
-            email: row['email'] as String?,
+        for (final dynamic r in rows)
+          (r as Map<String, dynamic>)['id'] as String: (
+            phone: r['phone'] as String?,
+            email: r['email'] as String?,
           ),
       };
     } on PostgrestException {

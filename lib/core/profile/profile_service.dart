@@ -273,10 +273,17 @@ class MyPrivate {
   /// то есть при OFF — запись в inbox даже не создаётся.
   final bool pushNewOrders;
 
-  /// Подписка активна сейчас (включая триал) — paid_until ещё в будущем.
+  /// Подписка активна сейчас (включая триал). Зеркалит серверную
+  /// `is_subscription_active`: при включённом автопродлении даём те же
+  /// 3 дня форы на повторные попытки списания — иначе в это окно
+  /// исполнитель видел бы замок на отклик, хотя сервер его ещё пускает.
   bool get subscriptionActive {
     final DateTime? until = subscriptionPaidUntil;
-    return until != null && until.isAfter(DateTime.now());
+    if (until == null) return false;
+    final DateTime effective = subscriptionAutoRenew
+        ? until.add(const Duration(days: 3))
+        : until;
+    return effective.isAfter(DateTime.now());
   }
 
   /// Юзер сейчас на бесплатном триале — `trial_until` ещё в будущем.

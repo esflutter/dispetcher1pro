@@ -66,6 +66,23 @@ try {
 
 const FCM_PROJECT_ID = serviceAccount?.project_id ?? "";
 
+// fetch с жёстким таймаутом. Без него один подвисший вызов к Google (OAuth
+// или FCM) держал бы весь батч из 100 пушей до принудительного убийства
+// воркера рантаймом — остальные нотификации не отправились бы.
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  ms: number,
+): Promise<Response> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ms);
+  try {
+    return await fetch(url, { ...init, signal: ctrl.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // ---------------------------------------------------------------------
 // JWT RS256 через Web Crypto (нативно в Deno, быстрее node:crypto).
 // ---------------------------------------------------------------------
@@ -152,14 +169,14 @@ async function getFcmAccessToken(supabase: SupabaseClient): Promise<string> {
     serviceAccount.private_key,
   );
 
-  const res = await fetch("https://oauth2.googleapis.com/token", {
+  const res = await fetchWithTimeout("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
       assertion: jwt,
     }),
-  });
+  }, 10000);
 
   if (!res.ok) {
     throw new Error(`Google OAuth failed: ${res.status} ${await res.text()}`);
@@ -226,7 +243,7 @@ async function sendOneFcm(
   };
 
   try {
-    const res = await fetch(
+    const res = await fetchWithTimeout(
       `https://fcm.googleapis.com/v1/projects/${FCM_PROJECT_ID}/messages:send`,
       {
         method: "POST",
@@ -236,6 +253,7 @@ async function sendOneFcm(
         },
         body: JSON.stringify(payload),
       },
+      10000,
     );
 
     if (res.ok) {
@@ -450,6 +468,22 @@ async function processNotification(
 
 Deno.serve(async (req: Request) => {
   try {
+    // Авторизация. И триггер notifications_send_trigger, и cron
+    // flush_pending_notifications вызывают функцию с заголовком
+    // `Authorization: Bearer <service_role>`. Без этой проверки эндпоинт был
+    // открыт наружу — посторонний не мог подделать содержимое пуша (оно
+    // берётся из БД), но мог инициировать рассылку очереди / устроить DoS.
+    const authHeader = req.headers.get("Authorization") ?? "";
+    if (
+      !SUPABASE_SERVICE_ROLE_KEY ||
+      authHeader !== `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`
+    ) {
+      return new Response(JSON.stringify({ error: "unauthorized" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
       auth: { persistSession: false },
     });

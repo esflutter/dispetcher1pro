@@ -1018,6 +1018,12 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       // Заказ больше не наш — убираем из списка дня.
       setState(() => list.removeAt(idx));
       return false;
+    } on MatchEngageBlockedException catch (e) {
+      if (!mounted) return false;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message)),
+      );
+      return false;
     } catch (_) {
       if (!mounted) return false;
       ScaffoldMessenger.of(context).showSnackBar(
