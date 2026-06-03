@@ -13,6 +13,15 @@ const List<String> _monthsRuGenitive = <String>[
 
 String _fmtDay(DateTime d) => '${d.day} ${_monthsRuGenitive[d.month]}';
 
+/// "2026-06-20" → "20 июня" (без года). Для карточек заказов в чате
+/// ассистента, где дата приходит ISO-строкой. Если разобрать не вышло —
+/// возвращаем исходную строку без падения.
+String formatIsoDayShort(String iso) {
+  final DateTime? d = DateTime.tryParse(iso);
+  if (d == null) return iso;
+  return _fmtDay(d);
+}
+
 String _fmtHm(String time) {
   // time приходит в формате HH:mm:ss — отрезаем секунды для отображения.
   if (time.length >= 5) return time.substring(0, 5);

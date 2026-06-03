@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
 import 'package:dispatcher_1/core/ai/ai_navigation.dart';
+import 'package:dispatcher_1/core/catalog/format.dart';
 import 'package:dispatcher_1/core/utils/photo_source.dart';
 import 'package:dispatcher_1/features/services/create_service_screen.dart';
 import 'package:dispatcher_1/features/executor_card/edit_executor_card_screen.dart';
@@ -356,7 +357,7 @@ class _OrderTile extends StatelessWidget {
               SizedBox(height: 4.h),
               Text(
                 [
-                  if (dateFrom != null) 'с $dateFrom',
+                  if (dateFrom != null) 'с ${formatIsoDayShort(dateFrom)}',
                   if (distance != null) '~ $distance км',
                 ].join(' • '),
                 style: AppTextStyles.body.copyWith(
