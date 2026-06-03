@@ -90,6 +90,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   /// одновременно. Сбрасывается после завершения операции.
   bool _voiceBusy = false;
 
+  /// id пузыря-плейсхолдера «идёт запись голоса» в ленте чата. Во время записи
+  /// показываем его как сообщение пользователя; по завершении заменяем
+  /// распознанным текстом и сразу отправляем ассистенту; при отмене/ошибке —
+  /// убираем.
+  static const String _kVoiceRecId = '__voice_rec__';
+
   bool get _showQuickActions =>
       _messages.length == 1 && !_messages.first.fromUser && _pendingImages.isEmpty && !_isProcessing;
 
@@ -603,7 +609,17 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       if (!mounted || !_isRecording) return;
       _sendVoice();
     };
-    if (mounted) setState(() => _isRecording = true);
+    if (mounted) {
+      setState(() {
+        _isRecording = true;
+        // Пузырь-индикатор записи прямо в ленте чата — чтобы было видно, что
+        // голос пишется, а не молчаливое поле ввода.
+        _messages.add(const ChatMessage(
+          id: _kVoiceRecId, text: '🎤 Идёт запись…', fromUser: true,
+        ));
+      });
+      _scrollToBottom();
+    }
   }
 
   Future<void> _cancelRecording() async {
@@ -611,7 +627,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     // миллисекунду, не отправил уже отменяемую запись.
     SttRecorder.instance.onAutoStop = null;
     await SttRecorder.instance.cancel();
-    if (mounted) setState(() => _isRecording = false);
+    if (mounted) {
+      setState(() {
+        _isRecording = false;
+        _messages.removeWhere((m) => m.id == _kVoiceRecId);
+      });
+    }
   }
 
   Future<void> _sendVoice() async {
@@ -633,13 +654,23 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       return;
     }
     if (audio == null) {
+      setState(() => _messages.removeWhere((m) => m.id == _kVoiceRecId));
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Слишком короткое сообщение — задержите кнопку микрофона')),
       );
       return;
     }
 
-    setState(() => _isProcessing = true);
+    setState(() {
+      _isProcessing = true;
+      // Запись остановлена — меняем пузырь «идёт запись» на «распознаю».
+      final i = _messages.indexWhere((m) => m.id == _kVoiceRecId);
+      if (i >= 0) {
+        _messages[i] = const ChatMessage(
+          id: _kVoiceRecId, text: '🎤 Распознаю…', fromUser: true,
+        );
+      }
+    });
     String? errorMsg;
     String? recognized;
     try {
@@ -663,20 +694,23 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(errorMsg ?? 'Не удалось распознать речь')),
       );
-      setState(() => _isProcessing = false);
+      setState(() {
+        _isProcessing = false;
+        _messages.removeWhere((m) => m.id == _kVoiceRecId);
+      });
       return;
     }
-    // Распознанный текст показываем как сообщение юзера и шлём ассистенту.
-    // Распознанное кладём в ПОЛЕ ВВОДА — пользователь видит, что услышал
-    // ассистент, и отправляет сам (или правит). Раньше текст уходил вслепую:
-    // при неточном распознавании уходил мусор без шанса исправить, а на
-    // пустом результате не показывалось ничего. Длину режем под лимит поля.
+    // Распознанный текст уходит ПРЯМО В ЧАТ как сообщение пользователя и сразу
+    // отправляется ассистенту — ответ приходит уже после завершения записи.
+    // (Пузырь-плейсхолдер «распознаю…» заменяется реальным сообщением, которое
+    // добавит _handleSend.) Длину режем под лимит.
     final String capped =
         recognized.length > 1000 ? recognized.substring(0, 1000) : recognized;
-    setState(() => _isProcessing = false);
-    _inputController.text = capped;
-    _inputController.selection =
-        TextSelection.collapsed(offset: _inputController.text.length);
+    setState(() {
+      _isProcessing = false;
+      _messages.removeWhere((m) => m.id == _kVoiceRecId);
+    });
+    _handleSend(capped);
   }
 
   @override
