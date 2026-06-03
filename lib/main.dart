@@ -114,9 +114,9 @@ Future<void> main() async {
         // Чистим переписку ассистента и идентификаторы сессий — иначе
         // следующий юзер на этом устройстве увидит чужие сообщения.
         ChatScreen.resetHistory();
-        if (firebaseReady) {
-          await PushService.instance.clearForCurrentUser();
-        }
+        // Push-токен инвалидируется в signOut()/deleteAccount() ДО закрытия
+        // сессии (пока запрос к БД ещё авторизован). Здесь, после signedOut,
+        // сессия уже мертва и RLS отклонил бы update — поэтому не дублируем.
       }
     });
 

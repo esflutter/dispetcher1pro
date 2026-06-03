@@ -70,7 +70,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     });
     _emailFocus.addListener(() async {
       if (_emailFocus.hasFocus) {
-        if (_emailError != null) {
+        if (_emailError != null && mounted) {
           setState(() => _emailError = null);
         }
       } else {
@@ -86,8 +86,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               await ProfileService.instance.updatePrivateEmail(value);
             } catch (_) {/* silent */}
           }
-          if (_emailError != null) setState(() => _emailError = null);
-        } else {
+          // mounted: между await выше и этим setState пользователь мог
+          // закрыть экран — без проверки получили бы setState после dispose.
+          if (_emailError != null && mounted) setState(() => _emailError = null);
+        } else if (mounted) {
           setState(() => _emailError = 'Некорректная электронная почта');
         }
       }

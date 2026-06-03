@@ -300,12 +300,10 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
               m.status == MyMatchStatus.completed)
             m.customerId,
       };
-      final Map<String, ({String? phone, String? email})?> contacts =
-          <String, ({String? phone, String? email})?>{};
-      await Future.wait(needContact.map((String id) async {
-        contacts[id] =
-            await MyOrdersService.instance.getCustomerContacts(id);
-      }));
+      // Один пакетный запрос вместо отдельного на каждого заказчика
+      // (раньше при N принятых заказах уходило N запросов).
+      final Map<String, ({String? phone, String? email})> contacts =
+          await MyOrdersService.instance.getCustomerContactsBulk(needContact);
       if (!mounted) return;
       setState(() {
         for (final MapEntry<DateTime, ScheduleDayOverride> e

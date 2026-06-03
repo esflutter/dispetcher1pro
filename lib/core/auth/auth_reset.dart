@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:dispatcher_1/core/push/push_service.dart';
 import 'package:dispatcher_1/core/realtime/realtime_service.dart';
 import 'package:dispatcher_1/core/utils/photo_source.dart' show clearSignedUrlCache;
 import 'package:dispatcher_1/features/auth/photo_crop_screen.dart';
@@ -21,6 +22,12 @@ Future<void> signOut() async {
   // WebSocket-соединение от имени прошлого юзера. Делаем до signOut,
   // чтобы Supabase сам не успел кинуть auth-error в наш callback.
   await RealtimeService.instance.stop();
+  // Инвалидируем push-токен ПОКА сессия жива. Если сделать это после
+  // signOut (как раньше — в listener onAuthStateChange), запрос к БД уйдёт
+  // без авторизации, RLS его отклонит, и токен останется привязан к
+  // вышедшему пользователю — следующий человек на устройстве получал бы
+  // его пуши. clearForCurrentUser сам безопасен, даже если Firebase не готов.
+  await PushService.instance.clearForCurrentUser();
   try {
     await Supabase.instance.client.auth.signOut();
   } catch (_) {/* всё равно чистим локально */}
@@ -32,6 +39,8 @@ Future<void> signOut() async {
 /// отдельным RPC, который дёргает экран профиля до вызова этой функции.
 Future<void> deleteAccount() async {
   await RealtimeService.instance.stop();
+  // То же, что в signOut: снимаем push-токен до закрытия сессии.
+  await PushService.instance.clearForCurrentUser();
   try {
     await Supabase.instance.client.auth.signOut();
   } catch (_) {/* всё равно чистим локально */}
