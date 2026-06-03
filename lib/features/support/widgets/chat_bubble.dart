@@ -312,7 +312,12 @@ class _OrderTile extends StatelessWidget {
     return InkWell(
       // В executor-приложении /orders/:id — это «мои отклики», а нам нужна
       // публичная карточка заказа из каталога: /catalog/order/:id.
-      onTap: id.isEmpty ? null : () => context.push('/catalog/order/$id'),
+      // Снимаем фокус перед уходом с чата — иначе при возврате клавиатура
+      // снова всплывает (Navigator восстанавливает фокус поля ввода).
+      onTap: id.isEmpty ? null : () {
+        FocusManager.instance.primaryFocus?.unfocus();
+        context.push('/catalog/order/$id');
+      },
       borderRadius: BorderRadius.circular(10.r),
       child: Container(
         margin: EdgeInsets.only(bottom: 8.h),
@@ -472,6 +477,9 @@ class _DraftReadyHandoff extends StatelessWidget {
                     );
                     return;
                   }
+                  // Снимаем фокус перед уходом на форму — чтобы при возврате в
+                  // чат клавиатура не всплывала снова.
+                  FocusManager.instance.primaryFocus?.unfocus();
                   if (isService) {
                     Navigator.of(context).push(MaterialPageRoute<void>(
                       builder: (_) => CreateServiceScreen(aiDraft: draft),
