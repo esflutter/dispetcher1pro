@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 
@@ -131,40 +130,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (mounted) setState(() {});
   }
 
-  // Локальное переключение статуса по тапу на pill — для тестового
-  // прогона веток UI. РАНЬШЕ этот цикл писал значение в `profiles.
-  // verification_status` и `blocked_until`, чтобы изменение пережило
-  // рестарт. Это был backdoor: любой пользователь мог сам поставить
-  // себе verification_status='approved' и пройти за paywall. Серверный
-  // триггер `profiles_protect_sensitive` теперь блокирует такие
-  // апдейты. Локально оставляем переключение для отладки UI — до
-  // перезапуска. Реальная верификация идёт через админ-flow на бэке.
-  // TODO: убрать перед релизом — это сейчас чисто debug-affordance.
-  void _cycleStatus() {
-    // Только для отладки веток UI. В релизе тап по плашке статуса ничего
-    // не переключает — реальная верификация идёт через админа на сервере.
-    // Без этого guard пользователь мог случайно показать себе
-    // «на проверке/заблокирован».
-    if (!kDebugMode) return;
-    const List<VerificationStatus> order = <VerificationStatus>[
-      VerificationStatus.notVerified,
-      VerificationStatus.inProgress,
-      VerificationStatus.verified,
-      VerificationStatus.rejected,
-    ];
-    if (AccountBlock.isBlocked) {
-      AccountBlock.forceLift();
-      _status = VerificationStatus.notVerified;
-      return;
-    }
-    final int idx = order.indexOf(_status);
-    if (idx == order.length - 1) {
-      final DateTime until = DateTime.now().add(const Duration(days: 30));
-      AccountBlock.setUntil(until);
-      return;
-    }
-    _status = order[idx + 1];
-  }
+  // Переключение статуса верификации/блокировки по тапу убрано: и
+  // верификация, и блокировки теперь управляются только на сервере
+  // (админ-панель), а приложение лишь отражает статус из БД. Тап по плашке
+  // статуса ничего не меняет.
 
   Future<void> _openEdit() async {
     await context.push('/profile/edit');
@@ -242,13 +211,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
             SizedBox(height: 16.h),
             if (isBlocked) ...<Widget>[
-              // Тапаемая обёртка — для теста: следующий тап снимает
-              // блокировку и возвращает цикл в notVerified. См. _cycleStatus.
-              GestureDetector(
-                onTap: _cycleStatus,
-                behavior: HitTestBehavior.opaque,
-                child: const BlockedPill(),
-              ),
+              const BlockedPill(),
               SizedBox(height: 8.h),
               Text(
                 'Ваш рейтинг ниже 2 звёзд, поэтому доступ\nвременно ограничен ${AccountBlock.blockedUntilText ?? "на 30 дней"}',
@@ -261,11 +224,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
               SizedBox(height: 16.h),
             ] else ...<Widget>[
-              GestureDetector(
-                onTap: _cycleStatus,
-                behavior: HitTestBehavior.opaque,
-                child: FullWidthVerificationPill(status: status),
-              ),
+              FullWidthVerificationPill(status: status),
               if (status == VerificationStatus.notVerified) ...<Widget>[
                 SizedBox(height: 8.h),
                 _PrimaryActionButton(
