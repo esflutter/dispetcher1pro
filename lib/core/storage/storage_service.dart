@@ -96,25 +96,52 @@ class StorageService {
 
   /// Загружает фото документа для верификации в приватный бакет
   /// `assistant-attachments`. Возвращает ПУТЬ (не URL): его записываем в
-  /// verification_documents, а админ смотрит файл через Supabase Studio
-  /// (приватный бакет, только владелец + service_role).
-  /// Путь: `<user_id>/verification/<uuid>.webp` — RLS на INSERT проверяет
+  /// таблицу verification_documents, а проверяющий смотрит файл в панели
+  /// верификации (приватный бакет, временные ссылки).
+  /// Путь: `<user_id>/verification/<uuid>.jpg` — RLS на INSERT проверяет
   /// первый сегмент = auth.uid().
+  ///
+  /// Документы НЕ конвертируем в webp (в отличие от фото заказов/услуг):
+  /// проверяющему удобнее привычный JPEG (открывается и печатается везде),
+  /// а качество держим выше ради читаемости мелкого текста паспорта/прав.
   Future<String> uploadVerificationDocument(File file) async {
     final User? user = _client.auth.currentUser;
     if (user == null) {
       throw const AuthException('Нет активной сессии');
     }
     _ensureUnderMaxSize(file);
-    final File compressed = await _compress(file);
-    final String fileName = '${_uniqueId()}.webp';
+    final File doc = await _compressDocument(file);
+    final String fileName = '${_uniqueId()}.jpg';
     final String path = '${user.id}/verification/$fileName';
     await _client.storage.from('assistant-attachments').upload(
           path,
-          compressed,
-          fileOptions: const FileOptions(contentType: 'image/webp'),
+          doc,
+          fileOptions: const FileOptions(contentType: 'image/jpeg'),
         );
     return path;
+  }
+
+  /// Подготовка ДОКУМЕНТА верификации к загрузке: всегда JPEG (а не webp),
+  /// качество выше обычного — чтобы мелкий текст паспорта/прав читался, а
+  /// проверяющий мог открыть и распечатать файл привычным способом. HEIC из
+  /// iOS тоже приводим к JPEG. Размер при этом ограничиваем, чтобы не лить
+  /// 50-мегапиксельные оригиналы. При сбое сжатия — заливаем как есть (лучше
+  /// залить, чем сорвать верификацию).
+  Future<File> _compressDocument(File source) async {
+    try {
+      final String target =
+          '${source.path}.${DateTime.now().microsecondsSinceEpoch}.jpg';
+      final XFile? out = await FlutterImageCompress.compressAndGetFile(
+        source.absolute.path,
+        target,
+        format: CompressFormat.jpeg,
+        quality: 92,
+        minWidth: maxImageDimension,
+        minHeight: maxImageDimension,
+      );
+      if (out != null) return File(out.path);
+    } catch (_) {/* ниже — заливаем оригинал */}
+    return source;
   }
 
   /// Бросает [FileTooLargeException] если файл больше [maxFileBytes].
