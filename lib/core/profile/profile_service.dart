@@ -280,9 +280,14 @@ class MyPrivate {
   bool get subscriptionActive {
     final DateTime? until = subscriptionPaidUntil;
     if (until == null) return false;
-    final DateTime effective = subscriptionAutoRenew
-        ? until.add(const Duration(days: 3))
-        : until;
+    // Зеркалим серверную is_subscription_active: 3 дня форы даём ТОЛЬКО при
+    // включённом автопродлении И наличии привязанной карты. Без карты ретраев
+    // автосписания нет — значит и grace не положен (иначе включением тумблера
+    // авто-продления можно было бы выпросить бесплатные 3 дня).
+    final bool graceEligible =
+        subscriptionAutoRenew && subscriptionPaymentMethodId != null;
+    final DateTime effective =
+        graceEligible ? until.add(const Duration(days: 3)) : until;
     return effective.isAfter(DateTime.now());
   }
 
