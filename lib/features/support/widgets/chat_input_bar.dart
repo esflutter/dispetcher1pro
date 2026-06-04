@@ -7,6 +7,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
+import 'package:dispatcher_1/core/theme/system_bar_style.dart';
 import 'package:dispatcher_1/core/utils/photo_source.dart';
 
 /// Нижняя панель ввода чата ассистента.
@@ -84,9 +85,18 @@ class _ChatInputBarState extends State<ChatInputBar> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
+    // Низ панели ввода тёмный (navBarDark) и заходит под системные кнопки.
+    // Красим системный навбар в тот же цвет: иначе на старых телефонах
+    // (3-кнопочная навигация без edge-to-edge) система рисует свой светлый
+    // фон, и он выбивается из тёмной полосы ввода.
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: dispatcherSystemBarStyle(
+        navBarColor: AppColors.navBarDark,
+        navIconBrightness: Brightness.light,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
         if (widget.pendingImages.isNotEmpty && !widget.isRecording)
           _PendingImagesRow(
             images: widget.pendingImages,
@@ -116,6 +126,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
           ),
         ),
       ],
+      ),
     );
   }
 }
