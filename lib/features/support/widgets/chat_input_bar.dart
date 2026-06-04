@@ -481,8 +481,14 @@ class _PendingImagesRow extends StatelessWidget {
                   child: InteractiveViewer(
                     maxScale: 4.0,
                     child: isAssetPath(asset)
-                        ? Image.asset(asset)
-                        : Image.file(File(asset)),
+                        ? Image.asset(asset,
+                            errorBuilder: (_, _, _) => const Center(
+                                child: Icon(Icons.broken_image,
+                                    color: Colors.white38, size: 72)))
+                        : Image.file(File(asset),
+                            errorBuilder: (_, _, _) => const Center(
+                                child: Icon(Icons.broken_image,
+                                    color: Colors.white38, size: 72))),
                   ),
                 ),
                 Positioned(
