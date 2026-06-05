@@ -29,10 +29,13 @@ final RegExp _faqWords = RegExp(
     r'(^|\s)(как|почему|зачем|каким образом|что такое|что значит|можно ли|могу ли|'
     r'нужно ли|что делать|сколько стоит|как мне)(\s|$|[,.?!])');
 
-// Слова про функции приложения — тоже FAQ.
-final RegExp _appFeature = RegExp(
-    r'(подписк|верифик|рейтинг|карточк|профил|настройк|уведомл|оплат|тариф|'
+// Слова про аккаунт пользователя — всегда FAQ (личный вопрос про приложение).
+final RegExp _appAccount = RegExp(
+    r'(подписк|верифик|карточк|профил|настройк|уведомл|'
     r'докумен|блокир|телефон|парол|аккаунт|вериф)');
+// Рейтинг/оплата/тариф — это ФИЛЬТР поиска, если рядом названа техника
+// («самосвал с рейтингом от 4.5»), и FAQ, если техники нет («как поднять рейтинг»).
+final RegExp _appFilter = RegExp(r'(рейтинг|оплат|тариф)');
 
 // Глаголы поиска. «подойд/подход» — «какой заказ мне подойдёт».
 final RegExp _searchVerb = RegExp(
@@ -83,7 +86,10 @@ bool looksLikeCatalogSearch(String raw, {required bool isCustomer}) {
   // Сначала отсекаем явные не-поиски.
   if (_faqWords.hasMatch(t)) return false;
   if (_possessive.hasMatch(t)) return false;
-  if (_appFeature.hasMatch(t)) return false;
+  if (_appAccount.hasMatch(t)) return false;
+  // «рейтинг/цена» без названной техники — это вопрос про аккаунт, а не
+  // фильтр поиска; с техникой — наоборот, поиск.
+  if (_appFilter.hasMatch(t) && !_machineryMention.hasMatch(t)) return false;
 
   final RegExp subject = isCustomer ? _executorSubject : _orderSubject;
   final bool hasSubject = subject.hasMatch(t);
@@ -111,5 +117,7 @@ bool looksLikeCatalogSearch(String raw, {required bool isCustomer}) {
 bool looksLikeFaqQuestion(String raw) {
   final String t = ' ${raw.toLowerCase().trim()} ';
   if (_refine.hasMatch(t)) return false;
-  return _faqWords.hasMatch(t) || _appFeature.hasMatch(t) || _possessive.hasMatch(t);
+  // Рейтинг/цена-уточнения (_appFilter) НЕ выводят из режима поиска — они его
+  // уточняют. Из поиска в FAQ возвращают только вопросы про аккаунт.
+  return _faqWords.hasMatch(t) || _appAccount.hasMatch(t) || _possessive.hasMatch(t);
 }
