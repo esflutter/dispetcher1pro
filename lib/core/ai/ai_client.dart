@@ -224,6 +224,51 @@ class AiClient {
       }
       _lastSlotSessionId ??= p.getString(_kSlotSessionKey);
     } catch (_) {/* не критично */}
+    // Локальный id стирается при ВЫХОДЕ из аккаунта (приватность: следующий
+    // пользователь на устройстве не должен видеть чужую переписку). Поэтому
+    // после повторного входа того же пользователя восстанавливаем его
+    // последнюю беседу из БД по его id (RLS отдаёт только его сессии). Без
+    // этого история «терялась» при выходе и повторном входе.
+    await _restoreSessionsFromDb();
+  }
+
+  /// Достаёт последнюю сессию пользователя из БД, если локального id нет
+  /// (после выхода/повторного входа). Беседа (chat/search) — для продолжения
+  /// и истории; пошаговое создание (create_*) — только для показа истории.
+  Future<void> _restoreSessionsFromDb() async {
+    if (_sb.auth.currentUser == null) return;
+    try {
+      if ((_sessionIds[AiChatKind.chat] ?? '').isEmpty) {
+        final List<dynamic> rows = await _sb
+            .from('ai_sessions')
+            .select('id')
+            .eq('app', app)
+            .inFilter('kind', const <String>['chat', 'search'])
+            .order('updated_at', ascending: false)
+            .limit(1);
+        if (rows.isNotEmpty) {
+          final String? sid = (rows.first as Map)['id'] as String?;
+          if (sid != null && sid.isNotEmpty) {
+            _sessionIds[AiChatKind.chat] = sid;
+            _persistChatSession();
+          }
+        }
+      }
+      if ((_lastSlotSessionId ?? '').isEmpty) {
+        final List<dynamic> rows = await _sb
+            .from('ai_sessions')
+            .select('id')
+            .eq('app', app)
+            .inFilter('kind',
+                const <String>['create_order', 'create_service', 'create_card'])
+            .order('updated_at', ascending: false)
+            .limit(1);
+        if (rows.isNotEmpty) {
+          final String? sid = (rows.first as Map)['id'] as String?;
+          if (sid != null && sid.isNotEmpty) _lastSlotSessionId = sid;
+        }
+      }
+    } catch (_) {/* не критично — просто не восстановим, чат начнётся заново */}
   }
 
   /// Загружает историю текущего разговора из БД (последние сообщения сессии).
