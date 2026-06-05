@@ -70,6 +70,32 @@ void main() {
     });
   });
 
+  group('аудит ассистента: техника без глагола/маркера → поиск', () {
+    test('исполнитель: названная техника одна — это поиск', () {
+      expect(looksLikeCatalogSearch('экскаватор через 3 дня в москве', isCustomer: false), isTrue);
+      expect(looksLikeCatalogSearch('джисиби в москве завтра', isCustomer: false), isTrue);
+      expect(looksLikeCatalogSearch('копаю котлован в твери радиус 50', isCustomer: false), isTrue);
+      expect(looksLikeCatalogSearch('найди экскаватр около москве', isCustomer: false), isTrue); // опечатка
+    });
+    test('заказчик: сленг техники — это поиск', () {
+      expect(looksLikeCatalogSearch('покажи бобкатом недорого', isCustomer: true), isTrue);
+      expect(looksLikeCatalogSearch('нужен джисиби', isCustomer: true), isTrue);
+    });
+  });
+
+  group('аудит ассистента: рейтинг как фильтр vs вопрос про аккаунт', () {
+    test('поиск с рейтингом (есть глагол+предмет или техника) → true', () {
+      expect(looksLikeCatalogSearch('покажи исполнителя рейтингом от 4', isCustomer: true), isTrue);
+      expect(looksLikeCatalogSearch('кран с рейтингом от 4.5', isCustomer: true), isTrue);
+      expect(looksLikeCatalogSearch('топ исполнители по экскаватору рейтинг выше 4.5', isCustomer: true), isTrue);
+    });
+    test('рейтинг как вопрос про аккаунт → false', () {
+      expect(looksLikeCatalogSearch('как поднять рейтинг', isCustomer: true), isFalse);
+      expect(looksLikeCatalogSearch('какой у меня рейтинг', isCustomer: false), isFalse);
+      expect(looksLikeCatalogSearch('рейтинг', isCustomer: true), isFalse);
+    });
+  });
+
   group('looksLikeFaqQuestion (возврат из поиска в чат)', () {
     test('FAQ/личные вопросы → true', () {
       expect(looksLikeFaqQuestion('как откликнуться на этот заказ?'), isTrue);
@@ -84,6 +110,28 @@ void main() {
       expect(looksLikeFaqQuestion('только экскаватор'), isFalse);
       expect(looksLikeFaqQuestion('подальше за город'), isFalse);
       expect(looksLikeFaqQuestion('ещё варианты'), isFalse);
+    });
+  });
+
+  group('looksLikeFaqInterruption (выход из пошагового создания)', () {
+    test('притяжательные/локация — это ОТВЕТ слот-филлу, НЕ выходим → false', () {
+      expect(looksLikeFaqInterruption('моё местоположение'), isFalse);
+      expect(looksLikeFaqInterruption('по моему местоположению'), isFalse);
+      expect(looksLikeFaqInterruption('у меня в москве'), isFalse);
+      expect(looksLikeFaqInterruption('мой адрес ленина 5'), isFalse);
+      expect(looksLikeFaqInterruption('моя техника — автокран'), isFalse);
+    });
+
+    test('настоящий вопрос/аккаунт — выходим из сбора → true', () {
+      expect(looksLikeFaqInterruption('как отменить заказ?'), isTrue);
+      expect(looksLikeFaqInterruption('сколько стоит подписка'), isTrue);
+      expect(looksLikeFaqInterruption('что такое верификация'), isTrue);
+      expect(looksLikeFaqInterruption('как пройти верификацию'), isTrue);
+    });
+
+    test('уточнения остаются в сборе → false', () {
+      expect(looksLikeFaqInterruption('подешевле'), isFalse);
+      expect(looksLikeFaqInterruption('экскаватор'), isFalse);
     });
   });
 }

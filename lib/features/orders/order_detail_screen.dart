@@ -3,6 +3,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:dispatcher_1/core/ai/ai_navigation.dart';
+import 'package:dispatcher_1/core/my_orders/models.dart';
 import 'package:dispatcher_1/core/my_orders/my_orders_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
@@ -213,6 +214,54 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
     if (_state == MyOrderDetailState.completed) {
       _checkExistingReview();
     }
+    // Live-обновление ОТКРЫТОГО экрана: realtime поднимает маяк при изменении
+    // мэтча — сразу подтягиваем новый статус, не дожидаясь возврата в список.
+    MyOrdersService.changeBeacon.addListener(_onRealtimeBeacon);
+  }
+
+  /// Маппинг статуса мэтча → состояние экрана (зеркало логики в списке).
+  static MyOrderDetailState _detailStateForStatus(MyMatchStatus s) {
+    switch (s) {
+      case MyMatchStatus.awaitingCustomer: return MyOrderDetailState.offerSent;
+      case MyMatchStatus.awaitingExecutor: return MyOrderDetailState.waitingConfirm;
+      case MyMatchStatus.accepted:         return MyOrderDetailState.confirmed;
+      case MyMatchStatus.completed:        return MyOrderDetailState.completed;
+      case MyMatchStatus.rejectedByCustomer:
+      case MyMatchStatus.rejectedByExecutor:
+      case MyMatchStatus.expired:          return MyOrderDetailState.rejected;
+    }
+  }
+
+  /// realtime изменил какой-то мэтч — перезапрашиваем СВОЙ и, если статус
+  /// сменился (заказчик принял/отклонил, заказ завершился), обновляем экран
+  /// на месте. _busy-гард: не вмешиваемся, пока идёт своё действие.
+  Future<void> _onRealtimeBeacon() async {
+    final String? matchId = widget.matchId;
+    if (matchId == null || !mounted || _busy) return;
+    try {
+      final List<MyOrderMatch> matches = await MyOrdersService.instance.listMine();
+      MyOrderMatch? found;
+      for (final MyOrderMatch x in matches) {
+        if (x.matchId == matchId) { found = x; break; }
+      }
+      if (found == null || !mounted) return;
+      final MyOrderMatch m = found;
+      final MyOrderDetailState next = _detailStateForStatus(m.status);
+      if (next == _state) return;
+      setState(() {
+        _state = next;
+        if (m.status == MyMatchStatus.rejectedByCustomer) {
+          _rejectedStatus = MyOrderStatus.rejectedOther;
+        } else if (m.status == MyMatchStatus.rejectedByExecutor) {
+          _rejectedStatus = MyOrderStatus.rejectedDeclined;
+        } else if (m.status == MyMatchStatus.expired) {
+          _rejectedStatus = MyOrderStatus.rejectedRemoved;
+        }
+      });
+      if (next == MyOrderDetailState.confirmed || next == MyOrderDetailState.completed) {
+        _loadContacts();
+      }
+    } catch (_) {/* сеть/доступ — оставим текущее состояние */}
   }
 
   /// При открытии завершённого мэтча проверяем в БД, оставил ли я уже
@@ -292,6 +341,7 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
 
   @override
   void dispose() {
+    MyOrdersService.changeBeacon.removeListener(_onRealtimeBeacon);
     _scrollCtrl.dispose();
     super.dispose();
   }
@@ -678,6 +728,11 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
                 }
                 if (!ok || !mounted) return;
                 setState(() => _state = MyOrderDetailState.confirmed);
+                // Заказ принят прямо здесь — телефон заказчика только что стал
+                // доступен по RLS, но в переданном объекте его не было.
+                // Подгружаем контакты сразу, иначе номер появлялся только
+                // после перезахода на экран.
+                _loadContacts();
                 // Мэтч: заказ подтверждён — показываем попап с подсказкой
                 // связаться с заказчиком. Контакты уже открылись на
                 // текущей странице (accepted), куда попадает пользователь

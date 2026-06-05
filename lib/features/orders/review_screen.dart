@@ -4,6 +4,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:dispatcher_1/core/theme/app_colors.dart';
+import 'package:dispatcher_1/core/theme/system_bar_style.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
 import 'package:dispatcher_1/features/orders/widgets/order_alerts.dart';
 
@@ -100,6 +101,8 @@ class _ReviewScreenState extends State<ReviewScreen> {
       backgroundColor: AppColors.background,
       appBar: AppBar(
         backgroundColor: AppColors.background,
+        // Светлая шапка — тёмные иконки статус-бара (перебиваем светлый дефолт).
+        systemOverlayStyle: dispatcherSystemBarStyle(),
         elevation: 0,
         toolbarHeight: 48.h,
         centerTitle: true,

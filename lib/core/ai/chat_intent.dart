@@ -54,10 +54,11 @@ final RegExp _catalogMarker = RegExp(
 // Упоминание конкретной техники — сильный сигнал поиска в обоих приложениях
 // (исполнитель: «заказы на минитрактор»; заказчик: «нужен экскаватор»).
 final RegExp _machineryMention = RegExp(
-    r'(экскаватор|миниэкскаватор|самосвал|(^|\s)кран|автокран|бульдозер|'
+    r'(экскаватор|экскаватр|миниэкскаватор|самосвал|(^|\s)кран|автокран|бульдозер|'
     r'погрузчик|минипогрузчик|фронтальн|манипулятор|кму|самогруз|автовышк|вышк|'
-    r'(^|\s)трактор|минитрактор|грейдер|каток|бетононасос|миксер|ассенизатор|'
-    r'эвакуатор|бурени|буроям|ямобур|гидромолот|(^|\s)трал)');
+    r'(^|\s)трактор|минитрактор|грейдер|каток|бетононасос|бетон|миксер|ассенизатор|'
+    r'эвакуатор|бурени|буроям|ямобур|гидромолот|(^|\s)трал|'
+    r'бобкат|bobcat|jcb|джисиби|джейсиби|котлован|копа[тею])');
 
 // Предмет поиска у исполнителя — заказы/работа/смены.
 final RegExp _orderSubject =
@@ -87,26 +88,29 @@ bool looksLikeCatalogSearch(String raw, {required bool isCustomer}) {
   if (_faqWords.hasMatch(t)) return false;
   if (_possessive.hasMatch(t)) return false;
   if (_appAccount.hasMatch(t)) return false;
-  // «рейтинг/цена» без названной техники — это вопрос про аккаунт, а не
-  // фильтр поиска; с техникой — наоборот, поиск.
-  if (_appFilter.hasMatch(t) && !_machineryMention.hasMatch(t)) return false;
 
   final RegExp subject = isCustomer ? _executorSubject : _orderSubject;
   final bool hasSubject = subject.hasMatch(t);
   final bool hasVerb = _searchVerb.hasMatch(t);
   final bool hasMarker = _catalogMarker.hasMatch(t);
-
   final bool hasMachinery = _machineryMention.hasMatch(t);
 
-  // Сильные сигналы поиска.
+  // «рейтинг/цена/тариф» без техники и без явного «найди/покажи + предмет» —
+  // это вопрос про аккаунт («как поднять рейтинг»), а не фильтр поиска. Но
+  // «покажи исполнителя с рейтингом от 4» или «кран с рейтингом от 4.5» —
+  // это поиск.
+  if (_appFilter.hasMatch(t) && !hasMachinery && !(hasVerb && hasSubject)) {
+    return false;
+  }
+
+  // Явно названная техника — почти всегда поиск: FAQ/личное/аккаунт уже
+  // отсеяли выше. Покрывает «экскаватор через 3 дня в москве», «нужен
+  // бобкат», «джисиби завтра», «копаю котлован в твери».
+  if (hasMachinery) return true;
+  // Сильные сигналы поиска без явной техники.
   if (hasVerb && hasSubject) return true;
   if (hasSubject && hasMarker) return true;
-  // Явно названа техника — почти всегда про поиск: заказы под неё у
-  // исполнителя / саму технику у заказчика. Покрывает «на минитрактор есть
-  // заказы», «нужен экскаватор», «есть заказы на самосвал».
-  if (hasMachinery && (hasVerb || hasMarker || hasSubject)) return true;
-  // У заказчика «найди экскаватор» (глагол + техника) — поиск и без слова
-  // «исполнитель».
+  // У заказчика «найди исполнителя» (глагол + предмет).
   if (isCustomer && hasVerb && _executorSubject.hasMatch(t)) return true;
   return false;
 }
@@ -120,4 +124,17 @@ bool looksLikeFaqQuestion(String raw) {
   // Рейтинг/цена-уточнения (_appFilter) НЕ выводят из режима поиска — они его
   // уточняют. Из поиска в FAQ возвращают только вопросы про аккаунт.
   return _faqWords.hasMatch(t) || _appAccount.hasMatch(t) || _possessive.hasMatch(t);
+}
+
+/// Жёсткий FAQ-сигнал именно для ВЫХОДА из пошагового создания услуги
+/// (slot-fill). Тут НЕ учитываем притяжательные слова («моё/мой/у меня»): в
+/// слот-филле это нормальные ОТВЕТЫ («у меня в Москве», «моё местоположение»),
+/// а не вопрос. Раньше из-за этого «моё местоположение» выкидывало из создания
+/// услуги в обычный чат, ассистент отвечал «не могу определить местоположение»,
+/// а собранный черновик и геопозиция терялись. Выходим из сбора только на
+/// настоящий вопрос-инструкцию или тему про аккаунт.
+bool looksLikeFaqInterruption(String raw) {
+  final String t = ' ${raw.toLowerCase().trim()} ';
+  if (_refine.hasMatch(t)) return false;
+  return _faqWords.hasMatch(t) || _appAccount.hasMatch(t);
 }

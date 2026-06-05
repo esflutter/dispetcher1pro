@@ -72,6 +72,9 @@ class _MainShellState extends State<MainShell> {
       value: dispatcherSystemBarStyle(
         navBarColor: AppColors.navBarDark,
         navIconBrightness: Brightness.light,
+        // Шапка каталога — тёмный Container (не AppBar), стиль статус-бара
+        // на этой вкладке берётся отсюда. Иконки часов/батареи — светлые.
+        statusIconBrightness: Brightness.light,
       ),
       child: _buildScaffold(index),
     );

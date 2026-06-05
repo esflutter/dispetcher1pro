@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'app_colors.dart';
 import 'app_text_styles.dart';
+import 'system_bar_style.dart';
 
 class AppTheme {
   AppTheme._();
@@ -31,13 +32,25 @@ class AppTheme {
         bodySmall: AppTextStyles.caption,
         labelLarge: AppTextStyles.button,
       ),
-      appBarTheme: const AppBarTheme(
+      appBarTheme: AppBarTheme(
         backgroundColor: AppColors.background,
         foregroundColor: AppColors.textPrimary,
         elevation: 0,
         scrolledUnderElevation: 0,
         centerTitle: true,
-        iconTheme: IconThemeData(color: AppColors.textPrimary),
+        iconTheme: const IconThemeData(color: AppColors.textPrimary),
+        // Подавляющее большинство шапок в приложении тёмные (navBarDark) —
+        // для них нужны СВЕТЛЫЕ иконки статус-бара (часы, батарея). M3 по
+        // умолчанию привязывает их к светлой теме (тёмные иконки) и они
+        // сливаются с тёмной шапкой. Делаем светлые иконки дефолтом для всех
+        // AppBar. ВАЖНО: это влияет только на статус-бар (верхняя проба
+        // экрана); нижний системный нав-бар берётся из нижней пробы
+        // (MainShell / глобальный стиль), поэтому тёмная нижняя панель в
+        // shell не страдает. Светлые шапки (чат, отзыв, настройки)
+        // переопределяют статус-бар на тёмные иконки у себя.
+        systemOverlayStyle: dispatcherSystemBarStyle(
+          statusIconBrightness: Brightness.light,
+        ),
       ),
       dividerTheme: const DividerThemeData(
         color: AppColors.divider,

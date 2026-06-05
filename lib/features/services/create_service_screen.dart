@@ -154,6 +154,16 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
     if (pd is num) _priceDayCtrl.text  = pd.toString();
     if (mh is num) _minHoursCtrl.text  = mh.toString();
 
+    // Фото, прикреплённые в чате ассистента (локальные пути) — кладём в форму
+    // как обычные фото: при публикации зальются в service-photos. Лимит 8.
+    final aiPhotos = draft['ai_photos'];
+    if (aiPhotos is List) {
+      for (final p in aiPhotos.whereType<String>()) {
+        if (_photos.length >= 8) break;
+        if (p.trim().isNotEmpty && !_photos.contains(p)) _photos.add(p);
+      }
+    }
+
     final machIds = (draft['machinery_ids'] is List)
         ? (draft['machinery_ids'] as List).whereType<int>().toSet()
         : <int>{};
@@ -445,7 +455,9 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
       // видна в каталоге. Сразу уводим юзера на оплату со `service_id`,
       // после успешной оплаты trigger `apply_payment_success` поставит
       // `is_paid=true` и услуга появится в каталоге.
-      Navigator.of(context).pop(); // закрываем форму создания
+      // true — услуга создана из черновика ассистента: handoff-карточка
+      // погасит свою кнопку, чтобы повторными тапами не плодить дубли услуги.
+      Navigator.of(context).pop(true); // закрываем форму создания
       // Открываем paywall «Оплатите размещение услуги» с фоном-картинкой;
       // оттуда юзер тапом «Продолжить» уходит на шторку выбора способа
       // оплаты. Прямой переход на голую шторку убран — без paywall'а
@@ -470,7 +482,14 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
       backgroundColor: Colors.transparent,
       builder: (_) => const AddressBottomSheet(),
     );
-    if (result != null && mounted) {
+    if (!mounted) return;
+    // Гасим фокус ПОСЛЕ закрытия шита адреса в post-frame: Flutter
+    // восстанавливает фокус на ранее активное поле (описание) уже после
+    // синхронного unfocus(), отменяя его. Post-frame перебивает восстановление.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) FocusScope.of(context).unfocus();
+    });
+    if (result != null) {
       setState(() {
         _address = result.value;
         _addressLat = result.lat;
@@ -744,17 +763,23 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
             onPressed: _canCreate && !_saving ? _onCreateTap : null,
           ),
         ),
-        SizedBox(height: 8.h),
-        SecondaryButton(
-          label: 'Заполнить автоматически',
-          onPressed: () => Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => const ChatScreen(
-                initialMessage: 'create_service',
+        // «Заполнить автоматически» нужна только при РУЧНОМ создании — увести к
+        // ассистенту, чтобы он собрал услугу. Когда форма УЖЕ открыта из
+        // черновика ассистента (aiDraft), кнопка лишняя и запускала новую услугу
+        // с нуля, теряя черновик — поэтому прячем её. Поля и фото правятся здесь.
+        if (widget.aiDraft == null) ...<Widget>[
+          SizedBox(height: 8.h),
+          SecondaryButton(
+            label: 'Заполнить автоматически',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const ChatScreen(
+                  initialMessage: 'create_service',
+                ),
               ),
             ),
           ),
-        ),
+        ],
       ],
     );
   }

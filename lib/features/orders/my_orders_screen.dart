@@ -38,9 +38,12 @@ class _MyOrdersData {
 }
 
 class _MyOrdersScreenState extends State<MyOrdersScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late final TabController _tab;
   late Future<_MyOrdersData> _future;
+  // Один раз при первой загрузке выбираем разумный таб по умолчанию (если
+  // «Новые» пусто, а в «Принятых» есть активные). Дальше уважаем выбор юзера.
+  bool _didAutoSelectTab = false;
 
   bool get _blocked => AccountBlock.isBlocked || widget.isBlocked;
 
@@ -48,6 +51,7 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
   void initState() {
     super.initState();
     _tab = TabController(length: 3, vsync: this);
+    WidgetsBinding.instance.addObserver(this);
     AccountBlock.notifier.addListener(_refresh);
     // Глобальный маяк: меняется, когда другие экраны (например, график)
     // отменяют мэтчи. Без подписки список «Мои заказы» оставался
@@ -64,6 +68,7 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     AccountBlock.notifier.removeListener(_refresh);
     MyOrdersService.changeBeacon.removeListener(_refresh);
     pendingOrderDeepLink.removeListener(_onPendingDeepLink);
@@ -71,17 +76,31 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
     super.dispose();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Возврат в приложение из фона: перезапрашиваем список. Иначе новый
+    // назначенный заказ, прилетевший пока приложение было свёрнуто (или
+    // realtime-подписка ещё не успела подняться на старте), не появлялся
+    // до ручного pull-to-refresh.
+    if (state == AppLifecycleState.resumed) {
+      _refresh();
+    }
+  }
+
   Future<void> _onPendingDeepLink() async {
     final String? orderId = pendingOrderDeepLink.value;
     if (orderId == null || !mounted) return;
 
-    // Ждём текущую загрузку, потом ищем мэтч с этим order_id.
+    // Пуш мог прийти ПОСЛЕ устаревшей загрузки списка (статус мэтча уже
+    // сменился). ВСЕГДА перезапрашиваем свежие данные перед открытием детали,
+    // иначе откроется со старым статусом.
     _MyOrdersData data;
     try {
-      data = await _future;
-    } catch (_) {
-      // Если первая загрузка упала — попробуем перезапросить.
       data = await _fetch();
+    } catch (_) {
+      if (!mounted) return;
+      pendingOrderDeepLink.value = null;
+      return;
     }
     if (!mounted) return;
 
@@ -238,6 +257,17 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
           final List<MyOrderMatch> rejected = all
               .where((MyOrderMatch m) => m.status.isRejected)
               .toList();
+          // При первой загрузке: если «Новые» пусто, а в «Принятых» есть
+          // заказы — открываем сразу «Принятые», чтобы не показывать пустой
+          // экран при наличии активной работы.
+          if (!_didAutoSelectTab) {
+            _didAutoSelectTab = true;
+            if (active.isEmpty && accepted.isNotEmpty) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) _tab.index = 1;
+              });
+            }
+          }
           return _buildWithTabs(active, accepted, rejected, data.phones);
         },
       ),

@@ -4,6 +4,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import '../../core/profile/profile_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
+import '../../core/theme/system_bar_style.dart';
 
 /// Экран настроек пуш-уведомлений.
 ///
@@ -74,7 +75,11 @@ class _NotificationsSettingsScreenState
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: AppBar(title: const Text('Уведомления')),
+      appBar: AppBar(
+        title: const Text('Уведомления'),
+        // Светлая шапка — тёмные иконки статус-бара (перебиваем светлый дефолт).
+        systemOverlayStyle: dispatcherSystemBarStyle(),
+      ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : ListView(

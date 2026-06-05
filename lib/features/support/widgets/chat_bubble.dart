@@ -410,32 +410,55 @@ class _ExecutorCardsHandoff extends StatelessWidget {
 }
 
 /// Готовый черновик — кнопка «Открыть форму создания».
-class _DraftReadyHandoff extends StatelessWidget {
+class _DraftReadyHandoff extends StatefulWidget {
   const _DraftReadyHandoff({required this.text, required this.data});
   final String text;
   final Map<String, dynamic> data;
 
+  // Подписи уже опубликованных черновиков услуг — чтобы повторными тапами
+  // нельзя было создать дублей. Статический набор переживает прокрутку чата.
+  static final Set<String> _publishedSigs = <String>{};
+
+  @override
+  State<_DraftReadyHandoff> createState() => _DraftReadyHandoffState();
+}
+
+class _DraftReadyHandoffState extends State<_DraftReadyHandoff> {
+  String get _sig {
+    final d = widget.data['draft'] as Map<String, dynamic>? ?? const <String, dynamic>{};
+    return '${widget.data['kind']}|${d['title']}|${d['description']}|'
+        '${d['machinery_ids']}|${d['price_per_hour']}|${d['city']}';
+  }
+
   @override
   Widget build(BuildContext context) {
-    final kind  = data['kind']  as String? ?? '';
-    final draft = data['draft'] as Map<String, dynamic>? ?? const <String, dynamic>{};
+    final String text = widget.text;
+    final kind  = widget.data['kind']  as String? ?? '';
+    final draft = widget.data['draft'] as Map<String, dynamic>? ?? const <String, dynamic>{};
     final isService = kind == 'service_draft';
     final isCard = kind == 'card_draft';
-    final String title = isService
-        ? 'Черновик услуги готов'
-        : isCard
-            ? 'Карточка готова'
-            : 'Черновик заказа готов';
-    final String subtitle = isService
-        ? 'Откройте форму услуги — проверьте поля и опубликуйте.'
-        : isCard
-            ? 'Откройте карточку — проверьте поля и сохраните. Чтобы вас находили, нужны пройденная проверка и активная подписка.'
-            : 'Откройте форму заказа — проверьте поля и опубликуйте.';
-    final String buttonLabel = isService
-        ? 'Открыть форму услуги'
-        : isCard
-            ? 'Открыть карточку'
-            : 'Открыть форму заказа';
+    final bool published = _DraftReadyHandoff._publishedSigs.contains(_sig);
+    final String title = published
+        ? 'Услуга опубликована'
+        : isService
+            ? 'Черновик услуги готов'
+            : isCard
+                ? 'Карточка готова'
+                : 'Черновик заказа готов';
+    final String subtitle = published
+        ? 'Готово. Чтобы создать ещё одну — попросите ассистента собрать новую.'
+        : isService
+            ? 'Откройте форму услуги — проверьте поля и опубликуйте.'
+            : isCard
+                ? 'Откройте карточку — проверьте поля и сохраните. Чтобы вас находили, нужны пройденная проверка и активная подписка.'
+                : 'Откройте форму заказа — проверьте поля и опубликуйте.';
+    final String buttonLabel = published
+        ? 'Услуга опубликована'
+        : isService
+            ? 'Открыть форму услуги'
+            : isCard
+                ? 'Открыть карточку'
+                : 'Открыть форму заказа';
     return Align(
       alignment: Alignment.centerLeft,
       child: Container(
@@ -475,44 +498,53 @@ class _DraftReadyHandoff extends StatelessWidget {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: () {
-                  // Защита от пустого draft: иначе откроется форма без полей,
-                  // и юзер может случайно опубликовать заглушку.
-                  if (draft.isEmpty) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Черновик пуст — расскажите подробнее ассистенту.')),
-                    );
-                    return;
-                  }
-                  // Снимаем фокус перед уходом на форму — чтобы при возврате в
-                  // чат клавиатура не всплывала снова.
-                  FocusManager.instance.primaryFocus?.unfocus();
-                  if (isService) {
-                    Navigator.of(context).push(MaterialPageRoute<void>(
-                      builder: (_) => CreateServiceScreen(aiDraft: draft),
-                    ));
-                  } else if (isCard) {
-                    Navigator.of(context).push(MaterialPageRoute<void>(
-                      builder: (_) => EditExecutorCardScreen(aiDraft: draft),
-                    ));
-                  } else {
-                    // В executor-приложении заказы не создают — на всякий
-                    // случай (если LLM вернёт order_draft) показываем сообщение.
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Этот тип черновика недоступен в приложении исполнителя')),
-                    );
-                  }
-                },
+                onPressed: published
+                    ? null
+                    : () async {
+                        // Защита от пустого draft: иначе откроется форма без
+                        // полей, и юзер может случайно опубликовать заглушку.
+                        if (draft.isEmpty) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Черновик пуст — расскажите подробнее ассистенту.')),
+                          );
+                          return;
+                        }
+                        // Снимаем фокус перед уходом на форму — чтобы при
+                        // возврате в чат клавиатура не всплывала снова.
+                        FocusManager.instance.primaryFocus?.unfocus();
+                        if (isService) {
+                          final Object? result = await Navigator.of(context).push<Object?>(
+                            MaterialPageRoute<Object?>(
+                              builder: (_) => CreateServiceScreen(aiDraft: draft),
+                            ),
+                          );
+                          // true — услуга опубликована: гасим кнопку.
+                          if (result == true && mounted) {
+                            setState(() => _DraftReadyHandoff._publishedSigs.add(_sig));
+                          }
+                        } else if (isCard) {
+                          Navigator.of(context).push(MaterialPageRoute<void>(
+                            builder: (_) => EditExecutorCardScreen(aiDraft: draft),
+                          ));
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Этот тип черновика недоступен в приложении исполнителя')),
+                          );
+                        }
+                      },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primary,
                   foregroundColor: Colors.white,
+                  disabledBackgroundColor: AppColors.textTertiary.withValues(alpha: 0.25),
+                  disabledForegroundColor: AppColors.textTertiary,
                   padding: EdgeInsets.symmetric(vertical: 12.h),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8.r)),
                 ),
                 child: Text(
                   buttonLabel,
                   style: AppTextStyles.body.copyWith(
-                    color: Colors.white, fontSize: 15.sp, fontWeight: FontWeight.w600,
+                    color: published ? AppColors.textTertiary : Colors.white,
+                    fontSize: 15.sp, fontWeight: FontWeight.w600,
                   ),
                 ),
               ),

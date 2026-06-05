@@ -13,6 +13,8 @@ import 'package:dispatcher_1/core/ai/stt_recorder.dart';
 import 'package:dispatcher_1/core/storage/storage_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
+import 'package:dispatcher_1/core/theme/system_bar_style.dart';
+import 'package:dispatcher_1/core/user_location.dart';
 import 'package:dispatcher_1/core/utils/photo_source.dart';
 import 'package:dispatcher_1/features/profile/widgets/verification_badge.dart';
 import 'package:dispatcher_1/features/support/widgets/chat_bubble.dart';
@@ -75,6 +77,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   }
 
   final List<String> _pendingImages = <String>[];
+  // Фото, прикреплённые НЕ для проверки документов (т.е. для услуги). При
+  // создании услуги уходят в черновик и заливаются в service-photos.
+  final List<String> _servicePhotos = <String>[];
   final ScrollController _scrollController = ScrollController();
   // Контроллер поля ввода держим в экране, чтобы класть в поле распознанный
   // голос — пользователь видит текст и отправляет/правит сам.
@@ -110,6 +115,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // Прогреваем геопозицию заранее (best-effort, не блокирует): к первому
+    // поиску координаты обычно уже готовы, расстояние показывается сразу.
+    unawaited(UserLocation.ensure());
     _salvageOrphanPlaceholders();
     final initial = widget.initialMessage?.trim();
     if (initial == null || initial.isEmpty) {
@@ -145,7 +153,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
     if (initial == 'create_service' || initial == 'Разместить услугу') {
       _mode = AiChatKind.slotFillService;
-      _addBotMessage('Давайте оформлю услугу. С какой техникой вы работаете? Можно ответить голосом.');
+      // Чистим прошлую слот-сессию — «Новая услуга» должна начинаться с пустого
+      // черновика, а не продолжать предыдущую услугу этого же запуска.
+      AiClient.instance.startFreshSlot(AiChatKind.slotFillService);
+      _addBotMessage('Давайте оформлю услугу. С какой техникой работаете и по какой цене (₽/час или ₽/день)? Можно голосом. При желании прикрепите фото техники/работ — добавлю их к услуге.');
       return;
     }
 
@@ -224,19 +235,27 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom(jump: jump));
       return;
     }
-    final pos = _scrollController.position.maxScrollExtent;
-    if (jump) {
-      _scrollController.jumpTo(pos);
-    } else {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!_scrollController.hasClients) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollController.hasClients) return;
+      final pos = _scrollController.position.maxScrollExtent;
+      if (jump) {
+        _scrollController.jumpTo(pos);
+      } else {
         _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
+          pos,
           duration: const Duration(milliseconds: 250),
           curve: Curves.easeOut,
         );
+      }
+      // Высокие виджеты (handoff-карточка заказа, карточки результатов поиска)
+      // доращивают высоту списка уже ПОСЛЕ первого кадра / во время анимации —
+      // из-за этого одиночный скролл не достаёт до низа. Через короткую паузу
+      // (после анимации) доводим список до фактического низа.
+      Future<void>.delayed(const Duration(milliseconds: 320), () {
+        if (!mounted || !_scrollController.hasClients) return;
+        _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
       });
-    }
+    });
   }
 
   Future<void> _handleSend(String text) async {
@@ -259,6 +278,15 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         // (ниже, после ai_submit_verification). Раньше его ставили
         // оптимистично здесь — при обрыве сети он залипал, и отклик ложно
         // блокировался «документы на проверке», хотя на сервер ничего не ушло.
+        // Фото для УСЛУГИ (не для проверки документов) копим — при создании
+        // услуги уйдут в service-photos. В режиме отправки документов не трогаем.
+        if (!_awaitingDocuments) {
+          for (final p in _pendingImages) {
+            if (_servicePhotos.length < 8 && !_servicePhotos.contains(p)) {
+              _servicePhotos.add(p);
+            }
+          }
+        }
         _messages.add(ChatMessage(
           id:   _nextId(),
           text: '',
@@ -318,9 +346,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       // изображения ассистент не умеет — не молчим, а подсказываем, что делать.
       if (hasImages) {
         _addBotMessage(
-          'Картинку получил, но читать изображения я пока не умею. '
-          'Опишите, что нужно, текстом или голосом — и я помогу. '
-          'А если это документы для проверки профиля — откройте «Пройти проверку» в профиле.',
+          'Фото получил — сам картинки не читаю, но прикреплю их к услуге, когда '
+          'будем её создавать. Опишите словами или голосом, что за техника и по '
+          'какой цене. (А документы для проверки профиля — через «Пройти проверку» в профиле.)',
         );
       }
       return;
@@ -343,11 +371,24 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     } else if ((_mode == AiChatKind.slotFillService ||
                 _mode == AiChatKind.slotFillCard ||
                 _mode == AiChatKind.slotFillOrder) &&
-               looksLikeFaqQuestion(text)) {
-      // Явный вопрос посреди пошагового сбора — выходим из сбора в обычный
-      // чат. Иначе при обрыве сети режим slot-fill залипал, и следующий
-      // вопрос модель пыталась впихнуть в поля черновика.
+               looksLikeFaqInterruption(text)) {
+      // Настоящий вопрос посреди пошагового сбора («как...?», «сколько стоит»)
+      // — выходим из сбора в обычный чат. А притяжательные слова («моё
+      // местоположение», «у меня в Москве») — это ОТВЕТЫ слот-филлу, на них из
+      // режима НЕ выходим (иначе терялись черновик и геопозиция).
       _mode = AiChatKind.chat;
+    }
+
+    if (_mode == AiChatKind.search) {
+      // Поиск заказов: ЖДЁМ геопозицию, чтобы расстояние считалось от
+      // пользователя уже с первого запроса. После первого раза ensure()
+      // возвращается мгновенно (кэш), плюс прогрев при открытии экрана.
+      await UserLocation.ensure();
+    } else if (_mode == AiChatKind.slotFillService) {
+      // Создание услуги: ЖДЁМ геопозицию (если разрешит) — тогда сервер сам
+      // определит город/адрес по координатам и не будет их спрашивать. После
+      // первого раза координаты кэшируются, ожидание мгновенное.
+      await UserLocation.ensure();
     }
 
     // Таймаут 30 сек: иначе спиннер «печатает...» крутится бесконечно на
@@ -513,6 +554,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       ));
     }
     if (restored.isEmpty || !mounted) return;
+    // За время загрузки истории (сеть) пользователь мог уже отправить
+    // сообщение — тогда НЕ затираем его историей, иначе оно пропадёт.
+    // Подставляем историю, только если на экране всё ещё одно приветствие.
+    if (_messages.length > 1) return;
     setState(() {
       _messages
         ..clear()
@@ -533,7 +578,19 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
     if ((kind == 'order_draft' || kind == 'service_draft' || kind == 'card_draft') &&
         reply.isDraftReady) {
-      _addBotMessage(reply.text, type: ChatMessageType.draftReady, data: reply.data);
+      Map<String, dynamic>? data = reply.data;
+      // Прикрепляем накопленные в чате фото к черновику УСЛУГИ — форма заберёт
+      // их в _photos и зальёт в service-photos при публикации услуги.
+      if (kind == 'service_draft' && _servicePhotos.isNotEmpty && data != null) {
+        data = Map<String, dynamic>.from(data);
+        final draft =
+            Map<String, dynamic>.from((data['draft'] as Map?) ?? const <String, dynamic>{});
+        draft['ai_photos'] = List<String>.from(_servicePhotos);
+        data['draft'] = draft;
+      }
+      _addBotMessage(reply.text, type: ChatMessageType.draftReady, data: data);
+      // Фото ушли в черновик — очищаем накопитель, чтобы не прилипли к следующей.
+      _servicePhotos.clear();
       // Slot-fill завершён черновиком. Возвращаем режим в обычный чат, иначе
       // следующий свободный вопрос ушёл бы снова в пошаговый сбор, а не в FAQ.
       _mode = AiChatKind.chat;
@@ -743,6 +800,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       backgroundColor: AppColors.background,
       appBar: AppBar(
         backgroundColor: AppColors.background,
+        // Светлая шапка — тёмные иконки статус-бара (перебиваем светлый
+        // дефолт темы, который рассчитан на тёмные шапки).
+        systemOverlayStyle: dispatcherSystemBarStyle(),
         elevation: 0,
         scrolledUnderElevation: 0,
         centerTitle: true,
@@ -812,7 +872,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                       label: 'Разместить услугу',
                       onTap: () {
                         _mode = AiChatKind.slotFillService;
-                        _addBotMessage('Давайте оформлю услугу. С какой техникой вы работаете? Можно ответить голосом.');
+                        _addBotMessage('Давайте оформлю услугу. С какой техникой работаете и по какой цене (₽/час или ₽/день)? Можно голосом. При желании прикрепите фото техники/работ — добавлю их к услуге.');
                       },
                     ),
                     SizedBox(height: 8.h),
