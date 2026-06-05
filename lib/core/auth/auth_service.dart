@@ -99,3 +99,68 @@ class VerifyResult {
   final String? name;
   final String? avatarUrl;
 }
+
+/// Переводит технические ошибки авторизации в человекочитаемый русский
+/// текст. Supabase/GoTrue отдаёт сообщения на английском (ограничение
+/// частоты запросов кода, неверный код, сетевые сбои) — показывать их
+/// пользователю как есть нельзя. Незнакомые ошибки сворачиваем в общий
+/// русский фолбэк, чтобы английский текст не утёк на экран.
+String authErrorToRu(Object error) {
+  final String raw = error is AuthException ? error.message : error.toString();
+  final String lower = raw.toLowerCase();
+
+  // Нет сети / DNS / VPN.
+  if (lower.contains('socketexception') ||
+      lower.contains('failed host lookup') ||
+      lower.contains('clientexception') ||
+      lower.contains('connection refused') ||
+      lower.contains('connection closed') ||
+      lower.contains('errno = 7')) {
+    return 'Нет соединения с сервером. Проверьте интернет или отключите VPN.';
+  }
+
+  // Ограничение частоты: "For security purposes, you can only request this
+  // after N seconds" / "once every N seconds". Достаём число и склоняем.
+  if (lower.contains('security purposes') ||
+      lower.contains('rate limit') ||
+      lower.contains('too many requests') ||
+      lower.contains('only request this')) {
+    final Match? m = RegExp(r'(\d+)\s*second').firstMatch(lower);
+    final int sec = m != null ? (int.tryParse(m.group(1)!) ?? 0) : 0;
+    if (sec > 0) {
+      return 'Запросить новый код можно через ${pluralSecondsRu(sec)}.';
+    }
+    return 'Слишком частые запросы. Подождите немного и попробуйте снова.';
+  }
+
+  // Неверный или просроченный код.
+  if (lower.contains('expired')) {
+    return 'Срок действия кода истёк. Запросите новый.';
+  }
+  if (lower.contains('invalid') &&
+      (lower.contains('otp') ||
+          lower.contains('token') ||
+          lower.contains('code'))) {
+    return 'Неверный код. Проверьте и введите снова.';
+  }
+
+  // Незнакомая ошибка — без сырого английского текста.
+  return 'Не удалось отправить код. Попробуйте ещё раз.';
+}
+
+/// Склонение слова «секунда» по числу: 21 секунду, 22 секунды, 25 секунд.
+String pluralSecondsRu(int count) {
+  final int r10 = count % 10;
+  final int r100 = count % 100;
+  final String word;
+  if (r100 >= 11 && r100 <= 14) {
+    word = 'секунд';
+  } else if (r10 == 1) {
+    word = 'секунду';
+  } else if (r10 >= 2 && r10 <= 4) {
+    word = 'секунды';
+  } else {
+    word = 'секунд';
+  }
+  return '$count $word';
+}

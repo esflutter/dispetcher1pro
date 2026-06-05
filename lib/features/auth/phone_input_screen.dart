@@ -76,30 +76,16 @@ class _PhoneInputScreenState extends State<PhoneInputScreen> {
     } on TimeoutException {
       if (mounted) _showError('Сервер не отвечает. Попробуйте позже.');
     } on AuthException catch (e) {
-      if (!mounted) return;
-      // Supabase Auth заворачивает SocketException/ClientException
-      // в AuthException с сырым текстом. Подменяем на дружелюбное
-      // сообщение, чтобы юзер не видел `Failed host lookup ...`.
-      _showError(_looksLikeNetwork(e.message)
-          ? 'Нет соединения с сервером. Проверьте интернет или отключите VPN.'
-          : e.message);
+      // Supabase/GoTrue отдаёт текст на английском (ограничение частоты,
+      // сетевые сбои). Переводим в русский, чтобы на экран не попал
+      // сырой текст вроде «For security purposes…» или «Failed host lookup…».
+      if (mounted) _showError(authErrorToRu(e));
     } catch (e) {
-      if (!mounted) return;
-      _showError(_looksLikeNetwork(e.toString())
-          ? 'Нет соединения с сервером. Проверьте интернет или отключите VPN.'
-          : 'Не удалось отправить код. Попробуйте ещё раз.');
+      if (mounted) _showError(authErrorToRu(e));
     } finally {
       if (mounted) setState(() => _sending = false);
     }
   }
-
-  bool _looksLikeNetwork(String message) =>
-      message.contains('SocketException') ||
-      message.contains('Failed host lookup') ||
-      message.contains('ClientException') ||
-      message.contains('Connection refused') ||
-      message.contains('Connection closed') ||
-      message.contains('errno = 7');
 
   void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(

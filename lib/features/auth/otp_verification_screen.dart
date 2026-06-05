@@ -209,6 +209,10 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
                       focusNode: _pinFocusNode,
                       length: _otpLength,
                       autofocus: true,
+                      // Без анимации ячеек: со «slide» (по умолчанию) при
+                      // быстром наборе перерисовка не поспевает за вводом и
+                      // последние цифры терялись.
+                      pinAnimationType: PinAnimationType.none,
                       cursor: Align(
                         alignment: Alignment.center,
                         child: Container(
@@ -275,15 +279,11 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
                               if (e164.isNotEmpty) {
                                 try {
                                   await AuthService.instance.sendOtp(e164);
-                                } catch (_) {
+                                } catch (e) {
                                   if (!context.mounted) return;
                                   setState(() => _codeResent = false);
                                   ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text(
-                                        'Не удалось отправить код. Проверьте соединение и попробуйте ещё раз.',
-                                      ),
-                                    ),
+                                    SnackBar(content: Text(authErrorToRu(e))),
                                   );
                                 }
                               }
