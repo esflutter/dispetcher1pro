@@ -1,4 +1,5 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <!-- Сеть нужна для Supabase (БД, Storage, Auth). В debug-манифесте она
          декларируется отдельно для нужд Flutter tool, но release-сборка
          читает только этот файл — без явного разрешения на проде
@@ -18,7 +19,15 @@
     <application
         android:label="Диспетчер №1 PRO"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:allowBackup="false"
+        tools:replace="android:allowBackup">
+        <!-- allowBackup=false: иначе Android авто-бэкап сохранял данные
+             приложения (включая сохранённую сессию входа) и восстанавливал
+             их при переустановке — свежеустановленное приложение оказывалось
+             уже авторизованным под чужим/прошлым номером. Это и UX-баг,
+             и риск безопасности. tools:replace — чтобы наше значение
+             победило при слиянии манифестов с библиотеками. -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
