@@ -185,6 +185,9 @@ class _TextInputBar extends StatelessWidget {
                 alignment: Alignment.centerLeft,
                 child: TextField(
                   controller: controller,
+                  // Новое сообщение начинается с заглавной буквы (клавиатура
+                  // авто-капитализирует первую букву предложения).
+                  textCapitalization: TextCapitalization.sentences,
                   minLines: 1,
                   maxLines: 1,
                   inputFormatters: [LengthLimitingTextInputFormatter(1000)],
