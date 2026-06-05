@@ -93,14 +93,15 @@ class ExecutorCardService {
       // empty-state в ExecutorCardScreen независимо от радиуса.
       'saved_at': DateTime.now().toUtc().toIso8601String(),
     });
-    final Map<String, dynamic> profilePatch = <String, dynamic>{
-      'about': ?about,
-      'legal_status': ?legalStatus,
-      'experience_years': ?experienceYears,
-    };
-    if (profilePatch.isNotEmpty) {
-      await _client.from('profiles').update(profilePatch).eq('id', user.id);
-    }
+    // Поля профиля всегда приходят из формы (null = пользователь очистил поле),
+    // поэтому пишем их безусловно. Раньше при null ключ опускался (`?about`) —
+    // и очистка «о себе»/статуса/опыта не сохранялась, старое значение
+    // возвращалось при перезагрузке.
+    await _client.from('profiles').update(<String, dynamic>{
+      'about': about,
+      'legal_status': legalStatus,
+      'experience_years': experienceYears,
+    }).eq('id', user.id);
     // Любой upsert карточки/правка about/опыта в profile-плоскости —
     // повод обновить шапку профиля (имя/avatar/about), которую слушают
     // ProfileScreen и ExecutorCardScreen через ProfileService.changeBeacon.

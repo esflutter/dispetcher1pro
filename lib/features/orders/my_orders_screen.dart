@@ -123,7 +123,7 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
           photos: m.orderPhotos,
           rentDate: rentDate,
           address: m.orderAddress,
-          publishedAgo: formatPublishedAgo(m.statusChangedAt),
+          publishedAgo: formatPublishedAgo(m.orderPublishedAt),
           orderNumber:
               '№${m.orderDisplayNumber.toString().padLeft(8, '0')}',
           customerId: m.customerId,
