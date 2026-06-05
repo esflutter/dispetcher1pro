@@ -227,6 +227,11 @@ Deno.serve(async (req) => {
 
   for (const s of due) {
     const paymentId = crypto.randomUUID();
+    // ВНИМАНИЕ: этот ключ идёт только в колонку payments.idempotency_key как
+    // пометка и НИГДЕ не читается для дедупа. Реальная защита от повторного
+    // списания — это (а) дата-стабильный ключ в заголовке Idempotence-Key
+    // внутри chargeSavedCard (`auto-renew:<user>:<today>`) и (б) UNIQUE(external_id)
+    // в БД. Не принимайте эту колонку за механизм дедупа.
     const idempotencyKey = `auto-renew-${s.user_id}-${paymentId}`;
     const result = await chargeSavedCard(
       s.user_id,
