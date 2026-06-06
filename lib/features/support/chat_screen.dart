@@ -262,6 +262,36 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     });
   }
 
+  /// Синхронный шлюз: возвращает true, если отправка ПРИНЯТА (тогда поле ввода
+  /// очищается). Если ассистент занят/идёт запись/пусто — false, и поле НЕ
+  /// чистится, чтобы набранное сообщение не пропало молча.
+  bool _trySend(String text) {
+    if (text.isEmpty && _pendingImages.isEmpty) return false;
+    if (_isProcessing || _isRecording) return false;
+    unawaited(_handleSend(text));
+    return true;
+  }
+
+  /// Дубль фото услуги? Сравниваем не только путь (галерея на повторном выборе
+  /// даёт НОВЫЙ временный путь к тому же снимку), но и размер файла — перекодировка
+  /// того же изображения с теми же настройками даёт тот же размер.
+  bool _isDuplicatePhoto(String p) {
+    if (_servicePhotos.contains(p)) return true;
+    int len;
+    try {
+      len = File(p).lengthSync();
+    } catch (_) {
+      return false;
+    }
+    return _servicePhotos.any((e) {
+      try {
+        return File(e).lengthSync() == len;
+      } catch (_) {
+        return false;
+      }
+    });
+  }
+
   Future<void> _handleSend(String text) async {
     final hasImages = _pendingImages.isNotEmpty;
     if (text.isEmpty && !hasImages) return;
@@ -286,7 +316,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         // услуги уйдут в service-photos. В режиме отправки документов не трогаем.
         if (!_awaitingDocuments) {
           for (final p in _pendingImages) {
-            if (_servicePhotos.length < 8 && !_servicePhotos.contains(p)) {
+            if (_servicePhotos.length < 8 && !_isDuplicatePhoto(p)) {
               _servicePhotos.add(p);
             }
           }
@@ -409,7 +439,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       // тем же текстом. Поэтому await без try.
       if (_mode == AiChatKind.chat) {
         await _streamChatReply(text).timeout(timeout, onTimeout: () {
-          _replaceStreamMessage('__last_stream__', 'Не дождался ответа. Попробуйте ещё раз.');
+          // Внешний таймаут: помечаем стрим устаревшим, чтобы подвисший await
+          // for внутри больше НЕ перезаписывал этот пузырь, и мягко завершаем
+          // (сохранив накопленный текст и кнопку «Перейти»).
+          _staleStreamId = _lastStreamId;
+          _finishStreamSoftly('__last_stream__', 'Не дождался ответа. Попробуйте ещё раз.');
         });
         return;
       }
@@ -450,6 +484,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   /// Все ошибки рисуются прямо в placeholder — НЕ rethrow, иначе
   /// outer-catch добавит дубликат-бабл.
   String _lastStreamId = '';
+  // id стрима, помеченного устаревшим внешним таймаутом — его await for больше
+  // не должен писать в пузырь (иначе мерцание «ошибка → кусок ответа»).
+  String _staleStreamId = '';
   Future<void> _streamChatReply(String text) async {
     _idCounter++;
     final id = 'stream_$_idCounter';
@@ -471,6 +508,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         // Выход из await for отменяет подписку, и http-клиент закрывается
         // в finally внутри chatStream (иначе сокет висел бы до конца ответа).
         if (!mounted) return;
+        // Стрим устарел (внешний таймаут уже завершил пузырь) — не пишем,
+        // иначе пользователь увидел бы мерцание «ошибка → кусок ответа».
+        if (_staleStreamId == id) return;
         final idx = _messages.indexWhere((m) => m.id == id);
         if (idx < 0) return;
         _messages[idx] = ChatMessage(
@@ -502,11 +542,34 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     } on AiContentFilterError catch (e) {
       _replaceStreamMessage(id, e.message);
     } catch (_) {
-      _replaceStreamMessage(
+      if (_staleStreamId == id) return;
+      _finishStreamSoftly(
         id,
         'Не удалось получить ответ. Проверьте интернет и попробуйте снова.',
       );
     }
+  }
+
+  /// Мягкое завершение стрима: если часть ответа УЖЕ пришла — сохраняем её,
+  /// дописываем пометку об обрыве и оставляем кнопку «Перейти» (nav). Иначе
+  /// показываем фолбэк. Так почти готовый ответ не затирается генерик-ошибкой.
+  void _finishStreamSoftly(String id, String fallback) {
+    final String realId = (id == '__last_stream__') ? _lastStreamId : id;
+    final int idx = _messages.indexWhere((m) => m.id == realId);
+    if (idx < 0) {
+      _addBotMessage(fallback);
+      return;
+    }
+    final ChatMessage cur = _messages[idx];
+    final bool hasText = cur.text.trim().isNotEmpty;
+    _messages[idx] = ChatMessage(
+      id: realId,
+      text: hasText ? '${cur.text.trimRight()}\n\n(ответ оборвался)' : fallback,
+      fromUser: false,
+      navAction: cur.navAction,
+      navLabel: cur.navLabel,
+    );
+    if (mounted) setState(() {});
   }
 
   void _replaceStreamMessage(String id, String text) {
@@ -916,7 +979,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             isRecording: _isRecording,
             pendingImages: _pendingImages,
             onRemovePendingImage: _removePendingImage,
-            onSend: _handleSend,
+            onSend: _trySend,
             onAttach: _handleAttach,
             onMicTap: _toggleRecording,
             onCancelRecording: _cancelRecording,

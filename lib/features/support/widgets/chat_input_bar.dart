@@ -32,7 +32,9 @@ class ChatInputBar extends StatefulWidget {
   /// родитель (экран чата), чтобы вставлять туда распознанный голос.
   final TextEditingController? controller;
 
-  final ValueChanged<String> onSend;
+  /// Возвращает true, если отправка ПРИНЯТА — только тогда чистим поле. Если
+  /// ассистент занят (false), набранный текст НЕ стираем, чтобы не пропал.
+  final bool Function(String) onSend;
   final VoidCallback? onAttach;
   final VoidCallback? onMicTap;
   final VoidCallback? onCancelRecording;
@@ -78,9 +80,12 @@ class _ChatInputBarState extends State<ChatInputBar> {
   void _submit() {
     final text = _ctrl.text.trim();
     if (text.isEmpty && widget.pendingImages.isEmpty) return;
-    widget.onSend(text);
-    _ctrl.clear();
-    setState(() => _hasText = false);
+    // Чистим поле ТОЛЬКО если отправка принята. Иначе (ассистент занят/идёт
+    // запись) текст остаётся, и пользователь не теряет набранное.
+    if (widget.onSend(text)) {
+      _ctrl.clear();
+      setState(() => _hasText = false);
+    }
   }
 
   @override
