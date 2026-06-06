@@ -170,6 +170,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         initial == 'Заполнить карточку' ||
         initial == 'Создать карточку') {
       _mode = AiChatKind.slotFillCard;
+      // Чистим прошлую слот-сессию карточки — «новая» карточка должна начинаться
+      // с пустого черновика, иначе поля прошлой (город/радиус/статус/опыт)
+      // протекали бы и ассистент сразу выдавал «готово» со старыми данными.
+      AiClient.instance.startFreshSlot(AiChatKind.slotFillCard);
       _addBotMessage('Заполню вашу карточку исполнителя. В каком городе вы работаете? Можно ответить голосом.');
       return;
     }
@@ -776,7 +780,13 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     // дотикает в фоне, файл осиротеет, при возврате — рассинхрон UI).
     if (state == AppLifecycleState.paused && _isRecording) {
       SttRecorder.instance.cancel();
-      if (mounted) setState(() => _isRecording = false);
+      // Убираем пузырь «🎤 Идёт запись…» — иначе он остаётся в ленте навсегда.
+      if (mounted) {
+        setState(() {
+          _isRecording = false;
+          _messages.removeWhere((m) => m.id == _kVoiceRecId);
+        });
+      }
     }
   }
 
@@ -787,6 +797,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     // запись продолжится «в фоне», onAutoStop выстрелит на удалённом state.
     if (_isRecording) {
       SttRecorder.instance.cancel();
+      // Снимаем пузырь «🎤 Идёт запись…» из статичной ленты, иначе при
+      // следующем открытии чата он висит вечно (подчистка сирот его не берёт —
+      // это сообщение пользователя с непустым текстом).
+      _messages.removeWhere((m) => m.id == _kVoiceRecId);
     }
     SttRecorder.instance.onAutoStop = null;
     _scrollController.dispose();
@@ -872,6 +886,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                       label: 'Разместить услугу',
                       onTap: () {
                         _mode = AiChatKind.slotFillService;
+                        AiClient.instance.startFreshSlot(AiChatKind.slotFillService);
                         _addBotMessage('Давайте оформлю услугу. С какой техникой работаете и по какой цене (₽/час или ₽/день)? Можно голосом. При желании прикрепите фото техники/работ — добавлю их к услуге.');
                       },
                     ),
@@ -888,6 +903,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                       label: 'Заполнить карточку',
                       onTap: () {
                         _mode = AiChatKind.slotFillCard;
+                        AiClient.instance.startFreshSlot(AiChatKind.slotFillCard);
                         _addBotMessage('Заполню вашу карточку исполнителя. В каком городе вы работаете? Можно ответить голосом.');
                       },
                     ),

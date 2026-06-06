@@ -24,10 +24,27 @@ library;
 final RegExp _possessive =
     RegExp(r'(^|\s)(мои|моих|моего|моих|моё|мой|моя|свои|своих|у меня|у мен)(\s|$)');
 
-// Вопросы-инструкции и про сам аккаунт — это FAQ, не каталог.
-final RegExp _faqWords = RegExp(
+// Личные существительные. «Мои заказы», «у меня рейтинг», «мой профиль» — это
+// вопрос про СВОИ данные (его ведёт обычный чат с контекстом). А «мой бюджет
+// 5000», «в моём районе» — уточнение поиска, личного существительного рядом
+// нет, поэтому из поиска НЕ выводим.
+final RegExp _personalData = RegExp(
+    r'(заказ|услуг|отклик|профил|карточк|подписк|верифик|рейтинг|'
+    r'выплат|баланс|график|отзыв|оценк)');
+
+// Вопросы-инструкции «как/почему/что такое…» — это FAQ. ЦЕНОВОЙ вопрос
+// «сколько стоит …» вынесен отдельно (_priceQuery): «сколько стоит самосвал»
+// — это поиск техники с ценой, а «сколько стоит подписка» — FAQ.
+final RegExp _faqHowto = RegExp(
     r'(^|\s)(как|почему|зачем|каким образом|что такое|что значит|можно ли|могу ли|'
-    r'нужно ли|что делать|сколько стоит|как мне)(\s|$|[,.?!])');
+    r'нужно ли|что делать|как мне)(\s|$|[,.?!])');
+// «Сколько стоит …» — при названной технике это запрос цены на технику (поиск),
+// без техники — FAQ про тарифы приложения.
+final RegExp _priceQuery = RegExp(r'(^|\s)сколько стоит(\s|$|[,.?!])');
+// Явная отмена/выход из пошагового сбора.
+final RegExp _cancelCmd = RegExp(
+    r'(^|\s)(стоп|отмена|отмени|отменить|выйти|выход|передума|'
+    r'закончить|закончили|хватит)(\s|$|[,.!])');
 
 // Слова про аккаунт пользователя — всегда FAQ (личный вопрос про приложение).
 final RegExp _appAccount = RegExp(
@@ -56,7 +73,7 @@ final RegExp _catalogMarker = RegExp(
 final RegExp _machineryMention = RegExp(
     r'(экскаватор|экскаватр|миниэкскаватор|самосвал|(^|\s)кран|автокран|бульдозер|'
     r'погрузчик|минипогрузчик|фронтальн|манипулятор|кму|самогруз|автовышк|вышк|'
-    r'(^|\s)трактор|минитрактор|грейдер|каток|бетононасос|бетон|миксер|ассенизатор|'
+    r'(^|\s)трактор|минитрактор|грейдер|каток|бетононасос|миксер|ассенизатор|'
     r'эвакуатор|бурени|буроям|ямобур|гидромолот|(^|\s)трал|'
     r'бобкат|bobcat|jcb|джисиби|джейсиби|котлован|копа[тею])');
 
@@ -84,10 +101,6 @@ final RegExp _refine = RegExp(
 bool looksLikeCatalogSearch(String raw, {required bool isCustomer}) {
   final String t = ' ${raw.toLowerCase().trim()} ';
   if (t.trim().length < 4) return false;
-  // Сначала отсекаем явные не-поиски.
-  if (_faqWords.hasMatch(t)) return false;
-  if (_possessive.hasMatch(t)) return false;
-  if (_appAccount.hasMatch(t)) return false;
 
   final RegExp subject = isCustomer ? _executorSubject : _orderSubject;
   final bool hasSubject = subject.hasMatch(t);
@@ -95,23 +108,31 @@ bool looksLikeCatalogSearch(String raw, {required bool isCustomer}) {
   final bool hasMarker = _catalogMarker.hasMatch(t);
   final bool hasMachinery = _machineryMention.hasMatch(t);
 
-  // «рейтинг/цена/тариф» без техники и без явного «найди/покажи + предмет» —
-  // это вопрос про аккаунт («как поднять рейтинг»), а не фильтр поиска. Но
-  // «покажи исполнителя с рейтингом от 4» или «кран с рейтингом от 4.5» —
-  // это поиск.
-  if (_appFilter.hasMatch(t) && !hasMachinery && !(hasVerb && hasSubject)) {
-    return false;
+  // Определительные / how-to вопросы — это FAQ ВСЕГДА, даже если рядом мелькнула
+  // техника («что такое jcb», «как создать заказ»). Их не уводим в поиск.
+  if (_faqHowto.hasMatch(t)) return false;
+  // «Сколько стоит подписка» (без техники) — FAQ; «сколько стоит самосвал»
+  // (техника есть) — поиск с фильтром по цене, поэтому при технике НЕ режем.
+  if (_priceQuery.hasMatch(t) && !hasMachinery) return false;
+
+  // ВАЖНО: служебные слова (мои/у меня, документы/телефон/карточка/профиль,
+  // рейтинг/оплата/тариф) уводят в FAQ ТОЛЬКО когда техника НЕ названа. Иначе
+  // «нужен экскаватор, есть документы», «самосвал с оплатой по телефону»,
+  // «кран для моего объекта» ошибочно глохли как «вопрос про аккаунт».
+  if (!hasMachinery) {
+    if (_possessive.hasMatch(t)) return false;
+    if (_appAccount.hasMatch(t)) return false;
+    // Рейтинг/оплата/тариф без техники и без «найди + предмет» — про аккаунт
+    // («как поднять рейтинг»), а не фильтр.
+    if (_appFilter.hasMatch(t) && !(hasVerb && hasSubject)) return false;
   }
 
-  // Явно названная техника — почти всегда поиск: FAQ/личное/аккаунт уже
-  // отсеяли выше. Покрывает «экскаватор через 3 дня в москве», «нужен
-  // бобкат», «джисиби завтра», «копаю котлован в твери».
+  // Явно названная техника — почти всегда поиск. Покрывает «экскаватор через
+  // 3 дня в москве», «нужен бобкат», «джисиби завтра», «копаю котлован».
   if (hasMachinery) return true;
   // Сильные сигналы поиска без явной техники.
   if (hasVerb && hasSubject) return true;
   if (hasSubject && hasMarker) return true;
-  // У заказчика «найди исполнителя» (глагол + предмет).
-  if (isCustomer && hasVerb && _executorSubject.hasMatch(t)) return true;
   return false;
 }
 
@@ -120,10 +141,18 @@ bool looksLikeCatalogSearch(String raw, {required bool isCustomer}) {
 /// попадают и остаются в поиске.
 bool looksLikeFaqQuestion(String raw) {
   final String t = ' ${raw.toLowerCase().trim()} ';
+  // Сильный FAQ-сигнал (вопрос-инструкция / тема аккаунта) выводит из поиска
+  // ДАЖЕ если в фразе мелькнуло уточняющее слово («подробнее, как пройти
+  // верификацию»). Поэтому проверяем его ДО _refine.
+  if (_faqHowto.hasMatch(t) || _appAccount.hasMatch(t)) return true;
+  // Уточнения (подешевле/поближе/радиус/«мой бюджет 5000»…) ОСТАЮТСЯ в поиске.
   if (_refine.hasMatch(t)) return false;
-  // Рейтинг/цена-уточнения (_appFilter) НЕ выводят из режима поиска — они его
-  // уточняют. Из поиска в FAQ возвращают только вопросы про аккаунт.
-  return _faqWords.hasMatch(t) || _appAccount.hasMatch(t) || _possessive.hasMatch(t);
+  // «Мои заказы», «у меня рейтинг» — вопрос про свои данные → в чат. А «мой
+  // бюджет 5000» (без личного существительного) остаётся уточнением поиска.
+  if (_possessive.hasMatch(t) && _personalData.hasMatch(t)) return true;
+  // «Сколько стоит подписка» (ценовой FAQ без техники) — выводим в FAQ.
+  if (_priceQuery.hasMatch(t) && !_machineryMention.hasMatch(t)) return true;
+  return false;
 }
 
 /// Жёсткий FAQ-сигнал именно для ВЫХОДА из пошагового создания услуги
@@ -135,6 +164,18 @@ bool looksLikeFaqQuestion(String raw) {
 /// настоящий вопрос-инструкцию или тему про аккаунт.
 bool looksLikeFaqInterruption(String raw) {
   final String t = ' ${raw.toLowerCase().trim()} ';
+  // Явная отмена/выход из сбора («стоп», «отмена», «выйти», «передумал»).
+  if (_cancelCmd.hasMatch(t)) return true;
+  // Сильный FAQ-сигнал выводит из сбора даже при уточняющем слове.
+  if (_faqHowto.hasMatch(t) || _appAccount.hasMatch(t)) return true;
   if (_refine.hasMatch(t)) return false;
-  return _faqWords.hasMatch(t) || _appAccount.hasMatch(t);
+  // Ценовой вопрос («сколько стоит подписка») — это вопрос, а не ответ-слот.
+  if (_priceQuery.hasMatch(t)) return true;
+  return false;
 }
+
+/// Явная просьба о поиске посреди пошагового сбора — чтобы выйти из создания
+/// и увести в поиск, а не трактовать «лучше найди готовых исполнителей» как
+/// очередной ответ-слот.
+bool looksLikeSearchInterruption(String raw, {required bool isCustomer}) =>
+    looksLikeCatalogSearch(raw, isCustomer: isCustomer);
