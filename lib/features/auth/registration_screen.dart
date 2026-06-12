@@ -1,11 +1,14 @@
+import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:dispatcher_1/core/analytics/app_analytics.dart';
 import 'package:dispatcher_1/core/auth/auth_service.dart';
 import 'package:dispatcher_1/core/storage/storage_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
@@ -15,6 +18,8 @@ import 'package:dispatcher_1/core/utils/photo_source.dart';
 import 'package:dispatcher_1/core/widgets/cropped_avatar.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
 import 'package:dispatcher_1/features/auth/photo_crop_screen.dart';
+import 'package:dispatcher_1/core/utils/legal_links.dart';
+import 'package:dispatcher_1/core/push/push_service.dart';
 
 class RegistrationScreen extends StatefulWidget {
   const RegistrationScreen({super.key});
@@ -72,8 +77,11 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
               'Не удалось загрузить фото. Профиль сохранён без аватара — добавьте его позже в настройках.';
         }
       }
+      // Таймаут: первый экран нового пользователя; без него на плохой
+      // связи кнопка «Готово» крутилась бы вечно без объяснения.
       await AuthService.instance
-          .completeRegistration(name: name, avatarUrl: avatarUrl);
+          .completeRegistration(name: name, avatarUrl: avatarUrl)
+          .timeout(const Duration(seconds: 15));
       if (avatarFailMsg != null && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(avatarFailMsg)),
@@ -82,6 +90,11 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
       if (!mounted) return;
       CropResult.saved = _cropResult;
       CropResult.userName = name;
+      // Новый пользователь: регистрируем пуш-токен СЕЙЧАС — раньше ветка
+      // needsRegistration пропускала регистрацию, и первый заказ/отклик
+      // оставался без уведомлений до следующего холодного старта.
+      unawaited(PushService.instance.registerForCurrentUser());
+      AppAnalytics.log('registration_complete');
       context.go('/assistant');
     } on PostgrestException catch (e) {
       if (!mounted) return;
@@ -95,11 +108,17 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(e.message)),
       );
+    } on TimeoutException {
+      if (!mounted) return;
+      setState(() => _submitting = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Сервер не отвечает. Проверьте интернет и нажмите «Готово» ещё раз.')),
+      );
     } catch (_) {
       if (!mounted) return;
       setState(() => _submitting = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Не удалось сохранить профиль.')),
+        const SnackBar(content: Text('Не удалось сохранить профиль. Проверьте интернет и попробуйте ещё раз.')),
       );
     }
   }
@@ -299,19 +318,25 @@ class _PolicyCheckbox extends StatelessWidget {
                 ),
                 children: [
                   const TextSpan(text: 'Я прочитал(а) и согласен(а) с '),
-                  const TextSpan(
+                  TextSpan(
                     text: 'Правилами обработки персональных данных',
-                    style: TextStyle(fontWeight: FontWeight.bold, decoration: TextDecoration.underline),
+                    style: const TextStyle(fontWeight: FontWeight.bold, decoration: TextDecoration.underline),
+                    recognizer: TapGestureRecognizer()
+                      ..onTap = () => openPrivacyUrl(context),
                   ),
                   const TextSpan(text: ', '),
-                  const TextSpan(
+                  TextSpan(
                     text: 'Пользовательским соглашением',
-                    style: TextStyle(fontWeight: FontWeight.bold, decoration: TextDecoration.underline),
+                    style: const TextStyle(fontWeight: FontWeight.bold, decoration: TextDecoration.underline),
+                    recognizer: TapGestureRecognizer()
+                      ..onTap = () => openTermsUrl(context),
                   ),
                   const TextSpan(text: ' и '),
-                  const TextSpan(
+                  TextSpan(
                     text: 'Политикой конфиденциальности',
-                    style: TextStyle(fontWeight: FontWeight.bold, decoration: TextDecoration.underline),
+                    style: const TextStyle(fontWeight: FontWeight.bold, decoration: TextDecoration.underline),
+                    recognizer: TapGestureRecognizer()
+                      ..onTap = () => openPrivacyUrl(context),
                   ),
                 ],
               ),

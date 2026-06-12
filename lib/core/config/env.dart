@@ -28,10 +28,20 @@ class Env {
   static const String dadataApiKey =
       String.fromEnvironment('DADATA_API_KEY');
 
+  /// Публичный токен Mapbox (pk.…) для векторных карт каталога. Публичный
+  /// по дизайну Mapbox (зашивается в приложение); скоупы — только дефолтные
+  /// read (styles/tiles/fonts/sprites), secret-скоупов у него нет.
+  static const String mapboxToken =
+      String.fromEnvironment('MAPBOX_TOKEN');
+
   /// true, если оба ключа заданы. Если запускаем без них — приложение
   /// продолжит работать на моках (пока бэкенд не подключён).
   static bool get hasSupabaseConfig =>
       supabaseUrl.isNotEmpty && supabaseAnonKey.isNotEmpty;
+
+  /// true, если задан токен Mapbox. Без него карта работает на запасном
+  /// бесплатном OpenFreeMap — ничего не ломается, меняется только источник.
+  static bool get hasMapboxConfig => mapboxToken.isNotEmpty;
 
   /// true, если есть DaData-ключ. Без него UI продолжает работать,
   /// но подсказки адресов отдают пустой список — пользователь увидит

@@ -44,13 +44,33 @@ class _SplashScreenState extends State<SplashScreen> {
       session = null;
     }
 
+    bool needsRegistration = false;
     if (session != null) {
-      await runPostLoginBootstrap();
+      // Таймаут: на «полуживой» сети (Wi-Fi подключён, но не работает)
+      // bootstrap мог висеть до TCP-таймаута ОС — вечный сплеш.
+      try {
+        await runPostLoginBootstrap().timeout(const Duration(seconds: 12));
+      } catch (_) {/* доводим до экрана — там свои заглушки */}
+      // Убил приложение между SMS-кодом и регистрацией: сессия есть, а имя
+      // и согласие с офертой — нет. Раньше такой юзер попадал сразу в
+      // каталог и регистрация не предлагалась уже никогда (у заказчика
+      // эта проверка была, у исполнителя — отсутствовала).
+      try {
+        final Map<String, dynamic>? row = await Supabase.instance.client
+            .from('profiles')
+            .select('agreement_accepted_at')
+            .eq('id', session.user.id)
+            .maybeSingle()
+            .timeout(const Duration(seconds: 8));
+        needsRegistration = row == null || row['agreement_accepted_at'] == null;
+      } catch (_) {/* сеть упала — пускаем в /shell, не держим на сплеше */}
     }
 
     await minDelay;
     if (_disposed || !mounted) return;
-    context.go(session != null ? '/shell' : '/onboarding');
+    context.go(session == null
+        ? '/onboarding'
+        : (needsRegistration ? '/auth/registration' : '/shell'));
   }
 
   @override

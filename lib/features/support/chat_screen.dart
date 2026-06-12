@@ -342,19 +342,25 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     // «Отправлено» показываем ТОЛЬКО при успехе — иначе фото потерялись бы,
     // а юзер думал бы, что отправил.
     if (_awaitingDocuments && hasImages) {
-      _awaitingDocuments = false;
+      // Режим НЕ гасим заранее: раньше он сбрасывался до try, и при сбое
+      // «попробуйте ещё раз» было враньём — повтор уходил уже как фото
+      // услуги, а не документы. Гасим только при УСПЕХЕ (ниже).
       setState(() => _isProcessing = true);
       try {
         final List<String> paths = <String>[];
         for (final String localPath in docImagePaths) {
+          // Таймаут на каждое фото: зависшее соединение раньше держало
+          // «печатает…» вечно (фото по несколько МБ).
           final String storagePath = await StorageService.instance
-              .uploadVerificationDocument(File(localPath));
+              .uploadVerificationDocument(File(localPath))
+              .timeout(const Duration(seconds: 40));
           paths.add(storagePath);
         }
         await Supabase.instance.client.rpc(
           'ai_submit_verification',
           params: <String, dynamic>{'p_paths': paths},
-        );
+        ).timeout(const Duration(seconds: 20));
+        _awaitingDocuments = false;
         VerificationStatus.current = VerificationStatus.inProgress;
         _addBotMessage(
           'Документы отправлены 👍\n'
@@ -365,9 +371,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         if (kDebugMode) {
           debugPrint('[chat] verification submit failed: ${e.runtimeType}');
         }
+        // Фото документов НЕ должны оседать в накопителе фото услуги —
+        // иначе паспорт мог утечь в публичную услугу при следующем создании.
+        _servicePhotos.removeWhere(docImagePaths.contains);
         _addBotMessage(
-          'Не удалось отправить документы. Проверьте интернет и '
-          'попробуйте ещё раз — фото пока не загрузились.',
+          'Не удалось отправить документы. Проверьте интернет и пришлите '
+          'фото ещё раз — режим отправки документов ещё включён.',
         );
       } finally {
         if (mounted) setState(() => _isProcessing = false);
@@ -398,7 +407,14 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     // просит найти заказы — уводим в поиск (карточки), а не в FAQ-ответ.
     // И наоборот: если в режиме поиска задают вопрос-FAQ — возвращаемся в чат.
     // Slot-fill (пошаговый сбор) не трогаем — там свой сценарий.
-    if (_mode == AiChatKind.chat && looksLikeCatalogSearch(text, isCustomer: false)) {
+    // Явное «создай/размести услугу» текстом — уводим в пошаговый сбор
+    // (проверяем ДО поиска: «создай услугу экскаватор» содержит и технику, но
+    // это создание, не поиск). Из режимов сбора детектор не дёргаем.
+    if ((_mode == AiChatKind.chat || _mode == AiChatKind.search) &&
+        looksLikeCreateService(text)) {
+      _mode = AiChatKind.slotFillService;
+      AiClient.instance.startFreshSlot(AiChatKind.slotFillService);
+    } else if (_mode == AiChatKind.chat && looksLikeCatalogSearch(text, isCustomer: false)) {
       _mode = AiChatKind.search;
     } else if (_mode == AiChatKind.search && looksLikeFaqQuestion(text)) {
       _mode = AiChatKind.chat;
@@ -425,9 +441,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       await UserLocation.ensure();
     }
 
-    // Таймаут 30 сек: иначе спиннер «печатает...» крутится бесконечно на
-    // подвисшей сети / Edge Function. YandexGPT обычно укладывается в 5-10 сек.
-    const Duration timeout = Duration(seconds: 30);
+    // Таймаут 50 сек — ВЫШЕ серверного (~45 сек). Если клиент сдаётся раньше
+    // сервера, юзер шлёт повтор в ту же беседу, и лимит ассистента списывается
+    // дважды. YandexGPT обычно укладывается в 5-10 сек; 50 — потолок ожидания.
+    const Duration timeout = Duration(seconds: 50);
     try {
       // Для обычного chat-режима используем стрим — юзер видит как
       // ассистент «печатает по словам», не молчит 3-5 секунд.
@@ -442,7 +459,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           // Внешний таймаут: помечаем стрим устаревшим, чтобы подвисший await
           // for внутри больше НЕ перезаписывал этот пузырь, и мягко завершаем
           // (сохранив накопленный текст и кнопку «Перейти»).
-          _staleStreamId = _lastStreamId;
+          _staleStreamIds.add(_lastStreamId);
           _finishStreamSoftly('__last_stream__', 'Не дождался ответа. Попробуйте ещё раз.');
         });
         return;
@@ -484,9 +501,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   /// Все ошибки рисуются прямо в placeholder — НЕ rethrow, иначе
   /// outer-catch добавит дубликат-бабл.
   String _lastStreamId = '';
-  // id стрима, помеченного устаревшим внешним таймаутом — его await for больше
-  // не должен писать в пузырь (иначе мерцание «ошибка → кусок ответа»).
-  String _staleStreamId = '';
+  // id стримов, помеченных устаревшими внешним таймаутом — их await for больше
+  // не должен писать в пузырь (иначе мерцание «ошибка → кусок ответа»). Набор,
+  // а не одна строка: при двух подряд протухших стримах одна переменная
+  // «забывала» первый, и его поздний кусок протекал в свой пузырь поверх ошибки.
+  final Set<String> _staleStreamIds = <String>{};
   Future<void> _streamChatReply(String text) async {
     _idCounter++;
     final id = 'stream_$_idCounter';
@@ -501,8 +520,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         // Таймаут МЕЖДУ чанками: если сервер завис и перестал слать данные,
         // прерываем await for → finally внутри chatStream закроет http-клиент.
         // Раньше .timeout() стоял на внешнем Future и подписку не отменял —
-        // сокет висел до конца ответа сервера (до 45 сек).
-        const Duration(seconds: 35),
+        // сокет висел до конца ответа сервера (до 45 сек). 50 сек — выше
+        // серверного потолка, чтобы не оборвать медленный, но живой ответ.
+        const Duration(seconds: 50),
       )) {
         // Экран закрыли посреди генерации — прекращаем читать поток.
         // Выход из await for отменяет подписку, и http-клиент закрывается
@@ -510,7 +530,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         if (!mounted) return;
         // Стрим устарел (внешний таймаут уже завершил пузырь) — не пишем,
         // иначе пользователь увидел бы мерцание «ошибка → кусок ответа».
-        if (_staleStreamId == id) return;
+        if (_staleStreamIds.contains(id)) return;
         final idx = _messages.indexWhere((m) => m.id == id);
         if (idx < 0) return;
         _messages[idx] = ChatMessage(
@@ -542,7 +562,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     } on AiContentFilterError catch (e) {
       _replaceStreamMessage(id, e.message);
     } catch (_) {
-      if (_staleStreamId == id) return;
+      if (_staleStreamIds.contains(id)) return;
       _finishStreamSoftly(
         id,
         'Не удалось получить ответ. Проверьте интернет и попробуйте снова.',
@@ -710,7 +730,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     if (!granted) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: const Text('Нет доступа к микрофону.'),
+        content: const Text('Нет доступа к микрофону. Разрешите его в настройках, чтобы отправлять голосовые.'),
         action: SnackBarAction(
           label: 'Настройки',
           onPressed: () => SttRecorder.instance.openSettings(),
@@ -722,7 +742,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     if (!started) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Не удалось начать запись')),
+          const SnackBar(content: Text('Не удалось начать запись — микрофон занят или недоступен. Напишите, пожалуйста, текстом.')),
         );
       }
       return;

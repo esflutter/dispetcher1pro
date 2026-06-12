@@ -48,6 +48,19 @@ class CatalogService {
         for (final MachineryRef m in _machineryCache ?? const <MachineryRef>[])
           m.title: m.id,
       };
+
+  /// id техники в порядке справочника (порядок из админки): названия в
+  /// карточках и деталях идут единообразно, а не в том порядке, в котором
+  /// автор отмечал технику при создании. Неизвестные id — в конец.
+  List<int> machineryIdsInCatalogOrder(Iterable<int> ids) {
+    final List<MachineryRef> cat = _machineryCache ?? const <MachineryRef>[];
+    final Map<int, int> pos = <int, int>{
+      for (int i = 0; i < cat.length; i++) cat[i].id: i,
+    };
+    return ids.toList()
+      ..sort((int a, int b) =>
+          (pos[a] ?? 1 << 20).compareTo(pos[b] ?? 1 << 20));
+  }
   Map<int, String> get _categoryIdToTitle => <int, String>{
         for (final CategoryRef c in _categoryCache ?? const <CategoryRef>[])
           c.id: c.title,
@@ -252,18 +265,17 @@ class CatalogService {
     // `expire_unmatched_orders`, и просто старые публикации.
     if (items.isNotEmpty) {
       final List<String> ids = items.map((OrderListItem o) => o.id).toList();
-      final List<Map<String, dynamic>> taken = await _client
-          .from('order_matches')
-          .select('order_id')
-          .inFilter('order_id', ids)
-          .inFilter('status', const <String>[
-            'awaiting_executor',
-            'accepted',
-            'completed',
-          ]);
+      // Серверный помощник (SECURITY DEFINER): видит мэтчи ВСЕХ исполнителей,
+      // а не только свои. Клиентский запрос к order_matches под RLS показывал
+      // только наши мэтчи, поэтому заказ, занятый ДРУГИМ исполнителем, оставался
+      // в ленте как «свободный».
+      final List<dynamic> taken = (await _client.rpc(
+        'taken_order_ids',
+        params: <String, dynamic>{'p_ids': ids},
+      ) as List<dynamic>?) ?? const <dynamic>[];
       final Set<String> takenIds = <String>{
-        for (final Map<String, dynamic> r in taken)
-          r['order_id'] as String,
+        for (final dynamic r in taken)
+          if (r is Map && r['order_id'] != null) r['order_id'].toString(),
       };
       final DateTime today = DateTime.now();
       final DateTime todayDate =
@@ -349,7 +361,7 @@ class CatalogService {
   OrderListItem _orderListItemFromRow(Map<String, dynamic> r) {
     final List<int> machineryIds =
         List<int>.from((r['machinery_ids'] as List?) ?? const <dynamic>[]);
-    final List<String> titles = machineryIds
+    final List<String> titles = machineryIdsInCatalogOrder(machineryIds)
         .map((int id) => _machineryIdToTitle[id] ?? '')
         .where((String t) => t.isNotEmpty)
         .toList();
@@ -405,7 +417,7 @@ class CatalogService {
 
     final List<int> machineryIds = List<int>.from(r['machinery_ids'] as List);
     final List<int> categoryIds = List<int>.from(r['category_ids'] as List);
-    final List<String> machineryTitles = machineryIds
+    final List<String> machineryTitles = machineryIdsInCatalogOrder(machineryIds)
         .map((int id) => _machineryIdToTitle[id] ?? '')
         .where((String t) => t.isNotEmpty)
         .toList();
@@ -578,7 +590,7 @@ class CatalogService {
         about: p['about'] as String?,
         locationAddress: c['location_address'] as String?,
         radiusKm: c['radius_km'] as int?,
-        machineryTitles: agg.machineryIds
+        machineryTitles: machineryIdsInCatalogOrder(agg.machineryIds)
             .map((int id) => _machineryIdToTitle[id] ?? '')
             .where((String t) => t.isNotEmpty)
             .toList(),
@@ -649,7 +661,7 @@ class CatalogService {
       about: p['about'] as String?,
       locationAddress: card['location_address'] as String?,
       radiusKm: card['radius_km'] as int?,
-      machineryTitles: agg.machineryIds
+      machineryTitles: machineryIdsInCatalogOrder(agg.machineryIds)
           .map((int id) => _machineryIdToTitle[id] ?? '')
           .where((String t) => t.isNotEmpty)
           .toList(),
@@ -716,7 +728,21 @@ class CatalogService {
         out.add(_orderListItemFromRow(r));
       } catch (_) {/* пропускаем аномальную запись */}
     }
-    return out;
+    if (out.isEmpty) return out;
+    // Прячем заказы заказчика, по которым исполнитель уже выбран: статус заказа
+    // остаётся published, а RLS не даёт клиенту увидеть чужой мэтч — спрашиваем
+    // серверного помощника (SECURITY DEFINER), который видит мэтчи всех.
+    final List<dynamic> taken = (await _client.rpc(
+      'taken_order_ids',
+      params: <String, dynamic>{
+        'p_ids': out.map((OrderListItem o) => o.id).toList(),
+      },
+    ) as List<dynamic>?) ?? const <dynamic>[];
+    final Set<String> takenIds = <String>{
+      for (final dynamic r in taken)
+        if (r is Map && r['order_id'] != null) r['order_id'].toString(),
+    };
+    return out.where((OrderListItem o) => !takenIds.contains(o.id)).toList();
   }
 
   /// Последние отзывы о заказчике (subject='customer').

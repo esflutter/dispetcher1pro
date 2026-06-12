@@ -172,6 +172,11 @@ class PaymentService {
       return ((row['status'] as String?) ?? '').toPaymentStatus();
     } on PostgrestException {
       return PaymentStatus.unknown;
+    } catch (_) {
+      // Сетевые сбои (SocketException/ClientException) раньше пробивали
+      // поллинг насквозь: цикл умирал, и человек, только что заплативший,
+      // смотрел на вечный спиннер. unknown -> цикл продолжает опрашивать.
+      return PaymentStatus.unknown;
     }
   }
 

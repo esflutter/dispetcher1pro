@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:dispatcher_1/core/ai/ai_navigation.dart';
+import 'package:dispatcher_1/core/analytics/app_analytics.dart';
 import 'package:dispatcher_1/core/catalog/catalog_service.dart';
 import 'package:dispatcher_1/core/catalog/format.dart';
 import 'package:dispatcher_1/core/catalog/models.dart';
@@ -26,6 +27,7 @@ import 'package:dispatcher_1/features/profile/reviews_screen.dart';
 import 'package:dispatcher_1/features/profile/widgets/verification_badge.dart';
 
 import 'package:dispatcher_1/core/widgets/dialog_close_button.dart';
+import 'package:dispatcher_1/core/utils/friendly_error.dart';
 /// Карточка заказа (детали). Данные — из `public.orders` через
 /// [CatalogService.getOrderDetail]. Состояние "уже откликнулся" —
 /// тоже из БД (наличие не-терминального `order_matches` для этого
@@ -201,6 +203,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
 
       await svc.respondToOrder(orderId: widget.orderId, serviceId: serviceId);
       if (!mounted) return;
+      AppAnalytics.log('order_response');
       setState(() {
         _justResponded = true;
         _responding = false;
@@ -229,10 +232,9 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
       );
     } on MatchAlreadyTakenException {
       if (!mounted) return;
-      setState(() {
-        _justResponded = true;
-        _responding = false;
-      });
+      // НЕ ставим _justResponded: отклик не создавался. Раньше кнопка после
+      // снэкбара показывала ложное «Вы уже откликнулись».
+      setState(() => _responding = false);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
@@ -253,15 +255,20 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
           const SnackBar(content: Text('Вы уже отправляли отклик на этот заказ.')),
         );
       } else {
+        // Серверные замки (подписка/верификация/блокировка) переводим в
+        // понятный текст — раньше на экран попадал сырой код вида
+        // «subscription_inactive» без подсказки, что делать.
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Не удалось отправить отклик: ${e.message}')),
+          SnackBar(content: Text(friendlyError(e,
+              fallback: 'Не удалось отправить отклик. Попробуйте ещё раз.'))),
         );
       }
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
       setState(() => _responding = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Не удалось отправить отклик.')),
+        SnackBar(content: Text(friendlyError(e,
+            fallback: 'Не удалось отправить отклик. Попробуйте ещё раз.'))),
       );
     }
   }
@@ -499,17 +506,27 @@ class _OrderDetailBody extends StatelessWidget {
               12.h,
               16.w,
               16.h + MediaQuery.of(context).padding.bottom),
-          child: PrimaryButton(
-            label: alreadyResponded
-                ? 'Вы уже откликнулись'
-                : (responding ? 'Отправка...' : 'Откликнуться'),
-            enabled: !alreadyResponded &&
-                !responding &&
-                !AccountBlock.isBlocked,
-            onPressed:
-                (alreadyResponded || responding || AccountBlock.isBlocked)
-                    ? null
-                    : onRespond,
+          // При блокировке кнопка выглядит выключенной, но тап не молчит, а
+          // ведёт в диалог-объяснение (onRespond → _onRespondTap, который при
+          // блокировке показывает _BlockedDialog). Раньше onPressed=null гасил
+          // кнопку наглухо, и причина блокировки нигде на этом экране не
+          // всплывала — исполнитель недоумевал так же, как заказчик.
+          child: GestureDetector(
+            onTap: (!alreadyResponded && !responding && AccountBlock.isBlocked)
+                ? onRespond
+                : null,
+            child: PrimaryButton(
+              label: alreadyResponded
+                  ? 'Вы уже откликнулись'
+                  : (responding ? 'Отправка...' : 'Откликнуться'),
+              enabled: !alreadyResponded &&
+                  !responding &&
+                  !AccountBlock.isBlocked,
+              onPressed:
+                  (alreadyResponded || responding || AccountBlock.isBlocked)
+                      ? null
+                      : onRespond,
+            ),
           ),
         ),
       ],
@@ -864,7 +881,16 @@ class _CheckRow extends StatelessWidget {
                   : null,
             ),
             SizedBox(width: 16.w),
-            Text(label, style: AppTextStyles.body),
+            // Expanded+ellipsis: длинное название услуги с двумя ценами
+            // раньше давало жёлтый overflow на каждом отклике с 2+ услугами.
+            Expanded(
+              child: Text(
+                label,
+                style: AppTextStyles.body,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
           ],
         ),
       ),

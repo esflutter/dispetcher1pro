@@ -290,7 +290,7 @@ class _RouteNotFoundScreen extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             const Text(
-              'Откройте «Уведомления» в приложении — там можно увидеть свежие события и перейти к нужному заказу.',
+              'Откройте «Мои заказы» — свежие события по вашим заказам видны там.',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 14, color: Color(0xFF666666)),
             ),

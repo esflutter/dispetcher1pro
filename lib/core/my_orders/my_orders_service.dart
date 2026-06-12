@@ -161,6 +161,11 @@ class MyOrdersService {
     if (serverMessage.contains('card_not_published')) {
       return 'Опубликуйте карточку исполнителя, чтобы принимать заказы.';
     }
+    // Блокировка аккаунта: серверный триггер мог сработать, если блокировку
+    // наложили уже после загрузки экрана (локальная проверка её не видела).
+    if (serverMessage.contains('account_blocked')) {
+      return 'Профиль заблокирован — действие недоступно. Подробности в «Профиле».';
+    }
     return null;
   }
 
@@ -283,7 +288,8 @@ class MyOrdersService {
     };
     final List<int> machineryIds =
         List<int>.from((order['machinery_ids'] as List?) ?? const <dynamic>[]);
-    final List<String> machineryTitles = machineryIds
+    final List<String> machineryTitles = CatalogService.instance
+        .machineryIdsInCatalogOrder(machineryIds)
         .map((int id) => machineryById[id] ?? '')
         .where((String t) => t.isNotEmpty)
         .toList();

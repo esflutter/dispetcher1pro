@@ -18,6 +18,7 @@ import 'package:dispatcher_1/features/schedule/day_settings_screen.dart';
 import 'package:dispatcher_1/features/schedule/widgets/schedule_alerts.dart';
 
 import 'package:dispatcher_1/core/widgets/dialog_close_button.dart';
+import 'package:dispatcher_1/core/utils/friendly_error.dart';
 /// Состояние конкретного дня графика.
 enum DayState { noOrders, hasOrders, dayOff }
 
@@ -1072,7 +1073,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
         list.insert(origIdx.clamp(0, list.length), order);
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Не удалось обновить заказ: $e')),
+        SnackBar(content: Text(friendlyError(e, fallback: 'Не удалось обновить заказ. Попробуйте ещё раз.'))),
       );
       return false;
     }

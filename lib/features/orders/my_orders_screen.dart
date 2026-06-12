@@ -13,6 +13,7 @@ import 'package:dispatcher_1/features/orders/order_detail_screen.dart';
 import 'package:dispatcher_1/features/orders/widgets/my_order_card.dart';
 import 'package:dispatcher_1/features/orders/widgets/order_status_pill.dart';
 import 'package:dispatcher_1/features/profile/account_block.dart';
+import 'package:dispatcher_1/core/utils/friendly_error.dart';
 
 /// «Мои заказы» исполнителя. Источник — таблица `order_matches` JOIN
 /// `orders` + `profiles` (заказчик). Три вкладки — Новые / Принятые /
@@ -424,8 +425,11 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
     } catch (e) {
       if (!mounted) return false;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Не удалось обновить статус: $e')),
+        SnackBar(content: Text(friendlyError(e, fallback: 'Не удалось обновить статус. Попробуйте ещё раз.'))),
       );
+      // Гонка: карточка могла протухнуть (заказчик отозвал/выбрал другого) —
+      // перезагружаем список, чтобы кнопки не жались бесконечно.
+      _refresh();
       return false;
     } finally {
       _busy = false;

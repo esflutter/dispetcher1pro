@@ -136,6 +136,25 @@ bool looksLikeCatalogSearch(String raw, {required bool isCustomer}) {
   return false;
 }
 
+/// Явное намерение СОЗДАТЬ услугу текстом («создай услугу экскаватор 3000»,
+/// «размести услугу», «хочу выложить услугу») — чтобы из обычного чата увести
+/// в пошаговый сбор (slot-fill), а не в FAQ-инструкцию. Проверяется ДО поиска.
+/// «Как создать услугу?» — это FAQ, его НЕ перехватываем.
+bool looksLikeCreateService(String raw) {
+  final String t = ' ${raw.toLowerCase().trim()} ';
+  if (_faqHowto.hasMatch(t)) return false;
+  final bool createVerb = RegExp(
+    r'(созда[й]|создат|оформ|размест|опубликов|выложи|выклад|заведи|завест|сформиру|добав)')
+      .hasMatch(t);
+  final bool serviceObject = RegExp(r'(услуг|объявлени)').hasMatch(t);
+  if (createVerb && serviceObject) return true;
+  if (RegExp(r'(хочу|хочется|нужно|надо|хотел[аи]?\s+бы)\s+\S*\s*'
+      r'(размест|выложи|опубликов).{0,12}услуг').hasMatch(t)) {
+    return true;
+  }
+  return false;
+}
+
 /// Похоже ли сообщение на FAQ/вопрос про аккаунт — чтобы в режиме поиска
 /// вернуться в обычный чат. Уточнения поиска (подешевле/поближе/…) сюда не
 /// попадают и остаются в поиске.

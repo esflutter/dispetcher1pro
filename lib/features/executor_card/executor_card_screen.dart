@@ -21,6 +21,7 @@ import 'package:dispatcher_1/features/profile/widgets/verification_badge.dart';
 import 'package:dispatcher_1/features/services/my_services_screen.dart';
 
 import 'package:dispatcher_1/core/widgets/dialog_close_button.dart';
+import 'package:dispatcher_1/core/utils/friendly_error.dart';
 import 'widgets/executor_card_alerts.dart';
 import 'widgets/executor_card_paywall.dart';
 
@@ -161,7 +162,7 @@ class _ExecutorCardScreenState extends State<ExecutorCardScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Не удалось загрузить карточку: $e'),
+          content: Text(friendlyError(e, fallback: 'Не удалось загрузить карточку. Потяните вниз, чтобы обновить.')),
           duration: const Duration(seconds: 3),
         ),
       );

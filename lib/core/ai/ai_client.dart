@@ -334,7 +334,32 @@ class AiClient {
     try {
       final resp = await client.send(req);
       if (resp.statusCode == 402) {
-        throw AiQuotaExceeded('Лимит исчерпан');
+        // Берём понятный текст из тела ответа сервера («дневной лимит…,
+        // сбросится завтра, пользуйтесь обычным поиском»), а не куцее
+        // «Лимит исчерпан». Тело может не прийти — тогда дружелюбный дефолт.
+        String msg = 'Вы достигли дневного лимита запросов к ассистенту. '
+            'Лимит сбросится завтра — а пока можно пользоваться обычным '
+            'поиском и формой создания.';
+        try {
+          final body = await resp.stream.bytesToString();
+          final dynamic obj = jsonDecode(body);
+          if (obj is Map && obj['message'] is String) {
+            msg = obj['message'] as String;
+          }
+        } catch (_) {/* тела нет/не JSON — оставляем дефолт */}
+        throw AiQuotaExceeded(msg);
+      }
+      if (resp.statusCode == 400) {
+        // Слишком длинное / пустое сообщение: даём понятный текст, а не
+        // generic-ошибку, которую экран показал бы как «проверьте интернет».
+        String msg = 'Не удалось обработать сообщение. Попробуйте короче.';
+        try {
+          final dynamic o = jsonDecode(await resp.stream.bytesToString());
+          if (o is Map && o['error'] == 'message_too_long') {
+            msg = 'Сообщение слишком длинное. Сократите его и попробуйте снова.';
+          }
+        } catch (_) {/* тела нет — оставляем дефолт */}
+        throw AiContentFilterError(msg);
       }
       if (resp.statusCode != 200) {
         throw Exception('ai_chat_stream_${resp.statusCode}');
@@ -509,6 +534,11 @@ class AiClient {
       if (status == 503) {
         throw AiQuotaExceeded(
           'Ассистент сейчас перегружен. Попробуйте через несколько минут.',
+        );
+      }
+      if (status == 400 && json['error'] == 'message_too_long') {
+        throw AiContentFilterError(
+          'Сообщение слишком длинное. Сократите его и попробуйте снова.',
         );
       }
       if (kDebugMode) {

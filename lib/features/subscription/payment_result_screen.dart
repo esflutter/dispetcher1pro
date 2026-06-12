@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
+import 'package:dispatcher_1/core/analytics/app_analytics.dart';
 import 'package:dispatcher_1/core/payments/models.dart';
 import 'package:dispatcher_1/core/payments/payment_service.dart';
 import 'package:dispatcher_1/core/profile/profile_service.dart';
@@ -47,6 +49,12 @@ class PaymentResultScreen extends StatefulWidget {
 class _PaymentResultScreenState extends State<PaymentResultScreen> {
   PaymentStatus _status = PaymentStatus.pending;
   bool _polling = true;
+
+  /// Поллинг идёт дольше 90 секунд (вебхук задержался): меняем подпись
+  /// с «через несколько секунд» на честную — можно закрыть экран,
+  /// активация придёт автоматически.
+  bool _slow = false;
+  Timer? _slowTimer;
   bool _disposed = false;
   // Поднимаем при каждом ручном перезапуске поллинга, чтобы старая
   // background-итерация поняла, что её результат уже неактуален и
@@ -61,6 +69,7 @@ class _PaymentResultScreenState extends State<PaymentResultScreen> {
 
   @override
   void dispose() {
+    _slowTimer?.cancel();
     _disposed = true;
     super.dispose();
   }
@@ -71,6 +80,11 @@ class _PaymentResultScreenState extends State<PaymentResultScreen> {
   /// `PaymentService.pollPaymentStatus`).
   Future<void> _startPolling() async {
     final int myAttempt = ++_attempt;
+    _slowTimer?.cancel();
+    _slow = false;
+    _slowTimer = Timer(const Duration(seconds: 90), () {
+      if (mounted && _polling) setState(() => _slow = true);
+    });
     // Прямой заход на /subscription/payment/result без id (битый
     // deep-link / ручная навигация) — поллить нечего.
     if (widget.paymentId.isEmpty) {
@@ -87,6 +101,9 @@ class _PaymentResultScreenState extends State<PaymentResultScreen> {
     if (!mounted || myAttempt != _attempt) return;
     if (first == PaymentStatus.succeeded ||
         first == PaymentStatus.refunded) {
+      AppAnalytics.log('payment_success', <String, Object>{
+        'kind': widget.binding ? 'card_binding' : 'payment',
+      });
       _onClose();
       return;
     }
@@ -107,6 +124,9 @@ class _PaymentResultScreenState extends State<PaymentResultScreen> {
       _polling = false;
     });
     if (s == PaymentStatus.succeeded || s == PaymentStatus.refunded) {
+      AppAnalytics.log('payment_success', <String, Object>{
+        'kind': widget.binding ? 'card_binding' : 'payment',
+      });
       if (!widget.binding) {
         // ignore: discarded_futures
         _refreshSubscriptionState();
@@ -269,7 +289,9 @@ class _PaymentResultScreenState extends State<PaymentResultScreen> {
               style: AppTextStyles.h3, textAlign: TextAlign.center),
           SizedBox(height: AppSpacing.sm),
           Text(
-            'Если вы только что оплатили в браузере — статус обновится через несколько секунд.',
+            _slow
+                ? 'Платёж обрабатывается дольше обычного. Можно закрыть экран — подписка активируется автоматически, как только банк подтвердит оплату.'
+                : 'Если вы только что оплатили в браузере — статус обновится через несколько секунд.',
             textAlign: TextAlign.center,
             style: AppTextStyles.bodyMRegular
                 .copyWith(color: AppColors.textSecondary),

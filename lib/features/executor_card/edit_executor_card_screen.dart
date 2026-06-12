@@ -25,6 +25,7 @@ import 'package:dispatcher_1/core/widgets/primary_button.dart';
 import 'package:dispatcher_1/features/auth/photo_crop_screen.dart';
 import 'package:dispatcher_1/features/catalog/catalog_filter_screen.dart';
 import 'package:dispatcher_1/features/catalog/widgets/catalog_search_bar.dart';
+import 'package:dispatcher_1/core/utils/friendly_error.dart';
 
 import 'executor_card_screen.dart';
 import 'widgets/executor_card_alerts.dart';
@@ -578,7 +579,7 @@ class _EditExecutorCardScreenState extends State<EditExecutorCardScreen> {
                     if (!context.mounted) return;
                     setState(() => _saving = false);
                     ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Не удалось сохранить: $e')),
+                      SnackBar(content: Text(friendlyError(e, fallback: 'Не удалось сохранить. Попробуйте ещё раз.'))),
                     );
                     return;
                   }
@@ -676,7 +677,16 @@ class _HeaderRowState extends State<_HeaderRow> {
       } catch (_) {}
       await ProfileService.instance.update(avatarUrl: url);
       if (mounted) setState(() => _avatarUrl = url);
-    } catch (_) {/* silent */}
+    } catch (_) {
+      // Раньше сбой загрузки аватара проглатывался молча: фото визуально
+      // «вставало», но не сохранялось, и после перезапуска откатывалось.
+      // Теперь честно сообщаем, что надо повторить.
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Не удалось сохранить фото. Проверьте интернет и попробуйте ещё раз.')),
+        );
+      }
+    }
   }
 
   /// Тап по аватару: если фото уже есть — шторка «Обновить/Удалить»,

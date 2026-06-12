@@ -7,6 +7,7 @@ import 'package:dispatcher_1/core/settings/settings_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
 import 'package:dispatcher_1/features/subscription/widgets/payment_method_card.dart';
+import 'package:dispatcher_1/core/utils/legal_links.dart';
 
 /// Paywall подписки. Структура эталона: фон с рукопожатием на весь
 /// экран, нижняя карточка с маркетинговым текстом и кнопкой
@@ -214,15 +215,44 @@ class _SubscriptionPaywallState extends State<SubscriptionPaywall>
           SizedBox(height: 12.h),
           PrimaryButton(label: 'Продолжить', onPressed: _onContinue),
           SizedBox(height: 12.h),
-          Text(
-            'Условия использования  •  Политика конфиденциальности',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontFamily: 'Roboto',
-              fontSize: 10.sp,
-              fontWeight: FontWeight.w500,
-              color: AppColors.textTertiary,
-            ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: <Widget>[
+              GestureDetector(
+                onTap: () => openTermsUrl(context),
+                child: Text(
+                  'Условия использования',
+                  style: TextStyle(
+                    fontFamily: 'Roboto',
+                    fontSize: 10.sp,
+                    fontWeight: FontWeight.w500,
+                    color: AppColors.textTertiary,
+                    decoration: TextDecoration.underline,
+                  ),
+                ),
+              ),
+              Text(
+                '  •  ',
+                style: TextStyle(
+                  fontFamily: 'Roboto',
+                  fontSize: 10.sp,
+                  color: AppColors.textTertiary,
+                ),
+              ),
+              GestureDetector(
+                onTap: () => openPrivacyUrl(context),
+                child: Text(
+                  'Политика конфиденциальности',
+                  style: TextStyle(
+                    fontFamily: 'Roboto',
+                    fontSize: 10.sp,
+                    fontWeight: FontWeight.w500,
+                    color: AppColors.textTertiary,
+                    decoration: TextDecoration.underline,
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),

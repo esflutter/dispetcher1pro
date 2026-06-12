@@ -6,6 +6,7 @@ import 'package:dispatcher_1/core/ai/ai_navigation.dart';
 import 'package:dispatcher_1/core/profile/profile_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_spacing.dart';
+import 'package:dispatcher_1/core/utils/legal_links.dart';
 import 'package:dispatcher_1/core/utils/plural.dart';
 import 'package:dispatcher_1/core/utils/support_contact.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
@@ -35,6 +36,8 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
+  String? _rejectReason;
+
   VerificationStatus get _status => VerificationStatus.current;
   set _status(VerificationStatus v) => VerificationStatus.current = v;
 
@@ -95,6 +98,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
       // Подписка + email лежат в profiles_private, отдельный запрос.
       final MyPrivate? priv = await ProfileService.instance.loadMyPrivate();
       if (priv == null || !mounted) return;
+      // Причина отказа верификации: раньше показывалась только одноразовым
+      // пушем — на экране юзер видел голое «не пройдена» и слал те же
+      // документы повторно. Теперь причина видна прямо под плашкой.
+      _rejectReason = priv.verificationRejectReason;
       // VerificationStatus.hasSubscription — мок, обновим из БД.
       final DateTime? paid = priv.subscriptionPaidUntil;
       VerificationStatus.hasSubscription =
@@ -159,6 +166,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (mounted) setState(() {});
   }
 
+  /// Пояснение под плашкой блокировки. Автоблок за низкий рейтинг — временный,
+  /// с датой снятия. Блок администратором кодируется датой в далёком будущем
+  /// (год ≥ 2090); для него «рейтинг ниже 2 звёзд» и «до 2090 года» неверны —
+  /// показываем нейтральный текст с отсылкой к поддержке.
+  String _blockExplanation() {
+    final DateTime? until = AccountBlock.blockedUntil;
+    final bool forever = until != null && until.year >= 2090;
+    if (forever) {
+      return 'Ваш профиль заблокирован. Если это ошибка — '
+          'напишите в поддержку ниже.';
+    }
+    return 'Ваш рейтинг ниже 2 звёзд, поэтому доступ\nвременно ограничен '
+        '${AccountBlock.blockedUntilText ?? "на 30 дней"}';
+  }
+
   @override
   Widget build(BuildContext context) {
     final VerificationStatus status = _status;
@@ -214,7 +236,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               const BlockedPill(),
               SizedBox(height: 8.h),
               Text(
-                'Ваш рейтинг ниже 2 звёзд, поэтому доступ\nвременно ограничен ${AccountBlock.blockedUntilText ?? "на 30 дней"}',
+                _blockExplanation(),
                 style: AppTextStyles.subBody.copyWith(
                   color: AppColors.textPrimary,
                   fontWeight: FontWeight.w400,
@@ -236,6 +258,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
                 SizedBox(height: 20.h),
               ] else if (status == VerificationStatus.rejected) ...<Widget>[
+                if (_rejectReason != null && _rejectReason!.trim().isNotEmpty) ...<Widget>[
+                  SizedBox(height: 6.h),
+                  Text(
+                    'Причина: ${_rejectReason!.trim()}',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontFamily: 'Roboto',
+                      fontSize: 13.sp,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ],
                 SizedBox(height: 8.h),
                 _PrimaryActionButton(
                   label: 'Пройти ещё раз',
@@ -269,6 +303,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
             SizedBox(height: 20.h),
             const _SupportFooter(),
+            SizedBox(height: 24.h),
+            const _LegalLinksFooter(),
             SizedBox(height: 32.h),
           ],
         ),
@@ -402,6 +438,41 @@ class _SupportFooter extends StatelessWidget {
                   width: 40.r, height: 40.r),
             ),
           ],
+        ),
+      ],
+    );
+  }
+}
+
+/// Тихие ссылки на правовые документы — сторы требуют, чтобы политика
+/// была доступна из приложения, а не только на экране регистрации.
+class _LegalLinksFooter extends StatelessWidget {
+  const _LegalLinksFooter();
+
+  @override
+  Widget build(BuildContext context) {
+    final TextStyle style = AppTextStyles.subBody.copyWith(
+      color: AppColors.textSecondary,
+      decoration: TextDecoration.underline,
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        GestureDetector(
+          onTap: () => openTermsUrl(context),
+          behavior: HitTestBehavior.opaque,
+          child: Padding(
+            padding: EdgeInsets.symmetric(vertical: 6.h),
+            child: Text('Пользовательское соглашение', style: style),
+          ),
+        ),
+        GestureDetector(
+          onTap: () => openPrivacyUrl(context),
+          behavior: HitTestBehavior.opaque,
+          child: Padding(
+            padding: EdgeInsets.symmetric(vertical: 6.h),
+            child: Text('Политика конфиденциальности', style: style),
+          ),
         ),
       ],
     );

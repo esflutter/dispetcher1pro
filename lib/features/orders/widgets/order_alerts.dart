@@ -5,6 +5,7 @@ import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
 
 import 'package:dispatcher_1/core/widgets/dialog_close_button.dart';
+import 'package:dispatcher_1/features/profile/account_block.dart';
 /// Алерт «Вы уверены, что хотите отказаться от заказа?»
 /// Возвращает `true`, если пользователь нажал «Отказаться»; `false`/`null` —
 /// если закрыл/отменил. Сама операция в БД делается вызывающим экраном
@@ -182,6 +183,80 @@ Future<bool?> showSubscriptionPausedDialog(BuildContext context) {
                   ),
                 ),
               ),
+            ),
+            SizedBox(height: 8.h),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+/// Попап «Профиль заблокирован» — показывается при попытке действия (принять
+/// заказ, подтвердить), когда аккаунт заблокирован за низкий рейтинг. Раньше
+/// такие кнопки просто гасли без объяснения, и исполнитель не понимал, почему
+/// действие недоступно. Текст согласован с плашкой в профиле.
+Future<void> showAccountBlockedDialog(BuildContext context) {
+  final DateTime? until = AccountBlock.blockedUntil;
+  final bool forever = until != null && until.year >= 2090;
+  final String body = forever
+      ? 'Профиль заблокирован. Если это ошибка — напишите в поддержку '
+          '(раздел «Профиль»).'
+      : 'Ваш рейтинг ниже 2 звёзд, доступ временно ограничен '
+          '${AccountBlock.blockedUntilText ?? 'на 30 дней'}. Во избежание '
+          'дальнейших блокировок избегайте отзывов с низкой оценкой.';
+  return showDialog<void>(
+    context: context,
+    barrierColor: Colors.black.withValues(alpha: 0.35),
+    builder: (BuildContext ctx) => Dialog(
+      insetPadding: EdgeInsets.symmetric(horizontal: 16.w),
+      backgroundColor: Colors.transparent,
+      child: Container(
+        padding: EdgeInsets.fromLTRB(16.r, 14.r, 16.r, 22.r),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(20.r),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Align(
+              alignment: Alignment.centerRight,
+              child: DialogCloseButton(
+                onTap: () => Navigator.of(ctx).pop(),
+                color: AppColors.textTertiary,
+                iconSize: 22.r,
+              ),
+            ),
+            SizedBox(height: 12.h),
+            Text(
+              'Профиль заблокирован',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontFamily: 'Roboto',
+                fontSize: 20.sp,
+                fontWeight: FontWeight.w600,
+                height: 1.3,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            SizedBox(height: 10.h),
+            Text(
+              body,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontFamily: 'Roboto',
+                fontSize: 16.sp,
+                fontWeight: FontWeight.w400,
+                height: 1.3,
+                color: AppColors.textSecondary,
+              ),
+            ),
+            SizedBox(height: 20.h),
+            PrimaryButton(
+              label: 'Понятно',
+              onPressed: () => Navigator.of(ctx).pop(),
             ),
             SizedBox(height: 8.h),
           ],

@@ -6,6 +6,7 @@ import 'package:dispatcher_1/core/settings/settings_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
 import 'package:dispatcher_1/features/subscription/widgets/payment_method_card.dart';
+import 'package:dispatcher_1/core/utils/legal_links.dart';
 
 /// Paywall для оплаты размещения карточки исполнителя. Структурно
 /// идентичен [SubscriptionPaywall] (фон + AnimatedSwitcher между
@@ -185,7 +186,7 @@ class _ExecutorCardPaywallState extends State<ExecutorCardPaywall>
           Text(
             _priceRub == null
                 ? 'Стоимость подписки уточняется'
-                : 'N дней бесплатно, затем ${_fmtPrice(_priceRub!)} ₽/месяц',
+                : '${_fmtPrice(_priceRub!)} ₽/месяц',
             style: TextStyle(
               fontFamily: 'Roboto',
               fontSize: 14.sp,
@@ -196,26 +197,46 @@ class _ExecutorCardPaywallState extends State<ExecutorCardPaywall>
           SizedBox(height: 12.h),
           PrimaryButton(label: 'Продолжить', onPressed: _onContinue),
           SizedBox(height: 12.h),
-          Text(
-            'Условия использования  •  Политика конфиденциальности',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontFamily: 'Roboto',
-              fontSize: 10.sp,
-              fontWeight: FontWeight.w500,
-              color: AppColors.textTertiary,
-            ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: <Widget>[
+              GestureDetector(
+                onTap: () => openTermsUrl(context),
+                child: Text(
+                  'Условия использования',
+                  style: TextStyle(
+                    fontFamily: 'Roboto',
+                    fontSize: 10.sp,
+                    fontWeight: FontWeight.w500,
+                    color: AppColors.textTertiary,
+                    decoration: TextDecoration.underline,
+                  ),
+                ),
+              ),
+              Text(
+                '  •  ',
+                style: TextStyle(
+                  fontFamily: 'Roboto',
+                  fontSize: 10.sp,
+                  color: AppColors.textTertiary,
+                ),
+              ),
+              GestureDetector(
+                onTap: () => openPrivacyUrl(context),
+                child: Text(
+                  'Политика конфиденциальности',
+                  style: TextStyle(
+                    fontFamily: 'Roboto',
+                    fontSize: 10.sp,
+                    fontWeight: FontWeight.w500,
+                    color: AppColors.textTertiary,
+                    decoration: TextDecoration.underline,
+                  ),
+                ),
+              ),
+            ],
           ),
-          SizedBox(height: 4.h),
-          Text(
-            'Восстановить покупки',
-            style: TextStyle(
-              fontFamily: 'Roboto',
-              fontSize: 10.sp,
-              fontWeight: FontWeight.w500,
-              color: AppColors.textTertiary,
-            ),
-          ),
+
         ],
       ),
     );

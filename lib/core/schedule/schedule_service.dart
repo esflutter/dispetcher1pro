@@ -69,7 +69,8 @@ class ScheduleService {
         locationAddress: r['location_address'] as String?,
         locationLat: (r['location_lat'] as num?)?.toDouble(),
         locationLng: (r['location_lng'] as num?)?.toDouble(),
-        machineryTitles: mIds
+        machineryTitles: CatalogService.instance
+            .machineryIdsInCatalogOrder(mIds)
             .map((int id) => machineryById[id] ?? '')
             .where((String t) => t.isNotEmpty)
             .toList(),

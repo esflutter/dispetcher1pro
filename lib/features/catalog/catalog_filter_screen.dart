@@ -1312,12 +1312,18 @@ class AddressBottomSheetState extends State<AddressBottomSheet> {
       if (!mounted) return;
       if (!granted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
+          SnackBar(
+            content: const Text(
               'Нет доступа к геолокации. Разрешите его в настройках, '
               'чтобы определить адрес автоматически.',
             ),
-            duration: Duration(seconds: 3),
+            duration: const Duration(seconds: 4),
+            // При «больше не спрашивать» системное окно уже не появится —
+            // без этой кнопки совет «разрешите в настройках» был тупиком.
+            action: SnackBarAction(
+              label: 'Настройки',
+              onPressed: () => Geolocator.openAppSettings(),
+            ),
           ),
         );
         return;

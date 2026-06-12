@@ -100,6 +100,24 @@ class VerifyResult {
   final String? avatarUrl;
 }
 
+/// Если ошибка — «SMS на этот номер уже отправляли, повторно можно через
+/// N секунд» (анти-спам частоты GoTrue), возвращает N. Иначе null.
+/// Нужна экрану ввода номера: такой отказ означает, что код УЖЕ улетел
+/// пользователю меньше минуты назад (повторное нажатие, возврат назад),
+/// и правильная реакция — не держать его на номере с сообщением про
+/// «новый код», а вести на экран ввода кода: пусть вводит полученный.
+int? otpRetryAfterSeconds(Object error) {
+  final String raw = error is AuthException ? error.message : error.toString();
+  final String lower = raw.toLowerCase();
+  if (!lower.contains('security purposes') &&
+      !lower.contains('only request this')) {
+    return null;
+  }
+  final Match? m = RegExp(r'(\d+)\s*second').firstMatch(lower);
+  final int sec = m != null ? (int.tryParse(m.group(1)!) ?? 0) : 0;
+  return sec > 0 ? sec : 60;
+}
+
 /// Переводит технические ошибки авторизации в человекочитаемый русский
 /// текст. Supabase/GoTrue отдаёт сообщения на английском (ограничение
 /// частоты запросов кода, неверный код, сетевые сбои) — показывать их
@@ -117,6 +135,18 @@ String authErrorToRu(Object error) {
       lower.contains('connection closed') ||
       lower.contains('errno = 7')) {
     return 'Нет соединения с сервером. Проверьте интернет или отключите VPN.';
+  }
+
+  // Часовой потолок нашего SMS-шлюза: «too many codes for this number».
+  // Общий фолбэк тут вреден — он приглашает жать ещё, а лимит часовой.
+  if (lower.contains('too many codes')) {
+    return 'Превышен лимит кодов для этого номера. Попробуйте через час.';
+  }
+
+  // Глобальный часовой потолок шлюза («sms hourly cap reached») — сервис
+  // в целом исчерпал лимит отправок; повторное нажатие не поможет.
+  if (lower.contains('hourly cap')) {
+    return 'Сервис перегружен, SMS временно не отправляются. Попробуйте позже.';
   }
 
   // Ограничение частоты: "For security purposes, you can only request this

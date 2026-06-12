@@ -76,10 +76,28 @@ class _PhoneInputScreenState extends State<PhoneInputScreen> {
     } on TimeoutException {
       if (mounted) _showError('Сервер не отвечает. Попробуйте позже.');
     } on AuthException catch (e) {
+      if (!mounted) return;
+      // Особый случай: «SMS уже отправляли, повторно через N секунд».
+      // Код УЖЕ улетел на этот номер (двойное нажатие / возврат назад) —
+      // держать пользователя на экране номера с сообщением про «новый код»
+      // сбивает с толку (находка тестировщицы). Ведём на ввод кода: пусть
+      // вводит полученный, там же есть свой таймер повторной отправки.
+      final int? retryAfter = otpRetryAfterSeconds(e);
+      if (retryAfter != null) {
+        CropResult.userPhoneE164 = e164;
+        CropResult.userPhone = PhoneFormat.toPretty(e164);
+        context.go('/auth/otp');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text('Код уже отправлен на этот номер — введите его. '
+                  'Новый можно запросить через ${pluralSecondsRu(retryAfter)}.')),
+        );
+        return;
+      }
       // Supabase/GoTrue отдаёт текст на английском (ограничение частоты,
       // сетевые сбои). Переводим в русский, чтобы на экран не попал
       // сырой текст вроде «For security purposes…» или «Failed host lookup…».
-      if (mounted) _showError(authErrorToRu(e));
+      _showError(authErrorToRu(e));
     } catch (e) {
       if (mounted) _showError(authErrorToRu(e));
     } finally {

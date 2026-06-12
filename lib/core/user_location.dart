@@ -15,12 +15,22 @@ class UserLocation {
 
   static bool get has => lat != null && lng != null;
 
+  // Текущий идущий запрос координат. Прогрев при открытии экрана и ожидание
+  // перед поиском могут вызвать ensure() почти одновременно — без этого оба
+  // стартовали бы getCurrentPosition (двойной запрос GPS), т.к. `has` ещё
+  // false у обоих. Делим один Future на всех ждущих.
+  static Future<void>? _inFlight;
+
   /// Best-effort получение координат. Если они уже есть — ничего не делает.
   /// НИКОГДА не бросает: при отказе в разрешении, выключенном сервисе или
   /// таймауте просто оставляет координаты пустыми, и ассистент работает по
   /// городу/центру, как раньше.
-  static Future<void> ensure() async {
-    if (has) return;
+  static Future<void> ensure() {
+    if (has) return Future<void>.value();
+    return _inFlight ??= _fetch();
+  }
+
+  static Future<void> _fetch() async {
     try {
       if (!await ensureLocationPermission()) return;
       final Position pos = await Geolocator.getCurrentPosition(
@@ -33,6 +43,8 @@ class UserLocation {
       lng = pos.longitude;
     } catch (_) {
       // нет геопозиции — не страшно, поиск работает по названному городу
+    } finally {
+      _inFlight = null;
     }
   }
 }

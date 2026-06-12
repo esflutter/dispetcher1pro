@@ -687,9 +687,16 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
           children: <Widget>[
             PrimaryButton(
               label: 'Подтвердить',
-              enabled: !widget.isBlocked && !_busy,
+              // Кнопка остаётся активной при блокировке — иначе тап молчал
+              // и причина (низкий рейтинг) нигде не всплывала. Объяснение
+              // показываем первым же шагом ниже.
+              enabled: !_busy,
               onPressed: () async {
                 if (_busy) return;
+                if (widget.isBlocked) {
+                  await showAccountBlockedDialog(context);
+                  return;
+                }
                 if (!VerificationStatus.hasSubscription) {
                   final bool? go = await showSubscriptionPausedDialog(context);
                   if (go == true && mounted) context.push('/subscription/manage');

@@ -313,7 +313,16 @@ class _PhotoPickerState extends State<_PhotoPicker> {
       } catch (_) {}
       await ProfileService.instance.update(avatarUrl: url);
       if (mounted) setState(() => _dbAvatarUrl = url);
-    } catch (_) {/* silent */}
+    } catch (_) {
+      // Раньше сбой загрузки аватара проглатывался молча: фото визуально
+      // «вставало», но не сохранялось, и после перезапуска откатывалось.
+      // Теперь честно сообщаем, что надо повторить.
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Не удалось сохранить фото. Проверьте интернет и попробуйте ещё раз.')),
+        );
+      }
+    }
   }
 
   /// Тап по аватару: если фото уже есть — шторка «Обновить/Удалить»,

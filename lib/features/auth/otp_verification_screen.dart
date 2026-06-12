@@ -94,10 +94,12 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
 
     setState(() => _verifying = true);
     try {
-      final VerifyResult result = await AuthService.instance.verify(
-        e164: e164,
-        code: _pinController.text,
-      );
+      // Таймаут: на плохой связи запрос мог висеть вечно, оставляя кнопку
+      // со спиннером без какого-либо сообщения (экран входа вне общего
+      // сетевого гуарда). 15 секунд — и честная ошибка с подсказкой.
+      final VerifyResult result = await AuthService.instance
+          .verify(e164: e164, code: _pinController.text)
+          .timeout(const Duration(seconds: 15));
       if (!mounted) return;
       if (result.needsRegistration) {
         context.go('/auth/registration');
@@ -129,11 +131,22 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
           });
         }
       });
-    } catch (_) {
+    } on TimeoutException {
       if (!mounted) return;
+      _pinController.clear();
       setState(() => _verifying = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Не удалось проверить код. Попробуйте ещё раз.')),
+        const SnackBar(content: Text('Сервер не отвечает. Проверьте интернет и попробуйте ещё раз.')),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      // Очищаем введённый код, как в приложении заказчика: при нештатном сбое
+      // повторное нажатие не отправит то же значение второй раз, и поле не
+      // «застревает» с уже потреблённым кодом.
+      _pinController.clear();
+      setState(() => _verifying = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Не удалось проверить код. Проверьте интернет и попробуйте ещё раз.')),
       );
     }
   }

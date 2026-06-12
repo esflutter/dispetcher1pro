@@ -1,23 +1,29 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:vector_map_tiles/vector_map_tiles.dart';
 import 'package:vector_tile_renderer/vector_tile_renderer.dart' as vtr;
 
+import 'package:dispatcher_1/core/config/env.dart';
 import 'package:dispatcher_1/core/location_permission.dart';
+import 'package:dispatcher_1/core/settings/settings_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 
 /// Скрываем государственные границы (тонкие линии между странами и
 /// регионами) — для приложения они визуальный шум, юзеры смотрят
-/// на маркеры заказов. В positron слои-границы имеют id вида
-/// `boundary_2/3/disputed` и в JSON стиле живут в `source-layer:
-/// "boundary"`. Фильтруем И по id, И по `tileSource` — оба нужны:
+/// на маркеры заказов. В Mapbox light-v11 слои-границы имеют id вида
+/// `admin-0-boundary` / `admin-1-boundary` (source-layer "admin"); в
+/// запасном positron — `boundary_2/3/disputed` (source-layer
+/// "boundary"). Фильтруем И по id, И по `tileSource` — оба нужны:
 /// у некоторых слоёв id может быть префиксован ThemeReader'ом, и
 /// строковое совпадение по id не всегда срабатывает.
 vtr.Theme _hideAdminBoundaries(vtr.Theme src) {
@@ -35,25 +41,30 @@ vtr.Theme _hideAdminBoundaries(vtr.Theme src) {
   );
 }
 
-/// Лимит дискового кэша тайлов OpenFreeMap. 200 МБ — это ~2–3 тысячи
+/// Лимит дискового кэша тайлов карты. 200 МБ — это ~2–3 тысячи
 /// уже посещённых тайлов; пакет `vector_map_tiles` сам выкидывает
 /// самые старые при превышении (LRU). Хранятся в Application Cache
 /// Directory — ОС может его очистить при нехватке места, что нас
 /// устраивает (потеря карты не страшна).
 const int _kTileCacheMaxSizeBytes = 200 * 1024 * 1024;
 
-/// Сколько хранить тайл, прежде чем перепросить его у OpenFreeMap.
-/// 30 дней — компромисс: тайлы OSM обновляются раз в неделю-две, но
+/// Сколько хранить тайл, прежде чем перепросить его у тайл-сервера.
+/// 30 дней — компромисс: тайлы обновляются раз в неделю-две, но
 /// для маркетплейса техники свежесть карты не критична. Зато заметно
 /// меньше трафика при повторных открытиях.
 const Duration _kTileCacheTtl = Duration(days: 30);
 
-/// Папка кэша внутри system app cache. Изолированная директория, чтобы
-/// случайно не зацепить чужие файлы при ручной чистке.
-Future<Directory> _resolveTilesCacheFolder() async {
+/// Фактический источник тайлов. Выбирается в РАНТАЙМЕ (см. _resolveStyle):
+/// Mapbox при токене сборки и включённой настройке, иначе — OpenFreeMap.
+enum _TileProvider { mapbox, openFreeMap }
+
+/// Папка кэша внутри system app cache. У каждого источника СВОЯ папка
+/// (mapbox_tiles / openfreemap_tiles): схемы тайлов разные, смешивать
+/// кэш нельзя, а при переключении источника старый кэш не мешает.
+Future<Directory> _resolveTilesCacheFolder(_TileProvider provider) async {
   final Directory base = await getApplicationCacheDirectory();
-  final Directory dir =
-      Directory('${base.path}/openfreemap_tiles');
+  final Directory dir = Directory(
+      '${base.path}/${provider == _TileProvider.mapbox ? 'mapbox_tiles' : 'openfreemap_tiles'}');
   if (!await dir.exists()) {
     await dir.create(recursive: true);
   }
@@ -144,10 +155,16 @@ extension AnimatedMapMove on MapController {
   }
 }
 
-/// Карта на основе OpenFreeMap (бесплатные векторные тайлы OSM).
+/// Карта каталога. Основной источник — векторные тайлы Mapbox (стиль
+/// light-v11, токен приходит при сборке через --dart-define=MAPBOX_TOKEN);
+/// без токена — запасной бесплатный OpenFreeMap, чтобы dev-сборка
+/// работала без ключей. Историческое имя класса/файла (OpenFreeMapView)
+/// сохранено — внешний контракт не менялся, см. комментарий к
+/// [OpenFreeMapMarker].
 ///
-/// Атрибуция «© OpenStreetMap © OpenMapTiles» обязательна по лицензии
-/// и рисуется в правом нижнем углу.
+/// Атрибуция источника обязательна по лицензии и рисуется в правом
+/// нижнем углу («© Mapbox © OpenStreetMap» / «© OpenStreetMap
+/// © OpenMapTiles» соответственно).
 ///
 /// Стиль кэшируется в State, а не в статике: при повторном открытии
 /// экрана создаётся новый State и стиль перечитывается. Это отказ от
@@ -205,8 +222,12 @@ class OpenFreeMapView extends StatefulWidget {
 
 class _OpenFreeMapViewState extends State<OpenFreeMapView>
     with TickerProviderStateMixin {
-  late final Future<Style> _styleFuture;
-  late final MapController _internalController;
+  // Не final: при ошибке загрузки кнопка «Повторить» пересоздаёт future.
+  late Future<Style> _styleFuture;
+  // Запасной контроллер создаём ТОЛЬКО когда внешний не передан — иначе он
+  // зря выделялся при каждом построении карты с внешним контроллером и не
+  // освобождался (dispose трогал его лишь при отсутствии внешнего).
+  MapController? _internalController;
 
   /// Текущее местоположение пользователя — обновляется стримом
   /// `Geolocator.getPositionStream`. `null`, пока не пришёл первый
@@ -214,19 +235,245 @@ class _OpenFreeMapViewState extends State<OpenFreeMapView>
   LatLng? _myLocation;
   StreamSubscription<Position>? _positionSub;
 
+  // Тема стиля без админ-границ: фильтруем 100+ слоёв ОДИН раз и кэшируем.
+  // Иначе _hideAdminBoundaries гонялся в build на каждый GPS-апдейт синей
+  // точки (поток геолокации дёргает setState каждые пару секунд при движении).
+  vtr.Theme? _filteredTheme;
+
+  /// Тема с РУССКИМИ подписями (если удалось собрать) — приоритетнее
+  /// style.theme. null = русификация не удалась, рисуем как есть.
+  vtr.Theme? _ruTheme;
+
+  /// URL описания стиля (для повторного скачивания при русификации).
+  String? _styleJsonUrl;
+
+  /// Фактически выбранный источник тайлов. Выставляется в _resolveStyle ДО
+  /// завершения _styleFuture, поэтому к моменту build (FutureBuilder done)
+  /// значение всегда актуально — от него зависят кэш-папка и атрибуция.
+  _TileProvider _provider = _TileProvider.openFreeMap;
+
   MapController get _controller =>
-      widget.mapController ?? _internalController;
+      widget.mapController ?? _internalController!;
+
+  // -----------------------------------------------------------------
+  // Кластеризация маркеров. Когда заказов на экране много, отдельные
+  // пины сливаются в кашу и тормозят отрисовку. Группируем по гео-сетке
+  // с шагом ~70 px на текущем зуме: близкие пины складываются в кружок
+  // с числом, тап по кружку — подлёт камеры. Выбранный маркер никогда
+  // не прячется в кластер (он связан с открытой карточкой заказа).
+  // -----------------------------------------------------------------
+
+  List<Marker> _clusteredMarkers(MapCamera cam) {
+    const double clusterPx = 70;
+    final double cellLng =
+        clusterPx * 360 / (256 * math.pow(2, cam.zoom).toDouble());
+    // В проекции карты градус широты «крупнее» градуса долготы примерно
+    // в 1/cos(широта) раз; для широт России берём усреднённый коэффициент.
+    final double cellLat = cellLng * 0.6;
+
+    OpenFreeMapMarker? selected;
+    final Map<String, List<OpenFreeMapMarker>> cells =
+        <String, List<OpenFreeMapMarker>>{};
+    for (final OpenFreeMapMarker m in widget.markers) {
+      if (m.id == widget.selectedMarkerId) {
+        selected = m;
+        continue;
+      }
+      final String key = '${(m.point.latitude / cellLat).floor()}:'
+          '${(m.point.longitude / cellLng).floor()}';
+      (cells[key] ??= <OpenFreeMapMarker>[]).add(m);
+    }
+
+    final List<Marker> out = <Marker>[];
+    for (final List<OpenFreeMapMarker> group in cells.values) {
+      if (group.length == 1) {
+        out.add(_singleMarker(group.first, selected: false));
+      } else {
+        out.add(_clusterMarker(group, cam.zoom));
+      }
+    }
+    // Выбранный — последним, чтобы рисовался поверх остальных.
+    if (selected != null) out.add(_singleMarker(selected, selected: true));
+    return out;
+  }
+
+  Marker _singleMarker(OpenFreeMapMarker m, {required bool selected}) {
+    return Marker(
+      point: m.point,
+      width: selected ? 64.r : 48.r,
+      height: selected ? 64.r : 48.r,
+      alignment: Alignment.topCenter,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => widget.onMarkerTap?.call(m.id),
+        // Контраст между активным и неактивным — через цвет (оранжевый vs
+        // тёмно-серый) и размер (60 vs 42), плюс выраженная тень у активного.
+        child: Icon(
+          Icons.location_on,
+          color: selected
+              ? AppColors.primary
+              : AppColors.textSecondary.withValues(alpha: 0.85),
+          size: selected ? 60.r : 42.r,
+          shadows: selected
+              ? const <Shadow>[
+                  Shadow(
+                    color: Color(0x66000000),
+                    blurRadius: 8,
+                    offset: Offset(0, 3),
+                  ),
+                ]
+              : const <Shadow>[
+                  Shadow(
+                    color: Color(0x33000000),
+                    blurRadius: 3,
+                    offset: Offset(0, 1),
+                  ),
+                ],
+        ),
+      ),
+    );
+  }
+
+  Marker _clusterMarker(List<OpenFreeMapMarker> group, double zoom) {
+    double lat = 0, lng = 0;
+    for (final OpenFreeMapMarker m in group) {
+      lat += m.point.latitude;
+      lng += m.point.longitude;
+    }
+    final LatLng center = LatLng(lat / group.length, lng / group.length);
+    return Marker(
+      point: center,
+      width: 46.r,
+      height: 46.r,
+      alignment: Alignment.center,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => _controller.animatedMove(
+          center,
+          math.min(zoom + 2, 17),
+          vsync: this,
+        ),
+        child: Container(
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: AppColors.primary,
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white, width: 2.5),
+            boxShadow: const <BoxShadow>[
+              BoxShadow(
+                color: Color(0x4D000000),
+                blurRadius: 6,
+                offset: Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Text(
+            '${group.length}',
+            style: TextStyle(
+              fontFamily: 'Roboto',
+              fontSize: 15.sp,
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Вписать все маркеры результатов в экран одним тапом — не выискивать
+  /// их свайпами, когда выдача раскидана по городу/области.
+  void _fitAllMarkers() {
+    if (widget.markers.length < 2) return;
+    final LatLngBounds bounds = LatLngBounds.fromPoints(
+      <LatLng>[for (final OpenFreeMapMarker m in widget.markers) m.point],
+    );
+    try {
+      _controller.fitCamera(
+        CameraFit.bounds(bounds: bounds, padding: const EdgeInsets.all(56)),
+      );
+    } catch (_) {/* карта ещё не построена — кнопка нажата слишком рано */}
+  }
 
   @override
   void initState() {
     super.initState();
-    _internalController = MapController();
-    _styleFuture = StyleReader(
-      uri: 'https://tiles.openfreemap.org/styles/positron',
-    ).read();
+    if (widget.mapController == null) {
+      _internalController = MapController();
+    }
+    _styleFuture = _resolveStyle();
     if (widget.showMyLocation) {
       _bootstrapMyLocation();
     }
+  }
+
+  /// Выбор источника карт и загрузка стиля. Порядок:
+  ///   1. Mapbox (стиль light-v11, прямой аналог positron). Токен берётся
+  ///      С СЕРВЕРА (настройка map.mapbox_token — в APK его нет, а при
+  ///      злоупотреблении токен ротируется в админке без пересборки);
+  ///      запасной канал — токен из сборки (--dart-define=MAPBOX_TOKEN).
+  ///      Админ-настройка map.provider='openfreemap' — аварийный рубильник:
+  ///      выключает Mapbox у всех пользователей без пересборки.
+  ///   2. При ЛЮБОЙ ошибке загрузки Mapbox-стиля (исчерпана квота, токен
+  ///      отозван, сервис недоступен) — тихий фолбэк на OpenFreeMap вместо
+  ///      «Не удалось загрузить карту».
+  /// Пакет сам разворачивает mapbox:// в style/tiles/sprites API-адреса.
+  Future<Style> _resolveStyle() async {
+    String token = '';
+    bool providerOff = false;
+    try {
+      token = await SettingsService.instance.mapboxMapToken();
+      providerOff =
+          await SettingsService.instance.mapProvider() == 'openfreemap';
+    } catch (_) {/* настройки недоступны — работаем по данным сборки */}
+    if (token.isEmpty) token = Env.mapboxToken;
+    if (token.isNotEmpty && !providerOff) {
+      try {
+        final Style style = await StyleReader(
+          uri: 'mapbox://styles/mapbox/light-v11?access_token=$token',
+          apiKey: token,
+        ).read();
+        _provider = _TileProvider.mapbox;
+        _styleJsonUrl =
+            'https://api.mapbox.com/styles/v1/mapbox/light-v11?access_token=$token';
+        await _tryLoadRussianTheme();
+        return style;
+      } catch (_) {/* Mapbox недоступен — падаем на запасной источник */}
+    }
+    _provider = _TileProvider.openFreeMap;
+    final Style style = await StyleReader(
+      uri: 'https://tiles.openfreemap.org/styles/positron',
+    ).read();
+    _styleJsonUrl = 'https://tiles.openfreemap.org/styles/positron';
+    await _tryLoadRussianTheme();
+    return style;
+  }
+
+  /// Русские подписи на карте. Стили из коробки подписывают города
+  /// по-английски (Mapbox: поле name_en) или латиницей (positron:
+  /// name:latin) — для РФ-приложения это выглядело чужим. Скачиваем
+  /// описание стиля ещё раз, заменяем поля имён на русские (name_ru с
+  /// фолбэком на местное название) и собираем тему заново. Любая ошибка —
+  /// тихо остаёмся на исходной теме: карта важнее языка подписей.
+  Future<void> _tryLoadRussianTheme() async {
+    final String? url = _styleJsonUrl;
+    if (url == null) return;
+    try {
+      final http.Response resp =
+          await http.get(Uri.parse(url)).timeout(const Duration(seconds: 8));
+      if (resp.statusCode != 200) return;
+      String body = utf8.decode(resp.bodyBytes);
+      // Mapbox: ["get","name_en"] → ["get","name_ru"] (coalesce с "name"
+      // в стиле уже есть — без русского имени останется местное).
+      body = body.replaceAll('"name_en"', '"name_ru"');
+      // positron: шаблоны "{name:latin}…" → "{name}" (местное название;
+      // в России это русский). Заодно выражения ["get","name:latin"].
+      body = body.replaceAll('{name:latin}', '{name}');
+      body = body.replaceAll('"name:latin"', '"name"');
+      final Map<String, dynamic> json =
+          jsonDecode(body) as Map<String, dynamic>;
+      _ruTheme = vtr.ThemeReader().read(json);
+    } catch (_) {/* не вышло — остаёмся на теме из StyleReader */}
   }
 
   @override
@@ -234,11 +481,9 @@ class _OpenFreeMapViewState extends State<OpenFreeMapView>
     _positionSub?.cancel();
     // Отменяем активную анимацию камеры («лети к моей точке») до dispose.
     _controller.cancelAnimatedMove();
-    // Диспозим только внутренний контроллер. Если он передан извне
-    // (widget.mapController != null), родитель сам отвечает за dispose.
-    if (widget.mapController == null) {
-      _internalController.dispose();
-    }
+    // Внутренний контроллер создаётся только при отсутствии внешнего —
+    // здесь диспозим его, если он есть. Внешний диспозит родитель.
+    _internalController?.dispose();
     super.dispose();
   }
 
@@ -260,10 +505,11 @@ class _OpenFreeMapViewState extends State<OpenFreeMapView>
     _positionSub?.cancel();
     _positionSub = Geolocator.getPositionStream(
       locationSettings: const LocationSettings(
-        // 10 м точности достаточно для отображения «синей точки» и
-        // не сажает батарею; обновления чаще раза в 2-3 сек не нужны.
-        accuracy: LocationAccuracy.high,
-        distanceFilter: 5,
+        // Для «синей точки» хватает средней точности (~50-100 м) и шага
+        // 15 м: точка визуально та же, а GPS-чип работает заметно мягче —
+        // экран карты перестаёт ощутимо греть телефон и есть батарею.
+        accuracy: LocationAccuracy.medium,
+        distanceFilter: 15,
       ),
     ).listen((Position p) {
       if (!mounted) return;
@@ -334,22 +580,58 @@ class _OpenFreeMapViewState extends State<OpenFreeMapView>
           );
         }
         if (snap.hasError) {
+          // Раньше это был тупик до перезахода на экран: открыл карту без
+          // сети — и всё. Кнопка перезапускает загрузку стиля на месте.
           return Container(
             color: AppColors.surfaceVariant,
             alignment: Alignment.center,
             padding: EdgeInsets.all(24.w),
-            child: Text(
-              'Не удалось загрузить карту',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontFamily: 'Roboto',
-                fontSize: 14.sp,
-                color: AppColors.textSecondary,
-              ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(
+                  'Не удалось загрузить карту',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontFamily: 'Roboto',
+                    fontSize: 14.sp,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+                SizedBox(height: 12.h),
+                GestureDetector(
+                  onTap: () => setState(() {
+                    _filteredTheme = null;
+                    _ruTheme = null;
+                    _styleJsonUrl = null;
+                    _styleFuture = _resolveStyle();
+                  }),
+                  child: Container(
+                    padding:
+                        EdgeInsets.symmetric(horizontal: 20.w, vertical: 10.h),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary,
+                      borderRadius: BorderRadius.circular(10.r),
+                    ),
+                    child: Text(
+                      'Повторить',
+                      style: TextStyle(
+                        fontFamily: 'Roboto',
+                        fontSize: 14.sp,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           );
         }
         final Style style = snap.data!;
+        // Стиль приходит из _styleFuture один раз и по слоям не меняется —
+        // фильтруем его единожды (??=), а не на каждую перерисовку карты.
+        _filteredTheme ??= _hideAdminBoundaries(_ruTheme ?? style.theme);
         return Stack(
           children: <Widget>[
             FlutterMap(
@@ -371,80 +653,49 @@ class _OpenFreeMapViewState extends State<OpenFreeMapView>
                 interactionOptions: const InteractionOptions(
                   flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
                 ),
+                // Не даём центру карты улететь свайпами в океан: RU-сервис,
+                // заказы только в России. Ограничиваем ЦЕНТР (containCenter,
+                // не contain): мягко, без конфликтов с минимальным зумом, а
+                // у краёв рамки соседние страны остаются видны. Бонус —
+                // меньше бесполезных тайлов из квоты Mapbox.
+                cameraConstraint: CameraConstraint.containCenter(
+                  bounds: LatLngBounds(
+                    const LatLng(40.0, 18.0),   // юго-запад (Кавказ/Калининград)
+                    const LatLng(82.5, 180.0),  // северо-восток (Арктика/Чукотка)
+                  ),
+                ),
               ),
               children: <Widget>[
                 VectorTileLayer(
-                  theme: _hideAdminBoundaries(style.theme),
+                  theme: _filteredTheme!,
                   sprites: style.sprites,
                   tileProviders: style.providers,
                   // Дисковый кэш: 200 МБ с авто-LRU очисткой старых
                   // тайлов. При повторном открытии экрана / приложения
                   // тайлы тянутся из локального диска, без обращения
-                  // в OpenFreeMap (Цюрих) — это убирает «серые
-                  // прогалины» при подгрузке.
+                  // к тайл-серверу — это убирает «серые прогалины»
+                  // при подгрузке.
                   fileCacheMaximumSizeInBytes: _kTileCacheMaxSizeBytes,
                   fileCacheTtl: _kTileCacheTtl,
-                  cacheFolder: _resolveTilesCacheFolder,
+                  cacheFolder: () => _resolveTilesCacheFolder(_provider),
                 ),
                 if (widget.markers.isNotEmpty)
-                  MarkerLayer(
-                    // Ключ зависит от id всех маркеров. Без него
-                    // `flutter_map` переиспользует element и не обновляет
-                    // отрисованный набор Marker'ов при смене widget.markers
-                    // — на табе «На карте» это приводило к тому, что
-                    // после применения фильтра маркеры на карте
-                    // оставались прежними, хотя orders в state уже
-                    // отфильтрованы (видно при переключении на «Списком»).
-                    key: ValueKey<String>(
-                      widget.markers
-                          .map((OpenFreeMapMarker m) => m.id)
-                          .join(','),
-                    ),
-                    markers: widget.markers
-                        .map((OpenFreeMapMarker m) {
-                              final bool selected =
-                                  widget.selectedMarkerId == m.id;
-                              return Marker(
-                                point: m.point,
-                                width: selected ? 64.r : 48.r,
-                                height: selected ? 64.r : 48.r,
-                                alignment: Alignment.topCenter,
-                                child: GestureDetector(
-                                  behavior: HitTestBehavior.opaque,
-                                  onTap: () =>
-                                      widget.onMarkerTap?.call(m.id),
-                                  // Контраст между активным и неактивным —
-                                  // через цвет (оранжевый vs тёмно-серый)
-                                  // и размер (60 vs 42), а также через
-                                  // более выраженную тень у активного.
-                                  child: Icon(
-                                    Icons.location_on,
-                                    color: selected
-                                        ? AppColors.primary
-                                        : AppColors.textSecondary
-                                            .withValues(alpha: 0.85),
-                                    size: selected ? 60.r : 42.r,
-                                    shadows: selected
-                                        ? const <Shadow>[
-                                            Shadow(
-                                              color: Color(0x66000000),
-                                              blurRadius: 8,
-                                              offset: Offset(0, 3),
-                                            ),
-                                          ]
-                                        : const <Shadow>[
-                                            Shadow(
-                                              color: Color(0x33000000),
-                                              blurRadius: 3,
-                                              offset: Offset(0, 1),
-                                            ),
-                                          ],
-                                  ),
-                                ),
-                              );
-                            })
-                        .toList(),
-                  ),
+                  // Builder, а не готовый MarkerLayer: MapCamera.of подписывает
+                  // на изменения камеры, и кластеры пересобираются при зуме.
+                  Builder(builder: (BuildContext mapCtx) {
+                    final MapCamera cam = MapCamera.of(mapCtx);
+                    return MarkerLayer(
+                      // Ключ: набор маркеров + ступень зума. Без id-части
+                      // flutter_map переиспользовал element при смене
+                      // фильтра (маркеры «застревали»); зум-часть обновляет
+                      // слой при пересборке кластеров.
+                      key: ValueKey<String>(
+                        '${cam.zoom.floor()}|'
+                        '${widget.markers.map((OpenFreeMapMarker m) => m.id).join(',')}',
+                      ),
+                      markers: _clusteredMarkers(cam),
+                    );
+                  }),
                 // Синяя точка «моё местоположение» в стиле Google Maps:
                 // внутренний насыщенно-синий круг, белая обводка и
                 // мягкая полупрозрачная тень-ореол. Рисуется ПОСЛЕ
@@ -489,6 +740,18 @@ class _OpenFreeMapViewState extends State<OpenFreeMapView>
                           bottomRounded: true,
                         ),
                       ],
+                      // «Показать все найденные»: вписывает все маркеры
+                      // выдачи в экран. Появляется от двух маркеров —
+                      // с одним хватает обычного зума.
+                      if (widget.markers.length >= 2) ...<Widget>[
+                        SizedBox(height: 8.h),
+                        _ZoomButton(
+                          icon: Icons.zoom_out_map_rounded,
+                          onTap: _fitAllMarkers,
+                          topRounded: true,
+                          bottomRounded: true,
+                        ),
+                      ],
                       if (widget.showMyLocation) ...<Widget>[
                         SizedBox(height: 8.h),
                         _ZoomButton(
@@ -512,7 +775,10 @@ class _OpenFreeMapViewState extends State<OpenFreeMapView>
                   borderRadius: BorderRadius.circular(3.r),
                 ),
                 child: Text(
-                  '© OpenStreetMap © OpenMapTiles',
+                  // Атрибуция обязательна по лицензии источника тайлов.
+                  _provider == _TileProvider.mapbox
+                      ? '© Mapbox © OpenStreetMap'
+                      : '© OpenStreetMap © OpenMapTiles',
                   style: TextStyle(
                     fontFamily: 'Roboto',
                     fontSize: 9.sp,
