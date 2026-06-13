@@ -1,3 +1,6 @@
+import java.io.FileInputStream
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
@@ -5,6 +8,17 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
     // Google Services Gradle plugin — для FCM (читает google-services.json).
     id("com.google.gms.google-services")
+}
+
+// Релизная подпись. Пароли и путь к keystore — в android/key.properties
+// (он в .gitignore, в репозиторий не попадает). Если файла нет (например у
+// разработчика без ключа) — release собирается под debug-ключом, чтобы
+// `flutter run --release` не падал.
+val keystoreProperties = Properties()
+val keystorePropertiesFile = rootProject.file("key.properties")
+val hasReleaseKeystore = keystorePropertiesFile.exists()
+if (hasReleaseKeystore) {
+    keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
 
 android {
@@ -36,11 +50,24 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        if (hasReleaseKeystore) {
+            create("release") {
+                keyAlias = keystoreProperties["keyAlias"] as String
+                keyPassword = keystoreProperties["keyPassword"] as String
+                storeFile = file(keystoreProperties["storeFile"] as String)
+                storePassword = keystoreProperties["storePassword"] as String
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            // Релизный ключ из key.properties; если его нет — debug-фолбэк.
+            signingConfig = if (hasReleaseKeystore)
+                signingConfigs.getByName("release")
+            else
+                signingConfigs.getByName("debug")
         }
     }
 }
