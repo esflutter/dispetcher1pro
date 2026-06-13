@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../features/auth/photo_crop_screen.dart';
@@ -32,14 +34,19 @@ Future<void> runPostLoginBootstrap() async {
     CropResult.userPhone = PhoneFormat.toPretty(e164);
   }
 
+  // Регистрация FCM-токена — в ФОНЕ (unawaited), НЕ держим на ней
+  // навигацию. Запрос разрешения (до 60с) + получение токена (до 15с) на
+  // прошивках без сервисов Google могут тянуться ~75с; раньше это висело в
+  // awaited-пакете и замораживало экран кода. Внутри single-flight + дедуп
+  // 5 минут — повторный вызов из main.dart (cold-start) не задвоит работу.
+  unawaited(PushService.instance.registerForCurrentUser());
+
+  // Три загрузки гасят ложный попап «создайте карточку/услугу» — их ждём,
+  // но они независимы; падение одной не отменяет другие.
   await Future.wait<void>(<Future<void>>[
     _bootstrapSubscription(),
     _bootstrapExecutorCard(),
     _bootstrapServices(),
-    // Регистрация FCM-токена сразу после OTP-логина. Внутри single-flight
-    // + дедуп 5 минут — повторный вызов из main.dart (cold-start с
-    // валидной сессией) не задвоит работу.
-    PushService.instance.registerForCurrentUser(),
   ]);
 }
 
@@ -48,8 +55,10 @@ Future<void> _bootstrapSubscription() async {
     final MyPrivate? priv = await ProfileService.instance.loadMyPrivate();
     final DateTime? paidUntil = priv?.subscriptionPaidUntil;
     if (paidUntil != null) {
-      VerificationStatus.hasSubscription =
-          paidUntil.isAfter(DateTime.now().toUtc());
+      // grace-aware: зеркалит серверную is_subscription_active (3 дня форы
+      // при автопродлении с картой). Раньше тут был сырой paidUntil>now,
+      // из-за чего в grace-окне гейты блокировали отклик, хотя сервер пускал.
+      VerificationStatus.hasSubscription = priv!.subscriptionActive;
       VerificationStatus.subscriptionPaidUntilText = _fmtDateRu(paidUntil);
     }
     if (priv?.email != null &&

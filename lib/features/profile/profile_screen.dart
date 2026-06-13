@@ -103,9 +103,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
       // документы повторно. Теперь причина видна прямо под плашкой.
       _rejectReason = priv.verificationRejectReason;
       // VerificationStatus.hasSubscription — мок, обновим из БД.
+      // grace-aware (subscriptionActive): зеркалит серверную
+      // is_subscription_active с 3-дневной форой при автопродлении —
+      // единый источник с гейтами отклика/каталога.
       final DateTime? paid = priv.subscriptionPaidUntil;
-      VerificationStatus.hasSubscription =
-          paid != null && paid.isAfter(DateTime.now());
+      VerificationStatus.hasSubscription = priv.subscriptionActive;
       VerificationStatus.subscriptionPaidUntilText =
           paid == null ? null : _fmtPaidUntil(paid);
       // Email — тот же сценарий, что у имени: cold start → нет в кэше

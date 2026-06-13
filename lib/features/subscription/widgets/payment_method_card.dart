@@ -135,6 +135,14 @@ class _PaymentMethodCardState extends State<PaymentMethodCard> {
       final String? rp = widget.returnPath;
       final String returnTail =
           rp == null ? '' : '&return=${Uri.encodeComponent(rp)}';
+      // Привязка карты (в т.ч. активация триала через card_binding) на
+      // сервере авто-рефандит 1 ₽ → платёж приходит в статусе refunded.
+      // Экран результата трактует refunded как УСПЕХ только при binding=1,
+      // иначе рисует «Платёж в обработке» при уже привязанной карте.
+      // Прокидываем флаг ОБОИМИ путями (прямой переход и deep-link из
+      // браузера), как это делает экран добавления карты.
+      final bool isBinding = widget.kind == PaymentKind.cardBinding;
+      final String bindingTail = isBinding ? '&binding=1' : '';
       // YooKassa должен вернуть юзера обратно в приложение — но Chrome
       // (Android) НЕ открывает кастомные схемы (`dispatcher1pro://`)
       // через прямой 302-редирект с чужого сайта (yoomoney.ru).
@@ -152,8 +160,9 @@ class _PaymentMethodCardState extends State<PaymentMethodCard> {
       final String returnBaseUrl =
           '$supabaseBase/functions/v1/payment-return';
       final String returnDeeplink = rp == null
-          ? returnBaseUrl
-          : '$returnBaseUrl?return=${Uri.encodeComponent(rp)}';
+          ? (isBinding ? '$returnBaseUrl?binding=1' : returnBaseUrl)
+          : '$returnBaseUrl?return=${Uri.encodeComponent(rp)}'
+              '${isBinding ? '&binding=1' : ''}';
       final PaymentCreateResult result =
           await PaymentService.instance.createPayment(
         kind: widget.kind,
@@ -174,7 +183,7 @@ class _PaymentMethodCardState extends State<PaymentMethodCard> {
       // уведёт на returnPath (или /shell, если не задан).
       context.go(
         '/subscription/payment/result'
-        '?id=${Uri.encodeComponent(result.paymentId)}$returnTail',
+        '?id=${Uri.encodeComponent(result.paymentId)}$returnTail$bindingTail',
       );
       if (result.confirmationUrl != null) {
         final bool ok = await launchUrl(

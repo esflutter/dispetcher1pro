@@ -98,6 +98,10 @@ class ChatBubble extends StatelessWidget {
                             width: 88.r,
                             height: 88.r,
                             fit: BoxFit.cover,
+                            // Декодим в размер виджета (~3× для плотности),
+                            // а не полные 2560px — иначе 8 фото в сообщении
+                            // держат сотни МБ в RAM и роняют дешёвые телефоны.
+                            cacheWidth: 264,
                             errorBuilder: (_, _, _) => _ThumbError(),
                           ),
                   ),

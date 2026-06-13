@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -256,41 +255,22 @@ class _OpenFreeMapViewState extends State<OpenFreeMapView>
       widget.mapController ?? _internalController!;
 
   // -----------------------------------------------------------------
-  // Кластеризация маркеров. Когда заказов на экране много, отдельные
-  // пины сливаются в кашу и тормозят отрисовку. Группируем по гео-сетке
-  // с шагом ~70 px на текущем зуме: близкие пины складываются в кружок
-  // с числом, тап по кружку — подлёт камеры. Выбранный маркер никогда
-  // не прячется в кластер (он связан с открытой карточкой заказа).
+  // Каждый заказ — отдельный пин, без кластеризации. Круги-кластеры
+  // с числом пробовали: при pinch-zoom перегруппировка давала
+  // мельтешение (пин ↔ круг), а плотность заказов спецтехники низкая —
+  // это не Airbnb с десятью объектами в одном доме. Простые пины
+  // стабильны: их позиции не зависят от зума вообще.
   // -----------------------------------------------------------------
 
-  List<Marker> _clusteredMarkers(MapCamera cam) {
-    const double clusterPx = 70;
-    final double cellLng =
-        clusterPx * 360 / (256 * math.pow(2, cam.zoom).toDouble());
-    // В проекции карты градус широты «крупнее» градуса долготы примерно
-    // в 1/cos(широта) раз; для широт России берём усреднённый коэффициент.
-    final double cellLat = cellLng * 0.6;
-
+  List<Marker> _plainMarkers() {
     OpenFreeMapMarker? selected;
-    final Map<String, List<OpenFreeMapMarker>> cells =
-        <String, List<OpenFreeMapMarker>>{};
+    final List<Marker> out = <Marker>[];
     for (final OpenFreeMapMarker m in widget.markers) {
       if (m.id == widget.selectedMarkerId) {
         selected = m;
         continue;
       }
-      final String key = '${(m.point.latitude / cellLat).floor()}:'
-          '${(m.point.longitude / cellLng).floor()}';
-      (cells[key] ??= <OpenFreeMapMarker>[]).add(m);
-    }
-
-    final List<Marker> out = <Marker>[];
-    for (final List<OpenFreeMapMarker> group in cells.values) {
-      if (group.length == 1) {
-        out.add(_singleMarker(group.first, selected: false));
-      } else {
-        out.add(_clusterMarker(group, cam.zoom));
-      }
+      out.add(_singleMarker(m, selected: false));
     }
     // Выбранный — последним, чтобы рисовался поверх остальных.
     if (selected != null) out.add(_singleMarker(selected, selected: true));
@@ -332,67 +312,6 @@ class _OpenFreeMapViewState extends State<OpenFreeMapView>
         ),
       ),
     );
-  }
-
-  Marker _clusterMarker(List<OpenFreeMapMarker> group, double zoom) {
-    double lat = 0, lng = 0;
-    for (final OpenFreeMapMarker m in group) {
-      lat += m.point.latitude;
-      lng += m.point.longitude;
-    }
-    final LatLng center = LatLng(lat / group.length, lng / group.length);
-    return Marker(
-      point: center,
-      width: 46.r,
-      height: 46.r,
-      alignment: Alignment.center,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: () => _controller.animatedMove(
-          center,
-          math.min(zoom + 2, 17),
-          vsync: this,
-        ),
-        child: Container(
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: AppColors.primary,
-            shape: BoxShape.circle,
-            border: Border.all(color: Colors.white, width: 2.5),
-            boxShadow: const <BoxShadow>[
-              BoxShadow(
-                color: Color(0x4D000000),
-                blurRadius: 6,
-                offset: Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Text(
-            '${group.length}',
-            style: TextStyle(
-              fontFamily: 'Roboto',
-              fontSize: 15.sp,
-              fontWeight: FontWeight.w700,
-              color: Colors.white,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// Вписать все маркеры результатов в экран одним тапом — не выискивать
-  /// их свайпами, когда выдача раскидана по городу/области.
-  void _fitAllMarkers() {
-    if (widget.markers.length < 2) return;
-    final LatLngBounds bounds = LatLngBounds.fromPoints(
-      <LatLng>[for (final OpenFreeMapMarker m in widget.markers) m.point],
-    );
-    try {
-      _controller.fitCamera(
-        CameraFit.bounds(bounds: bounds, padding: const EdgeInsets.all(56)),
-      );
-    } catch (_) {/* карта ещё не построена — кнопка нажата слишком рано */}
   }
 
   @override
@@ -556,7 +475,15 @@ class _OpenFreeMapViewState extends State<OpenFreeMapView>
     try {
       final double current = _controller.camera.zoom;
       final double next = (current + delta).clamp(4.0, 18.0);
-      _controller.move(_controller.camera.center, next);
+      // Плавный подлёт вместо мгновенного move(): резкая смена зума
+      // воспринималась как «дёрганье». Повторные тапы не копятся —
+      // animatedMove сам отменяет предыдущую анимацию.
+      _controller.animatedMove(
+        _controller.camera.center,
+        next,
+        vsync: this,
+        duration: const Duration(milliseconds: 250),
+      );
     } catch (_) {/* карта ещё не готова */}
   }
 
@@ -680,22 +607,18 @@ class _OpenFreeMapViewState extends State<OpenFreeMapView>
                   cacheFolder: () => _resolveTilesCacheFolder(_provider),
                 ),
                 if (widget.markers.isNotEmpty)
-                  // Builder, а не готовый MarkerLayer: MapCamera.of подписывает
-                  // на изменения камеры, и кластеры пересобираются при зуме.
-                  Builder(builder: (BuildContext mapCtx) {
-                    final MapCamera cam = MapCamera.of(mapCtx);
-                    return MarkerLayer(
-                      // Ключ: набор маркеров + ступень зума. Без id-части
-                      // flutter_map переиспользовал element при смене
-                      // фильтра (маркеры «застревали»); зум-часть обновляет
-                      // слой при пересборке кластеров.
-                      key: ValueKey<String>(
-                        '${cam.zoom.floor()}|'
-                        '${widget.markers.map((OpenFreeMapMarker m) => m.id).join(',')}',
-                      ),
-                      markers: _clusteredMarkers(cam),
-                    );
-                  }),
+                  MarkerLayer(
+                    // Ключ по набору id: без него flutter_map переиспользовал
+                    // element при смене фильтра, и маркеры «застревали».
+                    // От камеры слой больше не зависит — при зуме ничего
+                    // не пересобирается.
+                    key: ValueKey<String>(
+                      widget.markers
+                          .map((OpenFreeMapMarker m) => m.id)
+                          .join(','),
+                    ),
+                    markers: _plainMarkers(),
+                  ),
                 // Синяя точка «моё местоположение» в стиле Google Maps:
                 // внутренний насыщенно-синий круг, белая обводка и
                 // мягкая полупрозрачная тень-ореол. Рисуется ПОСЛЕ
@@ -737,18 +660,6 @@ class _OpenFreeMapViewState extends State<OpenFreeMapView>
                         _ZoomButton(
                           icon: Icons.remove_rounded,
                           onTap: () => _zoomBy(-1),
-                          bottomRounded: true,
-                        ),
-                      ],
-                      // «Показать все найденные»: вписывает все маркеры
-                      // выдачи в экран. Появляется от двух маркеров —
-                      // с одним хватает обычного зума.
-                      if (widget.markers.length >= 2) ...<Widget>[
-                        SizedBox(height: 8.h),
-                        _ZoomButton(
-                          icon: Icons.zoom_out_map_rounded,
-                          onTap: _fitAllMarkers,
-                          topRounded: true,
                           bottomRounded: true,
                         ),
                       ],

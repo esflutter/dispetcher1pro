@@ -138,8 +138,9 @@ class _PaymentResultScreenState extends State<PaymentResultScreen> {
     try {
       final MyPrivate? priv = await ProfileService.instance.loadMyPrivate();
       final DateTime? until = priv?.subscriptionPaidUntil;
-      if (until != null) {
-        VerificationStatus.hasSubscription = true;
+      if (priv != null && until != null) {
+        // grace-aware (subscriptionActive): единый источник с гейтами.
+        VerificationStatus.hasSubscription = priv.subscriptionActive;
         VerificationStatus.subscriptionPaidUntilText = _fmtDateRu(until);
       }
     } catch (_) {/* silent */}

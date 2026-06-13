@@ -38,7 +38,11 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
   @override
   void initState() {
     super.initState();
-    // Таймер больше не запускается автоматически при входе на страницу
+    // SMS уже отправлен на предыдущем экране (phone_input) — запускаем
+    // 60-секундный кулдаун сразу. Иначе кнопка «Отправить повторно»
+    // активна с первой секунды и можно спамить SMS (= деньги). Паритет
+    // с приложением заказчика.
+    _startTimer();
   }
 
   void _startTimer() {
@@ -112,7 +116,13 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
         // ExecutorCardState.cardCreated/ServiceData/VerificationStatus
         // оставались дефолтными (false/пусто), и при первом тапе
         // показывался ложный попап «Создайте карточку исполнителя».
-        await runPostLoginBootstrap();
+        // Ограничиваем 8с и глотаем сбой: на «полуживой» сети не держим
+        // экран кода — данные всё равно перечитают сами экраны, а пуш
+        // регистрируется в фоне (см. runPostLoginBootstrap).
+        try {
+          await runPostLoginBootstrap()
+              .timeout(const Duration(seconds: 8));
+        } catch (_) {/* таймаут/сбой загрузки — всё равно идём в /shell */}
         if (!mounted) return;
         context.go('/shell');
       }
@@ -194,7 +204,10 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
                   children: [
                     SizedBox(height: 16.h),
                     Text(
-                      'Верификация',
+                      // Не «Верификация»: канцелярит, и слово занято проверкой
+                      // документов исполнителя. Заголовок продолжает прошлый
+                      // экран: «Введите номер телефона» → «Введите код».
+                      'Введите код',
                       style: AppTextStyles.h1Phone.copyWith(color: AppColors.textBlack),
                     ),
                     SizedBox(height: 16.h),
@@ -291,10 +304,22 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
                               final String e164 = CropResult.userPhoneE164;
                               if (e164.isNotEmpty) {
                                 try {
-                                  await AuthService.instance.sendOtp(e164);
+                                  // Таймаут 10 с: на плохой связи не висим
+                                  // молча, а быстро показываем ошибку.
+                                  await AuthService.instance
+                                      .sendOtp(e164)
+                                      .timeout(const Duration(seconds: 10));
                                 } catch (e) {
                                   if (!context.mounted) return;
-                                  setState(() => _codeResent = false);
+                                  // Отправка не удалась — снимаем кулдаун и
+                                  // надпись «отправлен», чтобы не показывать
+                                  // ложный отсчёт, и даём повторить. Текст
+                                  // ошибки конкретный (лимит/сеть).
+                                  _timer?.cancel();
+                                  setState(() {
+                                    _codeResent = false;
+                                    _secondsLeft = 0;
+                                  });
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(content: Text(authErrorToRu(e))),
                                   );

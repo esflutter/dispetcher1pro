@@ -446,6 +446,8 @@ class _PendingImagesRow extends StatelessWidget {
                             width: 80.r,
                             height: 80.r,
                             fit: BoxFit.cover,
+                            // Декод в размер виджета, не полные 2560px (память).
+                            cacheWidth: 240,
                             errorBuilder: (_, _, _) => Container(
                               width: 80.r,
                               height: 80.r,

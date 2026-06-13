@@ -790,10 +790,19 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
       children: [
         PrimaryButton(
           label: 'Сохранить',
+          // Тот же guard, что в _onCreateTap: без него двойной тап
+          // повторно заливал новые фото и слал второй UPDATE.
+          enabled: !_saving,
           onPressed: () async {
-            final String? id = await _save();
-            if (id == null || !mounted) return;
-            Navigator.of(context).pop();
+            if (_saving) return;
+            setState(() => _saving = true);
+            try {
+              final String? id = await _save();
+              if (id == null || !mounted) return;
+              Navigator.of(context).pop();
+            } finally {
+              if (mounted) setState(() => _saving = false);
+            }
           },
         ),
         SizedBox(height: 8.h),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import 'package:dispatcher_1/core/payments/models.dart';
+import 'package:dispatcher_1/core/profile/profile_service.dart';
 import 'package:dispatcher_1/core/settings/settings_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
@@ -13,9 +14,14 @@ import 'package:dispatcher_1/core/utils/legal_links.dart';
 /// маркетинговой карточкой и шторкой выбора способа оплаты), но с
 /// другим заголовком и описанием.
 ///
-/// Платёж — обычная подписка (`PaymentKind.subscription`): по дизайну
-/// у нас всего ДВЕ оплаты — подписка и слот услуги. Карточка
-/// исполнителя гейтится через `profiles_private.subscription_paid_until`.
+/// Платёж — подписка: по дизайну у нас всего ДВЕ оплаты — подписка и слот
+/// услуги. Карточка исполнителя гейтится через
+/// `profiles_private.subscription_paid_until`.
+///
+/// Триал выровнен с каталожным [SubscriptionPaywall]: новичку (триал ещё не
+/// использован) даём card_binding 1 ₽ + 30 дней бесплатно, вернувшемуся —
+/// прямую оплату подписки. Раньше этот экран ВСЕГДА брал полную цену, и
+/// пробный период зависел от того, с какого экрана юзер дошёл до оплаты.
 class ExecutorCardPaywall extends StatefulWidget {
   const ExecutorCardPaywall({super.key});
 
@@ -31,6 +37,10 @@ class _ExecutorCardPaywallState extends State<ExecutorCardPaywall>
   late final Animation<double> _fadeOut;
   int? _priceRub;
 
+  /// Триал уже использован — берём прямую оплату подписки, без «30 дней
+  /// бесплатно». По умолчанию false (новый юзер).
+  bool _trialUsed = false;
+
   @override
   void initState() {
     super.initState();
@@ -42,6 +52,7 @@ class _ExecutorCardPaywallState extends State<ExecutorCardPaywall>
       CurvedAnimation(parent: _anim, curve: const Interval(0.9, 1.0)),
     );
     _loadPrice();
+    _loadTrialState();
   }
 
   Future<void> _loadPrice() async {
@@ -51,6 +62,14 @@ class _ExecutorCardPaywallState extends State<ExecutorCardPaywall>
       if (!mounted) return;
       setState(() => _priceRub = p);
     } catch (_) {/* fallback в build */}
+  }
+
+  Future<void> _loadTrialState() async {
+    try {
+      final MyPrivate? priv = await ProfileService.instance.loadMyPrivate();
+      if (!mounted || priv == null) return;
+      setState(() => _trialUsed = priv.subscriptionTrialUsed);
+    } catch (_) {/* по умолчанию trial_used=false (новый юзер) */}
   }
 
   @override
@@ -133,13 +152,17 @@ class _ExecutorCardPaywallState extends State<ExecutorCardPaywall>
                   );
                 },
                 child: PaymentMethodCard(
-                  kind: PaymentKind.subscription,
-                  amount: _priceRub,
-                  // После оплаты подписки из контекста «Открыть карточку
-                  // исполнителя» возвращаем именно туда, а не на /shell —
-                  // юзер только что хотел отредактировать карточку,
-                  // подписка теперь активна, у него под носом ровно тот
-                  // экран, ради которого он платил.
+                  // Новичок (триал не использован): card_binding 1 ₽ +
+                  // активация 30-дневного триала — как в каталожном
+                  // пейволле. Вернувшийся: прямая оплата подписки.
+                  kind: _trialUsed
+                      ? PaymentKind.subscription
+                      : PaymentKind.cardBinding,
+                  amount: _trialUsed ? _priceRub : 1,
+                  activateTrial: !_trialUsed,
+                  // После оплаты из контекста «Открыть карточку исполнителя»
+                  // возвращаем именно туда, а не на /shell — юзер только что
+                  // хотел отредактировать карточку, подписка теперь активна.
                   returnPath: '/executor-card',
                 ),
               ),
@@ -186,7 +209,9 @@ class _ExecutorCardPaywallState extends State<ExecutorCardPaywall>
           Text(
             _priceRub == null
                 ? 'Стоимость подписки уточняется'
-                : '${_fmtPrice(_priceRub!)} ₽/месяц',
+                : _trialUsed
+                    ? '${_fmtPrice(_priceRub!)} ₽/месяц с авто-продлением'
+                    : '30 дней бесплатно, затем ${_fmtPrice(_priceRub!)} ₽/месяц',
             style: TextStyle(
               fontFamily: 'Roboto',
               fontSize: 14.sp,

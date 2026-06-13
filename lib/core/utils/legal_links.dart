@@ -27,7 +27,10 @@ Future<void> _open(
     url = (await getUrl()).trim();
   } catch (_) {/* настройки недоступны — ниже покажем мягкую ошибку */}
   if (!context.mounted) return;
-  if (url.isEmpty || !(url.startsWith('http://') || url.startsWith('https://'))) {
+  // Только https: правовой документ не должен открываться по незащищённому
+  // http (передаётся открытым текстом). Хост намеренно не пиним — адрес
+  // лежит в настройках, заказчик может сменить домен без пересборки.
+  if (url.isEmpty || !url.startsWith('https://')) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('$what временно недоступен. Попробуйте позже.')),
     );

@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:dispatcher_1/core/auth/otp_device_limit.dart';
 import 'package:dispatcher_1/core/realtime/realtime_service.dart';
 
 /// Тонкая обёртка над Supabase Auth + чтением/записью в `public.profiles`.
@@ -19,7 +20,13 @@ class AuthService {
   /// В dev-режиме с настроенным `GOTRUE_SMS_TEST_OTP` реального SMS не
   /// будет — код задан в переменной окружения GoTrue.
   Future<void> sendOtp(String e164) async {
+    // Суточный лимит запросов с ЭТОГО устройства (см. OtpDeviceLimit) —
+    // против ввода чужих номеров пачками. Маркер ловит authErrorToRu.
+    if (!await OtpDeviceLimit.allowed()) {
+      throw const AuthException('otp_device_daily_limit');
+    }
     await _auth.signInWithOtp(phone: e164);
+    await OtpDeviceLimit.record();
   }
 
   /// Проверяет код OTP. При успехе возвращает состояние профиля: есть ли
@@ -135,6 +142,12 @@ String authErrorToRu(Object error) {
       lower.contains('connection closed') ||
       lower.contains('errno = 7')) {
     return 'Нет соединения с сервером. Проверьте интернет или отключите VPN.';
+  }
+
+  // Суточный лимит запросов кода с этого устройства (OtpDeviceLimit).
+  if (lower.contains('otp_device_daily_limit')) {
+    return 'С этого устройства запрошено слишком много кодов за сутки. '
+        'Попробуйте позже.';
   }
 
   // Часовой потолок нашего SMS-шлюза: «too many codes for this number».
