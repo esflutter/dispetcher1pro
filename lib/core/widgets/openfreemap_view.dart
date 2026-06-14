@@ -9,6 +9,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:vector_map_tiles/vector_map_tiles.dart';
 import 'package:vector_tile_renderer/vector_tile_renderer.dart' as vtr;
 
@@ -52,6 +53,17 @@ const int _kTileCacheMaxSizeBytes = 200 * 1024 * 1024;
 /// для маркетплейса техники свежесть карты не критична. Зато заметно
 /// меньше трафика при повторных открытиях.
 const Duration _kTileCacheTtl = Duration(days: 30);
+
+/// Mapbox-карты имеют бесплатный потолок (~200 тыс. тайлов/мес). Если тайл-API
+/// вернёт ошибку лимита/оплаты/токена — на сутки уводим карту на бесплатный
+/// OpenFreeMap, затем перепроверяем (квота Mapbox сбрасывается помесячно). Так
+/// превышение не ломает карту и не копит счёт — без ручного вмешательства.
+const String _kMapboxCooldownKey = 'map.mapbox_cooldown_until';
+const Duration _kMapboxCooldown = Duration(hours: 24);
+
+/// Лёгкий тайл для пробы доступности Mapbox Tiles API (мир, зум 0/0/0).
+const String _kMapboxProbeTileUrl =
+    'https://api.mapbox.com/v4/mapbox.mapbox-streets-v8/0/0/0.vector.pbf';
 
 /// Фактический источник тайлов. Выбирается в РАНТАЙМЕ (см. _resolveStyle):
 /// Mapbox при токене сборки и включённой настройке, иначе — OpenFreeMap.
@@ -333,9 +345,11 @@ class _OpenFreeMapViewState extends State<OpenFreeMapView>
   ///      запасной канал — токен из сборки (--dart-define=MAPBOX_TOKEN).
   ///      Админ-настройка map.provider='openfreemap' — аварийный рубильник:
   ///      выключает Mapbox у всех пользователей без пересборки.
-  ///   2. При ЛЮБОЙ ошибке загрузки Mapbox-стиля (исчерпана квота, токен
-  ///      отозван, сервис недоступен) — тихий фолбэк на OpenFreeMap вместо
-  ///      «Не удалось загрузить карту».
+  ///   2. АВТО-страховка от перерасхода: если тайл-API Mapbox недавно вернул
+  ///      ошибку лимита (см. _maybeProbeMapboxTiles), сутки идём сразу на
+  ///      бесплатный OpenFreeMap — без участия человека.
+  ///   3. При ошибке загрузки самого Mapbox-стиля (токен отозван, сервис
+  ///      недоступен) — тихий фолбэк на OpenFreeMap.
   /// Пакет сам разворачивает mapbox:// в style/tiles/sprites API-адреса.
   Future<Style> _resolveStyle() async {
     String token = '';
@@ -346,7 +360,9 @@ class _OpenFreeMapViewState extends State<OpenFreeMapView>
           await SettingsService.instance.mapProvider() == 'openfreemap';
     } catch (_) {/* настройки недоступны — работаем по данным сборки */}
     if (token.isEmpty) token = Env.mapboxToken;
-    if (token.isNotEmpty && !providerOff) {
+    // Сутки после ошибки лимита Mapbox его вообще не трогаем.
+    final bool onCooldown = await _mapboxOnCooldown();
+    if (token.isNotEmpty && !providerOff && !onCooldown) {
       try {
         final Style style = await StyleReader(
           uri: 'mapbox://styles/mapbox/light-v11?access_token=$token',
@@ -356,6 +372,8 @@ class _OpenFreeMapViewState extends State<OpenFreeMapView>
         _styleJsonUrl =
             'https://api.mapbox.com/styles/v1/mapbox/light-v11?access_token=$token';
         await _tryLoadRussianTheme();
+        // Фоновая проверка тайл-квоты — НЕ блокирует показ карты.
+        _maybeProbeMapboxTiles(token);
         return style;
       } catch (_) {/* Mapbox недоступен — падаем на запасной источник */}
     }
@@ -366,6 +384,46 @@ class _OpenFreeMapViewState extends State<OpenFreeMapView>
     _styleJsonUrl = 'https://tiles.openfreemap.org/styles/positron';
     await _tryLoadRussianTheme();
     return style;
+  }
+
+  /// true, если тайл-API Mapbox недавно вернул ошибку лимита и мы на «сутках
+  /// тишины» — тогда _resolveStyle сразу берёт бесплатный OpenFreeMap.
+  Future<bool> _mapboxOnCooldown() async {
+    try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      return DateTime.now().millisecondsSinceEpoch <
+          (prefs.getInt(_kMapboxCooldownKey) ?? 0);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Фоновая проба одного тайла Mapbox Tiles API (именно он тратит квоту,
+  /// которая исчерпывается первой — Styles API мельче и мог пройти). Если
+  /// ответ — ошибка лимита/оплаты/токена (401/402/403/429), ставим суточный
+  /// cooldown и тут же переключаем карту на бесплатный OpenFreeMap. Сетевые
+  /// сбои/таймаут превышением НЕ считаем (иначе моргание сети зря уводило бы
+  /// всех на запасной источник). Первый показ карты не блокирует.
+  void _maybeProbeMapboxTiles(String token) {
+    unawaited(() async {
+      try {
+        final http.Response resp = await http
+            .get(Uri.parse('$_kMapboxProbeTileUrl?access_token=$token'))
+            .timeout(const Duration(seconds: 6));
+        final int s = resp.statusCode;
+        if (s != 401 && s != 402 && s != 403 && s != 429) return; // Mapbox жив
+        final SharedPreferences prefs = await SharedPreferences.getInstance();
+        await prefs.setInt(_kMapboxCooldownKey,
+            DateTime.now().add(_kMapboxCooldown).millisecondsSinceEpoch);
+        if (!mounted) return;
+        setState(() {
+          _filteredTheme = null;
+          _ruTheme = null;
+          _styleJsonUrl = null;
+          _styleFuture = _resolveStyle();
+        });
+      } catch (_) {/* нет сети/таймаут — это не превышение лимита */}
+    }());
   }
 
   /// Русские подписи на карте. Стили из коробки подписывают города
