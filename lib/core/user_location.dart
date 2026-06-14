@@ -15,11 +15,28 @@ class UserLocation {
 
   static bool get has => lat != null && lng != null;
 
+  /// Сброс кэша при выходе из аккаунта. Без него у следующего пользователя
+  /// на этом устройстве ассистент считал бы «рядом со мной» от координат
+  /// предыдущего — и чужая геопозиция (ПДн) перетекла бы в новую сессию.
+  /// Поднимаем «поколение»: если запрос координат ещё идёт (до 8 секунд),
+  /// его результат после выхода будет отброшен и не запишется обратно.
+  static void clear() {
+    _generation++;
+    lat = null;
+    lng = null;
+    _inFlight = null;
+  }
+
   // Текущий идущий запрос координат. Прогрев при открытии экрана и ожидание
   // перед поиском могут вызвать ensure() почти одновременно — без этого оба
   // стартовали бы getCurrentPosition (двойной запрос GPS), т.к. `has` ещё
   // false у обоих. Делим один Future на всех ждущих.
   static Future<void>? _inFlight;
+
+  // «Поколение» сессии. clear() (выход из аккаунта) его увеличивает, и
+  // результат запроса координат, стартовавшего ДО выхода, отбрасывается —
+  // иначе он записал бы чужую геопозицию уже в новую сессию.
+  static int _generation = 0;
 
   /// Best-effort получение координат. Если они уже есть — ничего не делает.
   /// НИКОГДА не бросает: при отказе в разрешении, выключенном сервисе или
@@ -31,6 +48,7 @@ class UserLocation {
   }
 
   static Future<void> _fetch() async {
+    final int gen = _generation;
     try {
       if (!await ensureLocationPermission()) return;
       final Position pos = await Geolocator.getCurrentPosition(
@@ -39,12 +57,15 @@ class UserLocation {
           timeLimit: Duration(seconds: 8),
         ),
       );
+      // Пользователь вышел из аккаунта, пока шёл запрос → координаты уже не
+      // его. Не записываем (иначе утекут следующему на этом устройстве).
+      if (gen != _generation) return;
       lat = pos.latitude;
       lng = pos.longitude;
     } catch (_) {
       // нет геопозиции — не страшно, поиск работает по названному городу
     } finally {
-      _inFlight = null;
+      if (gen == _generation) _inFlight = null;
     }
   }
 }
