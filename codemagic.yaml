@@ -1,0 +1,76 @@
+# =====================================================================
+# Codemagic CI — сборка приложения ИСПОЛНИТЕЛЯ «Диспетчер №1 PRO» под iOS.
+#
+# Секреты В ЭТОМ ФАЙЛЕ НЕ ХРАНЯТСЯ. Перед первым запуском настрой в
+# интерфейсе Codemagic (один раз):
+#
+#  1) Группа переменных окружения с именем  dispatcher_pro
+#     (Codemagic → твоё приложение → Environment variables), все «Secure»:
+#       SUPABASE_URL              = https://jokaynapesbem.beget.app
+#       SUPABASE_ANON_KEY         = <полный anon-ключ из run_prod.bat>
+#       DADATA_API_KEY            = 4ea784d86f4db111966e8938977bf0892ebd53ca
+#       MAPBOX_TOKEN              = <pk.… токен Mapbox из run_prod.bat>
+#       GOOGLE_SERVICE_INFO_PLIST = <GoogleService-Info.plist в base64>  (как сделать — ниже)
+#
+#  2) Интеграция App Store Connect (Codemagic → Teams → Integrations →
+#     App Store Connect): тот же .p8 API-ключ, что и у заказчика (ключ
+#     один на весь Apple-аккаунт). Назови интеграцию  dispatcher_appstore.
+#     Подпись iOS делается автоматически по этому ключу.
+#
+#  Как получить base64 для GOOGLE_SERVICE_INFO_PLIST на Windows (PowerShell):
+#    [Convert]::ToBase64String([IO.File]::ReadAllBytes("C:\путь\GoogleService-Info.plist"))
+#
+#  ВНИМАНИЕ: bundle id исполнителя — com.dispatcher1.pro (НЕ тот же, что у
+#  заказчика). В Apple, Firebase и App Store Connect заводи именно его.
+# =====================================================================
+
+workflows:
+  ios-executor:
+    name: Диспетчер — исполнитель (iOS)
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+
+    integrations:
+      app_store_connect: dispatcher_appstore   # имя интеграции из Codemagic UI
+
+    environment:
+      groups:
+        - dispatcher_pro                        # переменные окружения (см. шапку)
+      flutter: 3.41.7                           # как в локальной сборке
+      xcode: latest
+      cocoapods: default
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.dispatcher1.pro
+
+    scripts:
+      - name: GoogleService-Info.plist из переменной
+        script: |
+          echo "$GOOGLE_SERVICE_INFO_PLIST" | base64 --decode > ios/Runner/GoogleService-Info.plist
+          test -s ios/Runner/GoogleService-Info.plist || { echo "GoogleService-Info.plist пуст — проверь переменную"; exit 1; }
+      - name: Зависимости Flutter
+        script: flutter pub get
+      - name: CocoaPods
+        script: |
+          find . -name "Podfile" -execdir pod install \;
+      - name: Применить профили подписи
+        script: xcode-project use-profiles
+      - name: Сборка IPA
+        script: |
+          flutter build ipa --release \
+            --dart-define=SUPABASE_URL="$SUPABASE_URL" \
+            --dart-define=SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY" \
+            --dart-define=DADATA_API_KEY="$DADATA_API_KEY" \
+            --dart-define=MAPBOX_TOKEN="$MAPBOX_TOKEN" \
+            --export-options-plist=$HOME/export_options.plist
+
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+      - flutter_drive.log
+
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true        # автозаливка в TestFlight после сборки
+        # submit_to_app_store: false      # включишь, когда захочешь сразу на ревью
