@@ -16,6 +16,14 @@
     <!-- Микрофон для голосовых сообщений в ИИ-ассистенте.
          Запись идёт через record-пакет → отправка в Yandex SpeechKit STT. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+    <!-- Firebase Analytics транзитивно подмешивает в склеенный манифест
+         разрешение на рекламный идентификатор (AD_ID). Рекламы в приложении
+         нет и рекламный ID мы не используем — убираем разрешение, иначе
+         Google Play требует заполнять декларацию рекламного ID и придирается
+         по AdMob-политике. tools:node="remove" вырезает то, что добавила
+         библиотека при слиянии манифестов. -->
+    <uses-permission android:name="com.google.android.gms.permission.AD_ID"
+        tools:node="remove"/>
     <application
         android:label="Диспетчер №1 PRO"
         android:name="${applicationName}"

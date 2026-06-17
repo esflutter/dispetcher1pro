@@ -286,15 +286,38 @@ class _LabeledField extends StatelessWidget {
   }
 }
 
-class _PolicyCheckbox extends StatelessWidget {
+class _PolicyCheckbox extends StatefulWidget {
   const _PolicyCheckbox({required this.value, required this.onChanged});
   final bool value;
   final ValueChanged<bool> onChanged;
 
   @override
+  State<_PolicyCheckbox> createState() => _PolicyCheckboxState();
+}
+
+class _PolicyCheckboxState extends State<_PolicyCheckbox> {
+  // GestureRecognizer обязан освобождаться явно. Раньше три распознавателя
+  // создавались прямо в build() и текли при каждой перерисовке экрана
+  // (переключение галки/выбор фото). Держим их в полях и диспозим в dispose().
+  late final TapGestureRecognizer _recRules =
+      TapGestureRecognizer()..onTap = () => openPrivacyUrl(context);
+  late final TapGestureRecognizer _recTerms =
+      TapGestureRecognizer()..onTap = () => openTermsUrl(context);
+  late final TapGestureRecognizer _recPolicy =
+      TapGestureRecognizer()..onTap = () => openPrivacyUrl(context);
+
+  @override
+  void dispose() {
+    _recRules.dispose();
+    _recTerms.dispose();
+    _recPolicy.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () => onChanged(!value),
+      onTap: () => widget.onChanged(!widget.value),
       behavior: HitTestBehavior.opaque,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -302,7 +325,7 @@ class _PolicyCheckbox extends StatelessWidget {
           Padding(
             padding: EdgeInsets.only(top: 3.h),
             child: Image.asset(
-              value ? 'assets/icons/ui/check_ok.png' : 'assets/icons/ui/check.webp',
+              widget.value ? 'assets/icons/ui/check_ok.png' : 'assets/icons/ui/check.webp',
               width: 24.r,
               height: 24.r,
             ),
@@ -321,22 +344,19 @@ class _PolicyCheckbox extends StatelessWidget {
                   TextSpan(
                     text: 'Правилами обработки персональных данных',
                     style: const TextStyle(fontWeight: FontWeight.bold, decoration: TextDecoration.underline),
-                    recognizer: TapGestureRecognizer()
-                      ..onTap = () => openPrivacyUrl(context),
+                    recognizer: _recRules,
                   ),
                   const TextSpan(text: ', '),
                   TextSpan(
                     text: 'Пользовательским соглашением',
                     style: const TextStyle(fontWeight: FontWeight.bold, decoration: TextDecoration.underline),
-                    recognizer: TapGestureRecognizer()
-                      ..onTap = () => openTermsUrl(context),
+                    recognizer: _recTerms,
                   ),
                   const TextSpan(text: ' и '),
                   TextSpan(
                     text: 'Политикой конфиденциальности',
                     style: const TextStyle(fontWeight: FontWeight.bold, decoration: TextDecoration.underline),
-                    recognizer: TapGestureRecognizer()
-                      ..onTap = () => openPrivacyUrl(context),
+                    recognizer: _recPolicy,
                   ),
                 ],
               ),
