@@ -41,6 +41,12 @@ Future<void> runPostLoginBootstrap() async {
   // 5 минут — повторный вызов из main.dart (cold-start) не задвоит работу.
   unawaited(PushService.instance.registerForCurrentUser());
 
+  // Помечаем аккаунт исполнителем: это приложение PRO, значит пользователь —
+  // исполнитель. Раньше is_executor нигде не выставлялся в true, из-за чего
+  // реальные исполнители не попадали ни в админ-панель (вкладка «Исполнители»,
+  // где видны их документы), ни в каталог заказчику. Идемпотентно, в фоне.
+  unawaited(_ensureExecutor());
+
   // Три загрузки гасят ложный попап «создайте карточку/услугу» — их ждём,
   // но они независимы; падение одной не отменяет другие.
   await Future.wait<void>(<Future<void>>[
@@ -48,6 +54,12 @@ Future<void> runPostLoginBootstrap() async {
     _bootstrapExecutorCard(),
     _bootstrapServices(),
   ]);
+}
+
+Future<void> _ensureExecutor() async {
+  try {
+    await Supabase.instance.client.rpc('ensure_executor');
+  } catch (_) {/* не критично: повторится при следующем входе и при подаче документов */}
 }
 
 Future<void> _bootstrapSubscription() async {
