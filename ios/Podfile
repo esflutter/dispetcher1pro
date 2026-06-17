@@ -2,6 +2,12 @@
 # в Runner.xcodeproj (13.0) — этого требуют свежие поды Firebase.
 platform :ios, '13.0'
 
+# Firebase Analytics без сбора рекламного идентификатора (IDFA): приложение
+# не показывает рекламу и не трекает пользователей. Это iOS-аналог убранного
+# на Android разрешения AD_ID — без него сборка не тянет AdSupport и не
+# требует запроса App Tracking Transparency у пользователя.
+$FirebaseAnalyticsWithoutAdIdSupport = true
+
 # CocoaPods analytics sends network stats synchronously affecting flutter build latency.
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'
 
