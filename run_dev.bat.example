@@ -7,7 +7,12 @@ rem   run_dev.bat
 
 set SUPABASE_URL=https://your-subdomain.beget.app
 set SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.xxx.yyy
+rem DaData — подсказки адресов (опц.), Mapbox — карта (опц., иначе OpenFreeMap):
+set DADATA_API_KEY=
+set MAPBOX_TOKEN=
 
 flutter run ^
   --dart-define=SUPABASE_URL=%SUPABASE_URL% ^
-  --dart-define=SUPABASE_ANON_KEY=%SUPABASE_ANON_KEY%
+  --dart-define=SUPABASE_ANON_KEY=%SUPABASE_ANON_KEY% ^
+  --dart-define=DADATA_API_KEY=%DADATA_API_KEY% ^
+  --dart-define=MAPBOX_TOKEN=%MAPBOX_TOKEN%

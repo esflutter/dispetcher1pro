@@ -4,24 +4,25 @@ Flutter-приложение для исполнителя биржи спецт
 
 ## Стек
 
-- Flutter 3.10+ / Dart 3.10+
+- Flutter **3.41.7** / Dart 3.10+ (CI iOS собирается на этой версии — см. `codemagic.yaml`; локально собирать на ней же)
 - Supabase (Auth, Storage, PostgREST, Edge Functions) — self-hosted на Beget
-- SMS-авторизация: GoTrue Send-SMS Hook → Edge Function → sms.ru
-- Платежи: YooKassa (подписка 490₽/мес + слоты услуг 99₽)
-- Карта: OpenFreeMap + flutter_map (vector tiles)
+- SMS-авторизация: GoTrue Send-SMS Hook → Edge Function → **RedSMS**
+- Платежи: YooKassa (подписка + платные слоты услуг). Конкретные суммы и лимиты НЕ зашиты в код — хранятся в таблице `settings` на сервере
+- Карта: Mapbox (основная, токен `MAPBOX_TOKEN`) с фолбэком на OpenFreeMap + flutter_map (vector tiles)
 - Адреса: DaData Suggest API
 - Навигация: go_router
 - Адаптив: flutter_screenutil (целевой Pixel 9, 1080×2424)
 
 ## Запуск
 
-Нужны три ключа, передаются через `--dart-define`:
+Ключи передаются через `--dart-define`:
 
-| Переменная | Где взять |
-|------------|-----------|
-| `SUPABASE_URL` | URL self-hosted Supabase, например `https://jokaynapesbem.beget.app` |
-| `SUPABASE_ANON_KEY` | Публичный anon-JWT из Supabase Studio → Settings → API |
-| `DADATA_API_KEY` | Token (не Secret!) из dadata.ru → Профиль → API-ключи |
+| Переменная | Где взять | Обязательность |
+|------------|-----------|----------------|
+| `SUPABASE_URL` | URL self-hosted Supabase, например `https://jokaynapesbem.beget.app` | обязательна |
+| `SUPABASE_ANON_KEY` | Публичный anon-JWT из Supabase Studio → Settings → API | обязательна |
+| `DADATA_API_KEY` | Token (не Secret!) из dadata.ru → Профиль → API-ключи | опциональна (без неё подсказки адресов пустые) |
+| `MAPBOX_TOKEN` | Публичный `pk.…` токен из аккаунта Mapbox | опциональна (без неё карта уходит на запасной OpenFreeMap) |
 
 ### Debug-сборка
 
@@ -29,7 +30,8 @@ Flutter-приложение для исполнителя биржи спецт
 flutter run \
   --dart-define=SUPABASE_URL=https://jokaynapesbem.beget.app \
   --dart-define=SUPABASE_ANON_KEY=<anon_jwt> \
-  --dart-define=DADATA_API_KEY=<dadata_token>
+  --dart-define=DADATA_API_KEY=<dadata_token> \
+  --dart-define=MAPBOX_TOKEN=<pk_token>
 ```
 
 ### Release-сборка
@@ -38,12 +40,13 @@ flutter run \
 flutter build apk --release \
   --dart-define=SUPABASE_URL=https://jokaynapesbem.beget.app \
   --dart-define=SUPABASE_ANON_KEY=<anon_jwt> \
-  --dart-define=DADATA_API_KEY=<dadata_token>
+  --dart-define=DADATA_API_KEY=<dadata_token> \
+  --dart-define=MAPBOX_TOKEN=<pk_token>
 ```
 
 В release без `SUPABASE_URL` и `SUPABASE_ANON_KEY` приложение упадёт на старте с явной ошибкой (см. `Env.assertConfigured()` в `lib/core/config/env.dart`).
 
-`DADATA_API_KEY` опционален: без него подсказки адресов вернут пустой список, но всё остальное продолжит работать.
+`DADATA_API_KEY` и `MAPBOX_TOKEN` опциональны: без DaData подсказки адресов вернут пустой список; без Mapbox карта работает на запасном OpenFreeMap. Остальное продолжит работать. Готовые значения для прод-сборки — в `run_prod.bat` (передаётся отдельно, в `.gitignore`).
 
 ### VSCode launch.json
 
@@ -59,7 +62,8 @@ flutter build apk --release \
       "toolArgs": [
         "--dart-define=SUPABASE_URL=https://jokaynapesbem.beget.app",
         "--dart-define=SUPABASE_ANON_KEY=<anon_jwt>",
-        "--dart-define=DADATA_API_KEY=<dadata_token>"
+        "--dart-define=DADATA_API_KEY=<dadata_token>",
+        "--dart-define=MAPBOX_TOKEN=<pk_token>"
       ]
     }
   ]
@@ -70,7 +74,7 @@ flutter build apk --release \
 
 ## Тестовые номера для SMS
 
-В Supabase в `GOTRUE_SMS_TEST_OTP` прописан 31 тестовый номер (1 заказчик + 30 исполнителей). На них SMS не уходит — код фиксированный, см. конфиг GoTrue. Для нетестовых номеров отправка идёт через sms.ru (в TEST_MODE до подключения зарегистрированного отправителя).
+В Supabase в `GOTRUE_SMS_TEST_OTP` прописаны тестовые номера (заказчик + исполнители; список синхронизирован с `seed_executors.sql`). На них SMS не уходит — код фиксированный, см. конфиг GoTrue. Для нетестовых номеров отправка идёт через **RedSMS** (переменные `REDSMS_*`; `REDSMS_TEST_MODE` держим включённым до подключения зарегистрированного имени отправителя).
 
 ## Структура
 

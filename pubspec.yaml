@@ -127,7 +127,6 @@ flutter:
   assets:
     - assets/images/
     - assets/images/onboarding/
-    - assets/images/categories/
     - assets/images/catalog/
     - assets/images/orders/
     - assets/icons/

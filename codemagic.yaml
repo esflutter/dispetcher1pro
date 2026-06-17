@@ -11,11 +11,15 @@
 #       DADATA_API_KEY            = 4ea784d86f4db111966e8938977bf0892ebd53ca
 #       MAPBOX_TOKEN              = <pk.… токен Mapbox из run_prod.bat>
 #       GOOGLE_SERVICE_INFO_PLIST = <GoogleService-Info.plist в base64>  (как сделать — ниже)
+#       CERTIFICATE_PRIVATE_KEY   = <ВСЁ содержимое файла «ios-cert-key (codemagic).pem»
+#                                    из папки передачи «2. Подписи»>  ← БЕЗ НЕЁ СБОРКА ПАДАЕТ
 #
 #  2) Интеграция App Store Connect (Codemagic → Teams → Integrations →
 #     App Store Connect): тот же .p8 API-ключ, что и у заказчика (ключ
 #     один на весь Apple-аккаунт). Назови интеграцию  dispatcher_appstore.
-#     Подпись iOS делается автоматически по этому ключу.
+#     Подпись iOS — ЯВНАЯ (шаги ниже): сертификат и профиль создаются через
+#     App Store Connect API по приватному ключу CERTIFICATE_PRIVATE_KEY
+#     (см. fetch-signing-files --certificate-key ниже).
 #
 #  Как получить base64 для GOOGLE_SERVICE_INFO_PLIST на Windows (PowerShell):
 #    [Convert]::ToBase64String([IO.File]::ReadAllBytes("C:\путь\GoogleService-Info.plist"))
