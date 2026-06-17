@@ -24,6 +24,8 @@ Flutter-приложение для исполнителя биржи спецт
 | `DADATA_API_KEY` | Token (не Secret!) из dadata.ru → Профиль → API-ключи | опциональна (без неё подсказки адресов пустые) |
 | `MAPBOX_TOKEN` | Публичный `pk.…` токен из аккаунта Mapbox | опциональна (без неё карта уходит на запасной OpenFreeMap) |
 
+> ⚠️ **Firebase-конфиги (в `.gitignore`, в репозитории их нет):** перед сборкой Android положи `google-services.json` в `android/app/` — иначе Gradle упадёт на плагине google-services («File google-services.json is missing»). Для iOS — `GoogleService-Info.plist` в `ios/Runner/`. Оба файла берутся из передаваемой папки «4. Firebase» или из консоли Firebase (проект `dispetcher-8c871`).
+
 ### Debug-сборка
 
 ```bash
