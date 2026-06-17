@@ -197,53 +197,48 @@ class _OrdersMapFullScreenState extends State<OrdersMapFullScreen>
   /// видно домами, чтобы юзеру не приходилось сразу же приближать.
   static const double _kDefaultZoom = 14;
 
-  /// Определяем точку для первого рендера карты:
-  ///   1. Координаты пользователя — только если разрешение УЖЕ выдано
-  ///      (на этом экране никаких диалогов не показываем) и точка
-  ///      попадает в bbox РФ. zoom 13.
-  ///   2. Сохранённый центр/зум из предыдущей сессии работы с картой
-  ///      (юзер закрыл и снова открыл экран в той же сессии приложения).
-  ///   3. Адрес из карточки исполнителя (его «домашний» город) — работает
-  ///      даже без разрешения на геолокацию.
-  ///   4. Координаты самого свежего опубликованного заказа из БД.
-  ///   5. Москва — финальный fallback.
+  /// Определяем точку для первого рендера карты — «по-умному», чтобы
+  /// исполнителю сразу были видны заказы, а не пустой город:
+  ///   1. GPS пользователя — но ТОЛЬКО если рядом (≤150 км) есть заказы.
+  ///      Иначе (например, исполнитель в Москве, а заказы в Новосибирске)
+  ///      открылась бы пустая карта. zoom 13.
+  ///   2. Последний просмотренный вид (та же сессия приложения).
+  ///   3. Город с наибольшим числом заказов (сейчас Новосибирск; при выходе
+  ///      в другие города центр сам сместится туда, где заказов больше). zoom 11.
+  ///   4. Если заказов нет вовсе — GPS пользователя, иначе адрес из карточки.
+  ///   5. Центр РФ — самый последний fallback.
   Future<void> _resolveInitialCenter() async {
-    LatLng? center;
     double zoom = _kDefaultZoom;
+
+    List<_MapOrder> orders = const <_MapOrder>[];
     try {
-      // Не вызываем request — на экране карты диалог о геолокации
-      // нерелевантен, юзер пришёл смотреть заказы. Если разрешение
-      // ещё не выдавалось — сразу fallback на сохранённый/последний заказ.
-      final LocationPermission permission =
-          await Geolocator.checkPermission();
-      final bool granted =
-          permission == LocationPermission.always ||
-              permission == LocationPermission.whileInUse;
-      if (granted && await Geolocator.isLocationServiceEnabled()) {
-        final Position pos = await Geolocator.getCurrentPosition(
-          locationSettings: const LocationSettings(
-            accuracy: LocationAccuracy.medium,
-            timeLimit: Duration(seconds: 4),
-          ),
-        );
-        if (_looksLikeRussia(pos.latitude, pos.longitude)) {
-          center = LatLng(pos.latitude, pos.longitude);
-        }
-      }
-    } catch (e) {
-      if (kDebugMode) debugPrint('[OrdersMap] geolocation failed: $e');
+      orders = await _ordersFuture;
+    } catch (_) {/* карта переживёт пустой список */}
+    final LatLng? ordersCenter = _densestOrdersCenter(orders);
+    final LatLng? gps = await _tryGps();
+
+    LatLng? center;
+    // 1. GPS — только когда рядом действительно есть заказы.
+    if (gps != null && _ordersNear(gps, orders)) {
+      center = gps;
+      zoom = 13;
     }
-    // Если геолокации нет, но юзер уже был на карте в этой сессии —
-    // открываем ровно ту область, на которой он вышел. Зум тоже
-    // восстанавливаем, иначе после ручного приближения откатились
-    // бы к дефолту.
+    // 2. Продолжаем с последнего вида в этой сессии.
     if (center == null && _lastViewedCenter != null) {
       center = _lastViewedCenter;
       zoom = _lastViewedZoom ?? _kDefaultZoom;
     }
-    // Нет ни GPS, ни сохранённого вида — открываем на «своём» городе
-    // исполнителя: адрес из его карточки. Так карта НЕ прыгает в Москву,
-    // даже когда разрешение на геолокацию не выдано.
+    // 3. Главный умный дефолт: город, где больше всего заказов.
+    if (center == null && ordersCenter != null) {
+      center = ordersCenter;
+      zoom = 11;
+    }
+    // 4. Заказов нет совсем — хотя бы GPS пользователя…
+    if (center == null && gps != null) {
+      center = gps;
+      zoom = 13;
+    }
+    // …или «домашний» город из карточки исполнителя.
     if (center == null) {
       try {
         final MyExecutorCard? card =
@@ -253,27 +248,9 @@ class _OrdersMapFullScreenState extends State<OrdersMapFullScreen>
         if (lat != null && lng != null && _looksLikeRussia(lat, lng)) {
           center = LatLng(lat, lng);
         }
-      } catch (_) {/* ignore — пойдём дальше по цепочке */}
-    }
-    if (center == null) {
-      try {
-        final List<_MapOrder> orders = await _ordersFuture;
-        for (final _MapOrder o in orders) {
-          if (o.latitude != null && o.longitude != null) {
-            center = LatLng(o.latitude!, o.longitude!);
-            break;
-          }
-        }
-        // Если у всех заказов координаты null — берём моковые координаты
-        // первого заказа: маркер будет в той же точке, и юзер увидит
-        // «свой» заказ на карте, а не пустую центровую Москву без отметок.
-        if (center == null && orders.isNotEmpty) {
-          center = mockMoscowCoordsForId(orders.first.id);
-        }
       } catch (_) {/* ignore */}
     }
-    // Финальный fallback — центр Москвы. Это RU-приложение, не должны
-    // показывать Дублин/Mountain View/случайный «центр стиля карты».
+    // 5. Совсем ничего — центр РФ (не падаем в Дублин/океан).
     center ??= const LatLng(55.7558, 37.6173);
     if (!mounted) return;
     setState(() {
@@ -281,6 +258,76 @@ class _OrdersMapFullScreenState extends State<OrdersMapFullScreen>
       _initialZoom = zoom;
       _initialCenterReady = true;
     });
+  }
+
+  /// GPS пользователя для центрирования. Сначала last-known (мгновенно и
+  /// обычно достаточно точно), затем свежая позиция с щадящим таймаутом —
+  /// раньше короткий 4-сек timeLimit часто не успевал на холодный фикс, и
+  /// карта падала в дефолт (Москву) даже при включённом GPS. Диалог
+  /// разрешения тут НЕ показываем. null — если нет разрешения/служб/фикса
+  /// или позиция вне РФ.
+  Future<LatLng?> _tryGps() async {
+    try {
+      final LocationPermission permission = await Geolocator.checkPermission();
+      final bool granted = permission == LocationPermission.always ||
+          permission == LocationPermission.whileInUse;
+      if (!granted) return null;
+      if (!await Geolocator.isLocationServiceEnabled()) return null;
+      Position? pos = await Geolocator.getLastKnownPosition();
+      pos ??= await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.medium,
+          timeLimit: Duration(seconds: 8),
+        ),
+      );
+      if (_looksLikeRussia(pos.latitude, pos.longitude)) {
+        return LatLng(pos.latitude, pos.longitude);
+      }
+    } catch (e) {
+      if (kDebugMode) debugPrint('[OrdersMap] geolocation failed: $e');
+    }
+    return null;
+  }
+
+  /// Есть ли заказ с координатами в радиусе ~150 км от точки.
+  static bool _ordersNear(LatLng p, List<_MapOrder> orders) {
+    const Distance d = Distance();
+    for (final _MapOrder o in orders) {
+      final double? lat = o.latitude;
+      final double? lng = o.longitude;
+      if (lat == null || lng == null) continue;
+      if (d.as(LengthUnit.Kilometer, p, LatLng(lat, lng)) <= 150) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// Центр самого «густого» скопления заказов — город, где их больше всего.
+  /// Группируем по ячейкам ~0.5° (≈ размер города), берём самую населённую,
+  /// возвращаем центроид её заказов. Заказы без координат игнорируем (чтобы
+  /// они не утягивали центр в дефолтную Москву).
+  static LatLng? _densestOrdersCenter(List<_MapOrder> orders) {
+    final Map<String, List<LatLng>> cells = <String, List<LatLng>>{};
+    for (final _MapOrder o in orders) {
+      final double? lat = o.latitude;
+      final double? lng = o.longitude;
+      if (lat == null || lng == null) continue;
+      if (!_looksLikeRussia(lat, lng)) continue;
+      final String key = '${(lat * 2).round()}:${(lng * 2).round()}';
+      (cells[key] ??= <LatLng>[]).add(LatLng(lat, lng));
+    }
+    if (cells.isEmpty) return null;
+    List<LatLng>? best;
+    for (final List<LatLng> list in cells.values) {
+      if (best == null || list.length > best.length) best = list;
+    }
+    double lat = 0, lng = 0;
+    for (final LatLng p in best!) {
+      lat += p.latitude;
+      lng += p.longitude;
+    }
+    return LatLng(lat / best.length, lng / best.length);
   }
 
   /// Тап по маркеру — синхронизируем нижнюю карточку.
