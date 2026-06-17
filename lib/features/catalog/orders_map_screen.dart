@@ -11,6 +11,7 @@ import 'package:dispatcher_1/core/catalog/catalog_service.dart';
 import 'package:dispatcher_1/core/catalog/format.dart';
 import 'package:dispatcher_1/core/catalog/models.dart';
 import 'package:dispatcher_1/core/dadata/dadata_service.dart';
+import 'package:dispatcher_1/core/executor_card/executor_card_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
 import 'package:dispatcher_1/core/utils/mock_coords.dart';
@@ -202,9 +203,10 @@ class _OrdersMapFullScreenState extends State<OrdersMapFullScreen>
   ///      попадает в bbox РФ. zoom 13.
   ///   2. Сохранённый центр/зум из предыдущей сессии работы с картой
   ///      (юзер закрыл и снова открыл экран в той же сессии приложения).
-  ///   3. Координаты самого свежего опубликованного заказа из БД —
-  ///      zoom 14.
-  ///   4. Москва — финальный fallback.
+  ///   3. Адрес из карточки исполнителя (его «домашний» город) — работает
+  ///      даже без разрешения на геолокацию.
+  ///   4. Координаты самого свежего опубликованного заказа из БД.
+  ///   5. Москва — финальный fallback.
   Future<void> _resolveInitialCenter() async {
     LatLng? center;
     double zoom = _kDefaultZoom;
@@ -238,6 +240,20 @@ class _OrdersMapFullScreenState extends State<OrdersMapFullScreen>
     if (center == null && _lastViewedCenter != null) {
       center = _lastViewedCenter;
       zoom = _lastViewedZoom ?? _kDefaultZoom;
+    }
+    // Нет ни GPS, ни сохранённого вида — открываем на «своём» городе
+    // исполнителя: адрес из его карточки. Так карта НЕ прыгает в Москву,
+    // даже когда разрешение на геолокацию не выдано.
+    if (center == null) {
+      try {
+        final MyExecutorCard? card =
+            await ExecutorCardService.instance.loadMine();
+        final double? lat = card?.locationLat;
+        final double? lng = card?.locationLng;
+        if (lat != null && lng != null && _looksLikeRussia(lat, lng)) {
+          center = LatLng(lat, lng);
+        }
+      } catch (_) {/* ignore — пойдём дальше по цепочке */}
     }
     if (center == null) {
       try {
