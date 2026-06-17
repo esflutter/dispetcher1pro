@@ -39,9 +39,6 @@ workflows:
       flutter: 3.41.7                           # как в локальной сборке
       xcode: latest
       cocoapods: default
-      ios_signing:
-        distribution_type: app_store
-        bundle_identifier: com.dispatcher1.pro
 
     scripts:
       - name: GoogleService-Info.plist из переменной
@@ -53,8 +50,21 @@ workflows:
       - name: CocoaPods
         script: |
           find . -name "Podfile" -execdir pod install \;
-      - name: Применить профили подписи
-        script: xcode-project use-profiles
+      - name: Подпись iOS — сертификат и профиль (создаём, если их ещё нет)
+        # Раньше тут был только `xcode-project use-profiles` в паре с
+        # автоматическим ios_signing — но для нового bundle id профиль ещё не
+        # существует, и автоподпись падала с «No matching profiles found».
+        # Теперь явно: создаём дистрибуционный сертификат и App Store профиль
+        # через App Store Connect API (--create), кладём в keychain и
+        # применяем к Xcode-проекту. Учётные данные берутся из интеграции
+        # dispatcher_appstore автоматически.
+        script: |
+          keychain initialize
+          app-store-connect fetch-signing-files "com.dispatcher1.pro" \
+            --type IOS_APP_STORE \
+            --create
+          keychain add-certificates
+          xcode-project use-profiles
       - name: Сборка IPA
         script: |
           flutter build ipa --release \
