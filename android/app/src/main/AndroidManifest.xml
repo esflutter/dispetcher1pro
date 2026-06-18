@@ -99,13 +99,13 @@
             android:name="flutterEmbedding"
             android:value="2" />
         <!-- Дефолтный канал для FCM, если в payload пуша не указан channel_id.
-             Канал с id "default" создаётся клиентом через
+             Канал с id "default_v2" создаётся клиентом через
              flutter_local_notifications при старте приложения
              (см. PushHandler.initialize). Без этого мета-флага и канала
              на устройстве Android 8+ молча отбрасывает пуши. -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
-            android:value="default" />
+            android:value="default_v2" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and
