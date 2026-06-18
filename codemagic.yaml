@@ -70,9 +70,25 @@ workflows:
             --create
           keychain add-certificates
           xcode-project use-profiles
+      - name: Номер сборки = последний в App Store Connect + 1
+        # Спрашиваем у App Store Connect максимальный номер уже залитого билда и
+        # прибавляем 1 — номер всегда уникален, править pubspec вручную не нужно.
+        # APP_ID — числовой Apple ID приложения (страница «Информация о приложении»).
+        # Если билдов ещё нет (новое приложение) — берём номер из pubspec как старт.
+        script: |
+          set -e
+          APP_ID=6781102906
+          LATEST=$(app-store-connect get-latest-build-number "$APP_ID" || true)
+          if [ -z "$LATEST" ]; then
+            LATEST=$(grep '^version:' pubspec.yaml | sed 's/.*+//')
+          fi
+          NEW=$((LATEST + 1))
+          echo "App Store Connect: последний билд ${LATEST:-—}, собираем $NEW"
+          echo "BUILD_NUMBER=$NEW" >> "$CM_ENV"
       - name: Сборка IPA
         script: |
           flutter build ipa --release \
+            --build-number="$BUILD_NUMBER" \
             --dart-define=SUPABASE_URL="$SUPABASE_URL" \
             --dart-define=SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY" \
             --dart-define=DADATA_API_KEY="$DADATA_API_KEY" \
