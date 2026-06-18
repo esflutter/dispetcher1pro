@@ -4,6 +4,8 @@
 	<dict>
 		<key>NSLocationWhenInUseUsageDescription</key>
 		<string>Приложение использует ваше местоположение, чтобы показать заказы и технику поблизости на карте.</string>
+		<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+		<string>Приложение использует ваше местоположение, чтобы показать заказы и технику поблизости на карте.</string>
 		<key>NSPhotoLibraryUsageDescription</key>
 		<string>Приложение запрашивает доступ к фотографиям, чтобы прикреплять их к услугам и обновлять аватар профиля.</string>
 		<key>NSCameraUsageDescription</key>
