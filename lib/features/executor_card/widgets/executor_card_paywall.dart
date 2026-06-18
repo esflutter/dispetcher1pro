@@ -222,8 +222,9 @@ class _ExecutorCardPaywallState extends State<ExecutorCardPaywall>
           SizedBox(height: 12.h),
           PrimaryButton(label: 'Продолжить', onPressed: _onContinue),
           SizedBox(height: 12.h),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+          Wrap(
+            alignment: WrapAlignment.center,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: <Widget>[
               GestureDetector(
                 onTap: () => openTermsUrl(context),
