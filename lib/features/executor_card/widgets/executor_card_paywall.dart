@@ -196,7 +196,7 @@ class _ExecutorCardPaywallState extends State<ExecutorCardPaywall>
           ),
           SizedBox(height: 13.h),
           Text(
-            'После оплаты ваша карточка появится в\nкаталоге, и заказчики смогут выбрать вас',
+            'После оплаты ваша карточка появится в каталоге, и заказчики смогут выбрать вас',
             textAlign: TextAlign.center,
             style: TextStyle(
               fontFamily: 'Roboto',
