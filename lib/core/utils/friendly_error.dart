@@ -38,6 +38,9 @@ String friendlyError(Object e, {String fallback = 'Не удалось выпо�
   if (raw.contains('card_not_published')) {
     return 'Карточка исполнителя снята с публикации — выберите другого исполнителя.';
   }
+  if (raw.contains('cannot_respond_to_own_order')) {
+    return 'Нельзя откликнуться на собственный заказ.';
+  }
   if (raw.contains('daily_limit') || raw.contains('Лимит заказов')) {
     return 'Лимит заказов на сегодня исчерпан. Новый заказ можно создать завтра.';
   }
