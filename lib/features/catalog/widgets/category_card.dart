@@ -19,7 +19,11 @@ class CategoryCard extends StatelessWidget {
   });
 
   static const double _baseWidthFactor = 0.62;
-  static const double _baseHeightFactor = 0.78;
+  // Ограничиваем высоту иллюстрации: у «высоких» машин (экскаваторы с поднятой
+  // стрелой) при большом факторе картинка дотягивалась до 2-строчной подписи
+  // («Экскаватор-погрузчик») и налезала на текст. Грузовики и так ниже коробки —
+  // на них почти не влияет.
+  static const double _baseHeightFactor = 0.66;
 
   final String title;
   final Color background;
@@ -83,13 +87,21 @@ class CategoryCard extends StatelessWidget {
                     ),
             ),
             Padding(
-              padding: EdgeInsets.fromLTRB(12.w, 16.h, 12.w, 10.h),
-              child: Text(
-                title,
-                style: AppTextStyles.chip,
-                textAlign: TextAlign.left,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
+              padding: EdgeInsets.fromLTRB(12.w, 12.h, 12.w, 10.h),
+              // Подпись держим в левой части, чтобы длинный «Экскаватор-погрузчик»
+              // переносился по левому краю и не уходил вправо на иллюстрацию.
+              child: Align(
+                alignment: Alignment.topLeft,
+                child: FractionallySizedBox(
+                  widthFactor: 0.66,
+                  child: Text(
+                    title,
+                    style: AppTextStyles.chip,
+                    textAlign: TextAlign.left,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
               ),
             ),
           ],
