@@ -69,32 +69,15 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
 
   final Set<String> _selCat = {};
   final Set<String> _selMach = {};
-  bool _machLimitError = false;
-  final GlobalKey _machBlockKey = GlobalKey();
-
-  void _scrollMachIntoView() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final BuildContext? ctx = _machBlockKey.currentContext;
-      if (ctx == null) return;
-      Scrollable.ensureVisible(
-        ctx,
-        alignment: 0.5,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOut,
-      );
-    });
-  }
-
   static const _radiusOptions = [
     'В радиусе 10 км',
     'В радиусе 20 км',
     'В радиусе 50 км',
   ];
 
-  // Справочники тянем из CatalogService — он же кэширует их в памяти.
-  // Без актуальных id↔title из БД маппинг при INSERT (services.machinery_ids
-  // / category_ids) промахнётся и часть выбора потеряется.
-  List<String> _categories = const <String>[];
+  // Справочник техники тянем из CatalogService — он кэширует его в памяти.
+  // Без актуальных id↔title из БД маппинг при INSERT (services.machinery_ids)
+  // промахнётся.
   List<String> _machinery = const <String>[];
 
   bool get _isEdit => widget.serviceId != null;
@@ -123,10 +106,6 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
     if (mc != null) {
       _machinery =
           mc.map((cat.MachineryRef e) => e.title).toList(growable: false);
-    }
-    if (cc != null) {
-      _categories =
-          cc.map((cat.CategoryRef e) => e.title).toList(growable: false);
     }
     if (mc == null || cc == null) {
       _loadDirectories();
@@ -225,14 +204,10 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
     try {
       final List<cat.MachineryRef> m =
           await CatalogService.instance.listActiveMachinery();
-      final List<cat.CategoryRef> c =
-          await CatalogService.instance.listActiveCategories();
       if (!mounted) return;
       setState(() {
         _machinery =
             m.map((cat.MachineryRef e) => e.title).toList(growable: false);
-        _categories =
-            c.map((cat.CategoryRef e) => e.title).toList(growable: false);
       });
     } catch (_) {
       // Чипы техники/категорий без справочников остаются пустыми, и
@@ -385,7 +360,11 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
     final double? priceDay = _parsePrice(_priceDayCtrl.text);
     final int? minHours = int.tryParse(_minHoursCtrl.text.trim());
     return ServiceDraft(
-      title: _titleCtrl.text.isEmpty ? 'Новая услуга' : _titleCtrl.text,
+      // Название услуги = выбранный вид техники (поле «Название» убрано).
+      title: _selMach.isEmpty ? 'Новая услуга' : _selMach.first,
+      // «Описание» и «Категории» убраны из формы. Насильно не обнуляем: при
+      // редактировании старой услуги контроллеры держат прежние значения и
+      // пишут их обратно (текст/категории не теряются), у новой услуги — пусто.
       description: _descCtrl.text.trim().isEmpty ? null : _descCtrl.text,
       machineryTitles: _selMach.toList(),
       categoryTitles: _selCat.toList(),
@@ -525,74 +504,18 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _SectionTitle('Категория услуг'),
+                // Услуга = один вид спецтехники. Название услуги берётся
+                // автоматически из выбранного вида (отдельного поля нет).
+                _SectionTitle('Спецтехника'),
                 SizedBox(height: 8.h),
-                _ChipWrap(
-                  items: _categories,
-                  selected: _selCat,
-                  onToggle: (v) => setState(() {
-                    _selCat.contains(v) ? _selCat.remove(v) : _selCat.add(v);
+                _MachineryDropdown(
+                  items: _machinery,
+                  selected: _selMach.isEmpty ? null : _selMach.first,
+                  onSelected: (String v) => setState(() {
+                    _selMach
+                      ..clear()
+                      ..add(v);
                   }),
-                ),
-                SizedBox(height: 16.h),
-                Column(
-                  key: _machBlockKey,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    _SectionTitle('Спецтехника'),
-                    SizedBox(height: 8.h),
-                    _ChipWrap(
-                      items: _machinery,
-                      selected: _selMach,
-                      onToggle: (v) {
-                        setState(() {
-                          if (_selMach.contains(v)) {
-                            _selMach.remove(v);
-                            _machLimitError = false;
-                          } else if (_selMach.isEmpty) {
-                            _selMach.add(v);
-                            _machLimitError = false;
-                          } else {
-                            _machLimitError = true;
-                          }
-                        });
-                        if (_machLimitError) _scrollMachIntoView();
-                      },
-                    ),
-                    if (_machLimitError) ...<Widget>[
-                      SizedBox(height: 8.h),
-                      Text(
-                        'Для одной услуги можно выбрать только один вид '
-                        'спецтехники. Создайте новую услугу, чтобы '
-                        'добавить ещё.',
-                        style: TextStyle(
-                          fontFamily: 'Roboto',
-                          fontSize: 13.sp,
-                          fontWeight: FontWeight.w400,
-                          height: 1.3,
-                          color: AppColors.error,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-                SizedBox(height: 16.h),
-                _SectionTitle('Название услуги'),
-                SizedBox(height: 8.h),
-                _TintField(
-                  controller: _titleCtrl,
-                  hint: 'Например: Автовышка для фасада',
-                  maxLength: 25,
-                ),
-                SizedBox(height: 16.h),
-                _SectionTitle('Описание услуги'),
-                SizedBox(height: 8.h),
-                _TintField(
-                  controller: _descCtrl,
-                  hint: 'Опишите, какие работы вы\nвыполняете и условия работы',
-                  minLines: 2,
-                  maxLines: null,
-                  maxLength: 500,
                 ),
                 SizedBox(height: 16.h),
                 _SectionTitle('Фото'),
@@ -736,10 +659,7 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
   }
 
   bool get _canCreate =>
-      _selCat.isNotEmpty &&
       _selMach.isNotEmpty &&
-      _titleCtrl.text.trim().isNotEmpty &&
-      _descCtrl.text.trim().isNotEmpty &&
       _hasValidPrice &&
       _hasValidMinHours &&
       _address != null &&
@@ -859,8 +779,6 @@ class _TintField extends StatelessWidget {
   const _TintField({
     required this.controller,
     required this.hint,
-    this.minLines,
-    this.maxLines = 1,
     this.keyboardType,
     this.maxLength,
     this.suffix,
@@ -870,8 +788,6 @@ class _TintField extends StatelessWidget {
   });
   final TextEditingController controller;
   final String hint;
-  final int? minLines;
-  final int? maxLines;
   final TextInputType? keyboardType;
   final int? maxLength;
   final String? suffix;
@@ -967,8 +883,7 @@ class _TintField extends StatelessWidget {
 
     return TextField(
       controller: controller,
-      minLines: minLines,
-      maxLines: maxLines,
+      maxLines: 1,
       keyboardType: keyboardType,
       inputFormatters: maxLength != null
           ? [LengthLimitingTextInputFormatter(maxLength)]
@@ -998,53 +913,95 @@ class _TintField extends StatelessWidget {
   }
 }
 
-class _ChipWrap extends StatelessWidget {
-  const _ChipWrap({
+/// Выпадающий список выбора вида спецтехники (одиночный выбор). По тапу
+/// открывает нижнюю шторку со списком; выбранный отмечается галочкой.
+class _MachineryDropdown extends StatelessWidget {
+  const _MachineryDropdown({
     required this.items,
     required this.selected,
-    required this.onToggle,
+    required this.onSelected,
   });
   final List<String> items;
-  final Set<String> selected;
-  final void Function(String) onToggle;
+  final String? selected;
+  final ValueChanged<String> onSelected;
 
   @override
   Widget build(BuildContext context) {
-    return Wrap(
-      spacing: 8.w,
-      runSpacing: 8.h,
-      children: items.map((label) {
-        final on = selected.contains(label);
-        return GestureDetector(
-          onTap: () => onToggle(label),
-          child: Container(
-            padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 6.h),
-            decoration: BoxDecoration(
-              color: on ? AppColors.primary : AppColors.surface,
-              border: Border.all(color: AppColors.primary, width: 1),
-              borderRadius: BorderRadius.circular(100.r),
+    final bool empty = selected == null;
+    return GestureDetector(
+      onTap: items.isEmpty ? null : () => _openPicker(context),
+      child: Container(
+        height: 52.h,
+        padding: EdgeInsets.symmetric(horizontal: 14.w),
+        decoration: BoxDecoration(
+          color: AppColors.fieldFill,
+          borderRadius: BorderRadius.circular(12.r),
+        ),
+        child: Row(
+          children: <Widget>[
+            Expanded(
+              child: Text(
+                empty ? 'Выберите вид техники' : selected!,
+                style: AppTextStyles.body.copyWith(
+                  color:
+                      empty ? AppColors.textTertiary : AppColors.textPrimary,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(label,
-                    style: TextStyle(
-                      fontFamily: 'Roboto',
-                      fontSize: 13.sp,
-                      fontWeight: FontWeight.w400,
-                      height: 1.3,
-                      color: on ? Colors.white : AppColors.textPrimary,
-                    )),
-                if (on) ...[
-                  SizedBox(width: 6.w),
-                  Icon(Icons.close_rounded, size: 14.r, color: Colors.white),
-                ],
-              ],
-            ),
-          ),
-        );
-      }).toList(),
+            Icon(Icons.keyboard_arrow_down_rounded,
+                color: AppColors.textTertiary, size: 24.r),
+          ],
+        ),
+      ),
     );
+  }
+
+  Future<void> _openPicker(BuildContext context) async {
+    final String? picked = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20.r)),
+      ),
+      builder: (BuildContext ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            SizedBox(height: 12.h),
+            Container(
+              width: 40.w,
+              height: 4.h,
+              decoration: BoxDecoration(
+                color: AppColors.border,
+                borderRadius: BorderRadius.circular(2.r),
+              ),
+            ),
+            Flexible(
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: items.length,
+                itemBuilder: (BuildContext _, int i) {
+                  final String m = items[i];
+                  final bool on = m == selected;
+                  return ListTile(
+                    title: Text(m, style: AppTextStyles.body),
+                    trailing: on
+                        ? Icon(Icons.check_rounded,
+                            color: AppColors.primary, size: 22.r)
+                        : null,
+                    onTap: () => Navigator.of(ctx).pop(m),
+                  );
+                },
+              ),
+            ),
+            SizedBox(height: 8.h),
+          ],
+        ),
+      ),
+    );
+    if (picked != null) onSelected(picked);
   }
 }
 
