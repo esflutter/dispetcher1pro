@@ -180,10 +180,18 @@ class _PaymentResultScreenState extends State<PaymentResultScreen> {
   ///   - system back (аппаратная кнопка телефона) уходит в предыдущий
   ///     OS-таск — то есть в браузер, из которого пришёл deep-link.
   /// Поэтому для привязки карты явно собираем синтетический backstack
+  /// Защита от двойного закрытия: авто-закрытие (после await обновления
+  /// подписки в быстром пути успеха) и ручной тап по крестику могут совпасть
+  /// в узком окне — без флага навигация отрабатывала бы дважды и верхняя
+  /// страница дублировалась («назад» срабатывал со второго раза).
+  bool _closed = false;
+
   /// /shell → /subscription → /subscription/cards: первый `go` ставит
   /// /shell как корень, два `push` дополняют его. У AppBar back и
   /// system back появляется куда возвращаться.
   void _onClose() {
+    if (_closed) return;
+    _closed = true;
     if (widget.binding) {
       appRouter.go('/shell');
       appRouter.push('/subscription/manage');

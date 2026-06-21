@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import 'package:dispatcher_1/core/ai/ai_navigation.dart';
+import 'package:dispatcher_1/features/profile/account_block.dart';
 import 'package:dispatcher_1/core/network_status.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/update/update_checker.dart';
@@ -38,10 +41,21 @@ class _MainShellState extends State<MainShell> {
     const ProfileScreen(),
   ];
 
+  Timer? _blockExpiryTimer;
+
   @override
   void initState() {
     super.initState();
     MainShell.selectedTab.addListener(_onTabChanged);
+    // Авто-снятие просроченной блокировки по рейтингу. `isBlocked` —
+    // чистый getter, поэтому срок проверяем здесь раз в минуту (вне build),
+    // иначе истечение блока во время отрисовки экрана роняло «setState
+    // during build».
+    AccountBlock.tickExpiry();
+    _blockExpiryTimer = Timer.periodic(
+      const Duration(minutes: 1),
+      (_) => AccountBlock.tickExpiry(),
+    );
     // Первый реальный экран после сплэша — здесь один раз за запуск
     // проверяем, не пора ли обновиться (тихо, если сеть/настройка недоступны).
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -51,6 +65,7 @@ class _MainShellState extends State<MainShell> {
 
   @override
   void dispose() {
+    _blockExpiryTimer?.cancel();
     MainShell.selectedTab.removeListener(_onTabChanged);
     super.dispose();
   }

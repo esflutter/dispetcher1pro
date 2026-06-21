@@ -56,15 +56,24 @@ class AccountBlock {
   /// Уведомитель для подписок UI. true — блок активен.
   static final ValueNotifier<bool> notifier = ValueNotifier<bool>(false);
 
-  /// Проверка с авто-снятием просроченного блока. При чтении может
-  /// менять `_until` и `notifier`, если срок истёк.
+  /// Проверка блокировки. Чистый getter без побочных эффектов:
+  /// раньше при чтении мог мутировать `_until` и `notifier`, и если
+  /// `isBlocked` читался во время `build`, Flutter ругался на «setState/
+  /// notify during build». Авто-снятие просроченного блока вынесено в
+  /// [tickExpiry], которую дёргает периодический таймер.
   static bool get isBlocked {
     final DateTime? until = _until;
-    if (until == null) return false;
-    if (DateTime.now().isBefore(until)) return true;
+    return until != null && DateTime.now().isBefore(until);
+  }
+
+  /// Снимает блок, если его срок истёк. Вызывать ВНЕ build — из
+  /// периодического таймера или при инициализации экрана.
+  static void tickExpiry() {
+    final DateTime? until = _until;
+    if (until == null) return;
+    if (DateTime.now().isBefore(until)) return;
     _until = null;
     if (notifier.value) notifier.value = false;
-    return false;
   }
 
   static DateTime? get blockedUntil => isBlocked ? _until : null;
