@@ -172,10 +172,18 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
       });
     }
 
-    final radius = draft['radius_km'];
-    if (radius is int) {
+    // Радиус может прийти числом, дробью или строкой («20») — разбираем
+    // устойчиво, как форма карточки исполнителя, иначе при строковом
+    // значении кнопка «Создать» оставалась серой без объяснения.
+    final int? radiusKm = switch (draft['radius_km']) {
+      final int v => v,
+      final num v => v.toInt(),
+      final String v => int.tryParse(v.trim()),
+      _ => null,
+    };
+    if (radiusKm != null) {
       const map = <int, int>{10: 0, 20: 1, 50: 2};
-      _radiusIndex = map[radius] ?? -1;
+      _radiusIndex = map[radiusKm] ?? -1;
     }
 
     final addr = (draft['address'] as String? ?? '').trim();

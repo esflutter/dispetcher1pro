@@ -104,6 +104,12 @@ class _PaymentResultScreenState extends State<PaymentResultScreen> {
       AppAnalytics.log('payment_success', <String, Object>{
         'kind': widget.binding ? 'card_binding' : 'payment',
       });
+      // Обновляем подписку и в быстром пути, и для привязки карты/триала
+      // (binding): триал нового исполнителя идёт через привязку карты, и без
+      // этого гейты в каталоге/карточке сразу после оплаты снова показывают
+      // paywall, пока юзер не зайдёт в Профиль. Ждём перед закрытием.
+      await _refreshSubscriptionState();
+      if (!mounted || myAttempt != _attempt) return;
       _onClose();
       return;
     }
@@ -127,10 +133,10 @@ class _PaymentResultScreenState extends State<PaymentResultScreen> {
       AppAnalytics.log('payment_success', <String, Object>{
         'kind': widget.binding ? 'card_binding' : 'payment',
       });
-      if (!widget.binding) {
-        // ignore: discarded_futures
-        _refreshSubscriptionState();
-      }
+      // Обновляем и для binding — триал нового исполнителя идёт через
+      // привязку карты, иначе гейты сразу после оплаты снова покажут paywall.
+      // ignore: discarded_futures
+      _refreshSubscriptionState();
     }
   }
 
