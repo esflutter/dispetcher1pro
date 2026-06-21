@@ -5,6 +5,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:dispatcher_1/core/ai/ai_navigation.dart';
 import 'package:dispatcher_1/core/network_status.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
+import 'package:dispatcher_1/core/update/update_checker.dart';
 import 'package:dispatcher_1/core/theme/system_bar_style.dart';
 import 'package:dispatcher_1/core/widgets/no_internet_view.dart';
 import 'package:dispatcher_1/features/catalog/catalog_categories_screen.dart';
@@ -41,6 +42,11 @@ class _MainShellState extends State<MainShell> {
   void initState() {
     super.initState();
     MainShell.selectedTab.addListener(_onTabChanged);
+    // Первый реальный экран после сплэша — здесь один раз за запуск
+    // проверяем, не пора ли обновиться (тихо, если сеть/настройка недоступны).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) UpdateChecker.maybePromptOnce(context);
+    });
   }
 
   @override

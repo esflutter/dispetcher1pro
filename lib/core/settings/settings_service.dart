@@ -39,6 +39,20 @@ class SettingsService {
     }
   }
 
+  /// Версии приложения для проверки обновлений: минимально допустимая
+  /// (ниже неё — принудительное обновление) и последняя (ниже неё —
+  /// мягкое предложение обновиться). Дефолт «0.0.0» означает «проверка
+  /// выключена» — попап не покажется, пока админ не задаст реальные
+  /// значения. `.toString()` терпим к хранению как строки и как числа.
+  Future<({String min, String latest})> appVersions() async {
+    await _load();
+    final String min =
+        (_values['app.pro_min_version']?.toString() ?? '0.0.0').trim();
+    final String latest =
+        (_values['app.pro_latest_version']?.toString() ?? '0.0.0').trim();
+    return (min: min, latest: latest);
+  }
+
   /// Прогревает кэш настроек на старте приложения. Вызывается из `main()`
   /// fire-and-forget вместе с CatalogService.warmup() — после этого все
   /// геттеры возвращают значения мгновенно, без сетевого запроса.
