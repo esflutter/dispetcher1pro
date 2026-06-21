@@ -13,8 +13,8 @@ enum _UpdateLevel { none, optional, forced }
 
 /// Проверка обновлений приложения. Сравнивает версию установленного
 /// приложения с двумя значениями из серверных настроек:
-///   • `app.pro_min_version`    — ниже неё работать нельзя
-///     (принудительное обновление, попап без «Позже»);
+///   • `app.pro_min_version`    — ниже неё показываем более настойчивое
+///     окно «версия устарела» (но закрыть его всё равно можно);
 ///   • `app.pro_latest_version` — ниже неё мягко предлагаем обновиться.
 ///
 /// По умолчанию обе настройки «0.0.0» → попап не показывается, пока админ
@@ -46,7 +46,9 @@ class UpdateChecker {
       if (!context.mounted) return;
       await showDialog<void>(
         context: context,
-        barrierDismissible: level == _UpdateLevel.optional,
+        // Любое окно обновления можно закрыть — настойчиво предлагаем, но
+        // в тупик не загоняем (тап по фону / «назад» / кнопка «Позже»).
+        barrierDismissible: true,
         barrierColor: Colors.black.withValues(alpha: 0.45),
         builder: (_) => _UpdateDialog(
           forced: level == _UpdateLevel.forced,
@@ -106,69 +108,59 @@ class _UpdateDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return PopScope(
-      // Принудительное обновление — диалог нельзя закрыть (ни кнопкой
-      // «назад», ни тапом по фону): единственный путь дальше — обновиться.
-      canPop: !forced,
-      child: Dialog(
-        insetPadding: EdgeInsets.symmetric(horizontal: 16.w),
-        backgroundColor: Colors.transparent,
-        child: Container(
-          padding: EdgeInsets.fromLTRB(20.w, 24.h, 20.w, 20.h),
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(20.r),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              Text(
-                forced ? 'Нужно обновить приложение' : 'Доступно обновление',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontFamily: 'Roboto',
-                  fontSize: 20.sp,
-                  fontWeight: FontWeight.w600,
-                  height: 1.3,
-                  color: AppColors.textPrimary,
-                ),
+    return Dialog(
+      insetPadding: EdgeInsets.symmetric(horizontal: 16.w),
+      backgroundColor: Colors.transparent,
+      child: Container(
+        padding: EdgeInsets.fromLTRB(20.w, 24.h, 20.w, 20.h),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(20.r),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Text(
+              forced ? 'Нужно обновить приложение' : 'Доступно обновление',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontFamily: 'Roboto',
+                fontSize: 20.sp,
+                fontWeight: FontWeight.w600,
+                height: 1.3,
+                color: AppColors.textPrimary,
               ),
-              SizedBox(height: 10.h),
-              Text(
-                forced
-                    ? 'Эта версия больше не поддерживается. Обновите приложение, чтобы продолжить.'
-                    : 'Вышла новая версия с улучшениями. Рекомендуем обновиться.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontFamily: 'Roboto',
-                  fontSize: 16.sp,
-                  fontWeight: FontWeight.w400,
-                  height: 1.35,
-                  color: AppColors.textSecondary,
-                ),
+            ),
+            SizedBox(height: 10.h),
+            Text(
+              forced
+                  ? 'Эта версия устарела — что-то может работать неправильно. Рекомендуем обновиться.'
+                  : 'Вышла новая версия с улучшениями. Рекомендуем обновиться.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontFamily: 'Roboto',
+                fontSize: 16.sp,
+                fontWeight: FontWeight.w400,
+                height: 1.35,
+                color: AppColors.textSecondary,
               ),
-              SizedBox(height: 20.h),
-              PrimaryButton(
-                label: 'Обновить',
-                onPressed: () async {
-                  await onUpdate();
-                  // Для мягкого обновления закрываем попап после ухода в
-                  // магазин; для принудительного — оставляем открытым.
-                  if (!forced && context.mounted) {
-                    Navigator.of(context).pop();
-                  }
-                },
-              ),
-              if (!forced) ...<Widget>[
-                SizedBox(height: 8.h),
-                SecondaryButton(
-                  label: 'Позже',
-                  onPressed: () => Navigator.of(context).pop(),
-                ),
-              ],
-            ],
-          ),
+            ),
+            SizedBox(height: 20.h),
+            PrimaryButton(
+              label: 'Обновить',
+              onPressed: () async {
+                await onUpdate();
+                // После ухода в магазин закрываем попап в любом случае.
+                if (context.mounted) Navigator.of(context).pop();
+              },
+            ),
+            SizedBox(height: 8.h),
+            SecondaryButton(
+              label: 'Позже',
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+          ],
         ),
       ),
     );

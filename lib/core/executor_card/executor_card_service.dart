@@ -63,7 +63,6 @@ class ExecutorCardService {
     double? locationLng,
     int? radiusKm,
     bool? isPublished,
-    String? about,
     String? legalStatus,
     int? experienceYears,
   }) async {
@@ -93,12 +92,10 @@ class ExecutorCardService {
       // empty-state в ExecutorCardScreen независимо от радиуса.
       'saved_at': DateTime.now().toUtc().toIso8601String(),
     });
-    // Поля профиля всегда приходят из формы (null = пользователь очистил поле),
-    // поэтому пишем их безусловно. Раньше при null ключ опускался (`?about`) —
-    // и очистка «о себе»/статуса/опыта не сохранялась, старое значение
-    // возвращалось при перезагрузке.
+    // Статус и опыт всегда приходят из формы (null = пользователь очистил
+    // поле), поэтому пишем их безусловно. «О себе» из формы убрано — поле
+    // больше НЕ трогаем здесь, чтобы случайно не затереть сохранённый текст.
     await _client.from('profiles').update(<String, dynamic>{
-      'about': about,
       'legal_status': legalStatus,
       'experience_years': experienceYears,
     }).eq('id', user.id);

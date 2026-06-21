@@ -57,7 +57,6 @@ class _EditExecutorCardScreenState extends State<EditExecutorCardScreen> {
 
   late final TextEditingController _location;
   late final TextEditingController _experience;
-  late final TextEditingController _about;
   late final TextEditingController _nameCtrl;
   late final TextEditingController _emailCtrl;
 
@@ -107,7 +106,6 @@ class _EditExecutorCardScreenState extends State<EditExecutorCardScreen> {
     super.initState();
     _location = TextEditingController(text: ExecutorCardData.location ?? '');
     _experience = TextEditingController(text: ExecutorCardData.experience ?? '');
-    _about = TextEditingController(text: ExecutorCardData.about ?? '');
     // Имя/email — один источник с профилем через ExecutorCardData.name
     // (геттер на CropResult.userName) и CropResult.userEmail.
     _nameCtrl = TextEditingController(text: ExecutorCardData.name);
@@ -175,10 +173,7 @@ class _EditExecutorCardScreenState extends State<EditExecutorCardScreen> {
     // Опыт в годах.
     final int? exp = _draftInt(draft['experience_years']);
     if (exp != null && exp >= 0) _experience.text = exp.toString();
-
-    // О себе.
-    final String? about = (draft['about'] as String?)?.trim();
-    if (about != null && about.isNotEmpty) _about.text = about;
+    // «О себе» убрано из формы — ассистентское значение не подставляем.
   }
 
   static double? _draftDouble(Object? v) {
@@ -272,7 +267,6 @@ class _EditExecutorCardScreenState extends State<EditExecutorCardScreen> {
     _emailFocus.removeListener(_onEmailFocusChanged);
     _location.dispose();
     _experience.dispose();
-    _about.dispose();
     _nameCtrl.dispose();
     _emailCtrl.dispose();
     _nameFocus.dispose();
@@ -555,9 +549,6 @@ class _EditExecutorCardScreenState extends State<EditExecutorCardScreen> {
                       locationLng: _locationLng,
                       radiusKm: radiusKm,
                       isPublished: radiusKm != null,
-                      about: _about.text.trim().isEmpty
-                          ? null
-                          : _about.text.trim(),
                       legalStatus: legalStatus,
                       experienceYears: experienceYears,
                     );
@@ -578,7 +569,6 @@ class _EditExecutorCardScreenState extends State<EditExecutorCardScreen> {
                       : null;
                   ExecutorCardData.experience = _experience.text;
                   ExecutorCardData.status = _selectedStatus;
-                  ExecutorCardData.about = _about.text;
                   ExecutorCardScreen.cardCreated = true;
 
                   if (!context.mounted) return;

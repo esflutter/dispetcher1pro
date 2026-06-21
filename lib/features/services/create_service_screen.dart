@@ -101,17 +101,15 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
     }
     final List<cat.MachineryRef>? mc =
         CatalogService.instance.cachedMachinery;
-    final List<cat.CategoryRef>? cc =
-        CatalogService.instance.cachedCategories;
     if (mc != null) {
       _machinery =
           mc.map((cat.MachineryRef e) => e.title).toList(growable: false);
     }
-    if (mc == null || cc == null) {
+    if (mc == null) {
       _loadDirectories();
     }
     if (widget.aiDraft != null && !_isEdit) {
-      _applyAiDraft(widget.aiDraft!, mc, cc);
+      _applyAiDraft(widget.aiDraft!, mc);
     }
   }
 
@@ -119,12 +117,11 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
   void _applyAiDraft(
     Map<String, dynamic> draft,
     List<cat.MachineryRef>? mcCached,
-    List<cat.CategoryRef>? ccCached,
   ) {
     final title = (draft['title'] as String? ?? '').trim();
-    final desc  = (draft['description'] as String? ?? '').trim();
     if (title.isNotEmpty) _titleCtrl.text = title;
-    if (desc.isNotEmpty)  _descCtrl.text  = desc;
+    // Описание и категории услуги убраны из формы — ассистентские значения
+    // не подставляем, чтобы услуга не сохранялась с тем, чего не видно.
 
     final ph = draft['price_per_hour'];
     final pd = draft['price_per_day'];
@@ -146,15 +143,11 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
     final machIds = (draft['machinery_ids'] is List)
         ? (draft['machinery_ids'] as List).whereType<int>().toSet()
         : <int>{};
-    final catIds = (draft['category_ids'] is List)
-        ? (draft['category_ids'] as List).whereType<int>().toSet()
-        : <int>{};
 
     void mapIds() {
       final mc = mcCached ?? CatalogService.instance.cachedMachinery;
-      final cc = ccCached ?? CatalogService.instance.cachedCategories;
       if (mc != null) {
-        // Услуга — максимум одна техника. Берём первый матч.
+        // Услуга — одна техника, она же название. Берём первый матч.
         for (final m in mc) {
           if (machIds.contains(m.id)) {
             _selMach.add(m.title);
@@ -162,15 +155,10 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
           }
         }
       }
-      if (cc != null) {
-        for (final c in cc) {
-          if (catIds.contains(c.id)) _selCat.add(c.title);
-        }
-      }
     }
 
     mapIds();
-    if (mcCached == null || ccCached == null) {
+    if (mcCached == null) {
       Future<void>.delayed(const Duration(milliseconds: 100), () {
         if (!mounted) return;
         setState(mapIds);
