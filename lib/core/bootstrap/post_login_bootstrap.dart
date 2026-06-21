@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../features/auth/photo_crop_screen.dart';
 import '../../features/executor_card/executor_card_screen.dart';
+import '../../features/profile/account_block.dart';
 import '../../features/profile/widgets/verification_badge.dart';
 import '../../features/services/my_services_screen.dart';
 import '../auth/phone_format.dart';
@@ -53,7 +54,26 @@ Future<void> runPostLoginBootstrap() async {
     _bootstrapSubscription(),
     _bootstrapExecutorCard(),
     _bootstrapServices(),
+    _bootstrapVerification(),
   ]);
+}
+
+/// Подтягивает статус верификации и блокировку по рейтингу сразу после
+/// входа. Без этого верифицированный исполнитель, вошедший по коду и
+/// сразу тапнувший «Откликнуться» (не заходя в профиль), видел ложное
+/// «верификация не пройдена» — статус оставался дефолтным notVerified.
+Future<void> _bootstrapVerification() async {
+  try {
+    final MyProfile? p = await ProfileService.instance.loadMine();
+    if (p == null) return;
+    AccountBlock.setUntil(p.blockedUntil);
+    VerificationStatus.current = switch (p.verificationStatus) {
+      'approved' => VerificationStatus.verified,
+      'pending' => VerificationStatus.inProgress,
+      'rejected' => VerificationStatus.rejected,
+      _ => VerificationStatus.notVerified,
+    };
+  } catch (_) {/* фоллбэк: статус поднимет profile_screen */}
 }
 
 Future<void> _ensureExecutor() async {

@@ -58,7 +58,9 @@ enum VerificationStatus {
   /// пользователь имеет полный доступ — переключатель управляет только
   /// автосписанием.
   static bool get isSubscriptionValid =>
-      hasSubscription || subscriptionPaidUntilText != null;
+      hasSubscription ||
+      (subscriptionPaidUntil != null &&
+          subscriptionPaidUntil!.isAfter(DateTime.now()));
 
   /// Полный сброс состояния верификации — для logout. Возвращает к
   /// `notVerified` и выключает подписку, чтобы следующий пользователь
