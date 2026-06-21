@@ -13,9 +13,11 @@ enum _UpdateLevel { none, optional, forced }
 
 /// Проверка обновлений приложения. Сравнивает версию установленного
 /// приложения с двумя значениями из серверных настроек:
-///   • `app.pro_min_version`    — ниже неё показываем более настойчивое
-///     окно «версия устарела» (но закрыть его всё равно можно);
-///   • `app.pro_latest_version` — ниже неё мягко предлагаем обновиться.
+///   • `app.pro_min_version`      — ниже неё показываем более настойчивое
+///     окно «версия устарела» (закрыть его всё равно можно);
+///   • `app.pro_recommend_update` — переключатель «рекомендуем обновить»;
+///     когда включён И версия ниже `app.pro_latest_version`, показываем
+///     мягкое окно. Само по факту выхода новой версии оно не появляется.
 ///
 /// По умолчанию обе настройки «0.0.0» → попап не показывается, пока админ
 /// не задаст реальные версии. Любая ошибка/офлайн — тихо пропускаем
@@ -38,10 +40,11 @@ class UpdateChecker {
     if (_checkedThisLaunch) return;
     _checkedThisLaunch = true;
     try {
-      final ({String min, String latest}) v =
+      final ({String min, String latest, bool recommend}) v =
           await SettingsService.instance.appVersions();
       final PackageInfo info = await PackageInfo.fromPlatform();
-      final _UpdateLevel level = _evaluate(info.version, v.min, v.latest);
+      final _UpdateLevel level =
+          _evaluate(info.version, v.min, v.latest, v.recommend);
       if (level == _UpdateLevel.none) return;
       if (!context.mounted) return;
       await showDialog<void>(
@@ -69,9 +72,15 @@ class UpdateChecker {
     }
   }
 
-  static _UpdateLevel _evaluate(String current, String min, String latest) {
+  static _UpdateLevel _evaluate(
+      String current, String min, String latest, bool recommend) {
+    // Настойчивое окно — всегда, если версия ниже минимально допустимой.
     if (compareVersions(current, min) < 0) return _UpdateLevel.forced;
-    if (compareVersions(current, latest) < 0) return _UpdateLevel.optional;
+    // Мягкое «рекомендуем обновить» — только если админ включил переключатель
+    // И версия ниже последней. Само по факту новой версии не показываем.
+    if (recommend && compareVersions(current, latest) < 0) {
+      return _UpdateLevel.optional;
+    }
     return _UpdateLevel.none;
   }
 }

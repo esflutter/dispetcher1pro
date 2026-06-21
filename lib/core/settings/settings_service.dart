@@ -39,18 +39,21 @@ class SettingsService {
     }
   }
 
-  /// Версии приложения для проверки обновлений: минимально допустимая
-  /// (ниже неё — принудительное обновление) и последняя (ниже неё —
-  /// мягкое предложение обновиться). Дефолт «0.0.0» означает «проверка
-  /// выключена» — попап не покажется, пока админ не задаст реальные
-  /// значения. `.toString()` терпим к хранению как строки и как числа.
-  Future<({String min, String latest})> appVersions() async {
+  /// Настройки проверки обновлений: минимально допустимая версия (ниже неё —
+  /// настойчивое окно), последняя версия и переключатель «рекомендуем
+  /// обновить». Мягкое окно показывается ТОЛЬКО когда переключатель включён
+  /// И версия ниже последней. Дефолты («0.0.0» / выключено) — окно не
+  /// появляется, пока админ не задаст значения. Парсинг терпим к хранению
+  /// значения как строки и как числа.
+  Future<({String min, String latest, bool recommend})> appVersions() async {
     await _load();
     final String min =
         (_values['app.pro_min_version']?.toString() ?? '0.0.0').trim();
     final String latest =
         (_values['app.pro_latest_version']?.toString() ?? '0.0.0').trim();
-    return (min: min, latest: latest);
+    final bool recommend =
+        (num.tryParse('${_values['app.pro_recommend_update'] ?? 0}') ?? 0) != 0;
+    return (min: min, latest: latest, recommend: recommend);
   }
 
   /// Прогревает кэш настроек на старте приложения. Вызывается из `main()`
