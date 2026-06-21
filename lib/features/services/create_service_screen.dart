@@ -159,9 +159,16 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
 
     mapIds();
     if (mcCached == null) {
-      Future<void>.delayed(const Duration(milliseconds: 100), () {
+      // Ждём реальный прогрев справочника, а не фиксированную паузу: на
+      // холодном старте/медленной сети за 100 мс кэш мог не успеть, и
+      // распознанная ассистентом техника не подставлялась — кнопка
+      // «Создать» оставалась серой без объяснения. Как в форме заказа.
+      CatalogService.instance.warmup().then((_) {
         if (!mounted) return;
         setState(mapIds);
+      }).catchError((Object _) {
+        // Прогрев не удался (нет сети) — техника подставится при обычной
+        // загрузке экрана; молча гасим, чтобы исключение не всплыло.
       });
     }
 

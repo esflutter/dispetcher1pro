@@ -32,10 +32,8 @@ class _CatalogFilterScreenState extends State<CatalogFilterScreen> {
   // Чипы фильтра тянем из CatalogService — иначе при малейшем
   // расхождении title в коде vs БД фильтр молча возвращает «всех»
   // или «никого».
-  List<String> _serviceCategories = const <String>[];
   List<String> _equipment = const <String>[];
 
-  final Set<String> _selectedCategories = <String>{};
   final Set<String> _selectedEquipment = <String>{};
 
   bool _exactDate = false;
@@ -64,7 +62,6 @@ class _CatalogFilterScreenState extends State<CatalogFilterScreen> {
   @override
   void initState() {
     super.initState();
-    _selectedCategories.addAll(AppliedFilter.categories);
     _selectedEquipment.addAll(AppliedFilter.equipment);
     _dateFrom = AppliedFilter.dateFrom;
     _dateTo = AppliedFilter.dateTo;
@@ -78,16 +75,11 @@ class _CatalogFilterScreenState extends State<CatalogFilterScreen> {
     _addressLng = AppliedFilter.addressLng;
 
     final List<MachineryRef>? mc = CatalogService.instance.cachedMachinery;
-    final List<CategoryRef>? cc = CatalogService.instance.cachedCategories;
     if (mc != null) {
       _equipment =
           mc.map((MachineryRef e) => e.title).toList(growable: false);
     }
-    if (cc != null) {
-      _serviceCategories =
-          cc.map((CategoryRef e) => e.title).toList(growable: false);
-    }
-    if (mc == null || cc == null) {
+    if (mc == null) {
       _loadDirectories();
     }
   }
@@ -96,14 +88,10 @@ class _CatalogFilterScreenState extends State<CatalogFilterScreen> {
     try {
       final List<MachineryRef> m =
           await CatalogService.instance.listActiveMachinery();
-      final List<CategoryRef> c =
-          await CatalogService.instance.listActiveCategories();
       if (!mounted) return;
       setState(() {
         _equipment =
             m.map((MachineryRef e) => e.title).toList(growable: false);
-        _serviceCategories =
-            c.map((CategoryRef e) => e.title).toList(growable: false);
       });
     } catch (_) {
       // БД недоступна — чипы пустые, фильтр временно «не работает».
@@ -111,9 +99,9 @@ class _CatalogFilterScreenState extends State<CatalogFilterScreen> {
   }
 
   void _applyFilter() {
-    AppliedFilter.categories
-      ..clear()
-      ..addAll(_selectedCategories);
+    // Категории убраны из фильтра — у заказов их больше нет. Гарантированно
+    // очищаем, иначе залипший фильтр по категории обнулял бы всю ленту.
+    AppliedFilter.categories.clear();
     AppliedFilter.equipment
       ..clear()
       ..addAll(_selectedEquipment);
@@ -205,18 +193,6 @@ class _CatalogFilterScreenState extends State<CatalogFilterScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
-                      _SectionTitle('Категории услуг'),
-                      SizedBox(height: 12.h),
-                      _ChipGrid(
-                        values: _serviceCategories,
-                        selected: _selectedCategories,
-                        onToggle: (String v) => setState(() {
-                          if (!_selectedCategories.add(v)) {
-                            _selectedCategories.remove(v);
-                          }
-                        }),
-                      ),
-                      SizedBox(height: 24.h),
                       _SectionTitle('Спецтехника'),
                       SizedBox(height: 12.h),
                       _ChipGrid(
