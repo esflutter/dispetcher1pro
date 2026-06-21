@@ -225,6 +225,20 @@ class StorageService {
     return _client.storage.from(bucket).createSignedUrl(path, expiresInSec);
   }
 
+  /// Удаляет уже залитые сканы документов из приватного бакета
+  /// `assistant-attachments`. Нужно для отката, когда фото залились, но
+  /// регистрация на сервере (ai_submit_verification) не прошла — иначе
+  /// осиротевшие файлы (паспорта/права) копятся в хранилище: ночная
+  /// чистка их не достаёт, т.к. чистит только зарегистрированные документы.
+  /// Best-effort: ошибки удаления глушим (повтор/перезаливка не должны
+  /// зависеть от успеха уборки).
+  Future<void> removeVerificationDocuments(List<String> paths) async {
+    if (paths.isEmpty) return;
+    try {
+      await _client.storage.from('assistant-attachments').remove(paths);
+    } catch (_) {/* не критично — файлы подметёт удаление аккаунта */}
+  }
+
   Future<String> _uploadToPublicBucket(String bucket, File file) async {
     final User? user = _client.auth.currentUser;
     if (user == null) {

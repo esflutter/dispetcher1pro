@@ -346,8 +346,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       // «попробуйте ещё раз» было враньём — повтор уходил уже как фото
       // услуги, а не документы. Гасим только при УСПЕХЕ (ниже).
       setState(() => _isProcessing = true);
+      // Объявлено ДО try, чтобы catch мог подчистить уже залитые сканы,
+      // если регистрация на сервере не пройдёт.
+      final List<String> paths = <String>[];
       try {
-        final List<String> paths = <String>[];
         for (final String localPath in docImagePaths) {
           // Таймаут на каждое фото: зависшее соединение раньше держало
           // «печатает…» вечно (фото по несколько МБ).
@@ -371,6 +373,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         if (kDebugMode) {
           debugPrint('[chat] verification submit failed: ${e.runtimeType}');
         }
+        // Подчищаем уже залитые в приватный бакет сканы, которые не успели
+        // зарегистрироваться (RPC не прошёл): иначе осиротевшие документы
+        // копятся в хранилище — ночная чистка их не достаёт. Best-effort.
+        unawaited(
+            StorageService.instance.removeVerificationDocuments(paths));
         // Фото документов НЕ должны оседать в накопителе фото услуги —
         // иначе паспорт мог утечь в публичную услугу при следующем создании.
         _servicePhotos.removeWhere(docImagePaths.contains);

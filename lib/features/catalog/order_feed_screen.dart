@@ -543,6 +543,18 @@ class _OrdersMapWithCardState extends State<_OrdersMapWithCard>
   bool _cardVisible = false;
 
   @override
+  void dispose() {
+    // Анимация камеры (animatedMove) хранится глобально по контроллеру и
+    // переживает пересоздание ЭТОГО виджета по ValueKey(orders). Если в
+    // момент realtime-обновления ленты (состав заказов сменился) шёл
+    // свайп/центрирование — у нового State оказался бы активный тикер от
+    // мёртвого: «Ticker disposed with an active Ticker» в debug и утечка
+    // контроллера в release. Отменяем анимацию при уничтожении.
+    _mapController.cancelAnimatedMove();
+    super.dispose();
+  }
+
+  @override
   void didUpdateWidget(covariant _OrdersMapWithCard oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!_sameOrders(oldWidget.orders, widget.orders)) {

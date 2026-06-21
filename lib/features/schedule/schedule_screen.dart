@@ -326,6 +326,12 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                         ? 2
                         : -1,
             location: o.locationAddress,
+            // Координаты дня тоже переносим из БД, иначе любой тумблер
+            // «приём заказов»/«нерабочий» после перезагрузки экрана делал
+            // UPSERT с lat/lng=null и затирал ранее сохранённые координаты
+            // (текст адреса при этом оставался — поломка была незаметной).
+            locationLat: o.locationLat,
+            locationLng: o.locationLng,
             machinery: Set<String>.from(o.machineryTitles),
             categories: Set<String>.from(o.categoryTitles),
           );
