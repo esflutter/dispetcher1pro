@@ -707,6 +707,13 @@ class _PickServiceSheetState extends State<PickServiceSheet> {
         16.w,
         16.h + MediaQuery.of(context).padding.bottom,
       ),
+      // Не даём шторке вырасти выше экрана: если у исполнителя много услуг на
+      // одну технику, список внутри прокручивается, а заголовок и кнопка
+      // «Откликнуться» остаются видимыми (раньше при 6+ услугах низ с кнопкой
+      // уезжал за край с полосой overflow).
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.85,
+      ),
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.vertical(top: Radius.circular(20.r)),
@@ -727,14 +734,24 @@ class _PickServiceSheetState extends State<PickServiceSheet> {
             ),
           ),
           SizedBox(height: 16.h),
-          for (final MyActiveService s in widget.options)
-            _CheckRow(
-              label: _serviceLabel(s),
-              checked: _picked == s.id,
-              onTap: () {
-                setState(() => _picked = s.id);
-              },
+          Flexible(
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  for (final MyActiveService s in widget.options)
+                    _CheckRow(
+                      label: _serviceLabel(s),
+                      checked: _picked == s.id,
+                      onTap: () {
+                        setState(() => _picked = s.id);
+                      },
+                    ),
+                ],
+              ),
             ),
+          ),
           SizedBox(height: 16.h),
           PrimaryButton(
             label: widget.ctaLabel,
