@@ -134,7 +134,14 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
 
     // 4. Подписка не активна — paywall либо «приостановлена» с возобновлением.
     if (!VerificationStatus.hasSubscription) {
-      if (VerificationStatus.subscriptionPaidUntilText != null) {
+      // «Приостановлена» показываем ТОЛЬКО пока оплаченный период ещё не
+      // истёк (paid_until в будущем): подписка валидна, выключено лишь
+      // автосписание — зовём возобновить. Если paid_until в прошлом или
+      // его нет вовсе — подписка закончилась, ведём в маркетинговый
+      // paywall. На сам текст ориентироваться нельзя: он остаётся
+      // заполненным и у полностью истёкшей подписки.
+      final DateTime? paidUntil = VerificationStatus.subscriptionPaidUntil;
+      if (paidUntil != null && paidUntil.isAfter(DateTime.now())) {
         final bool? go = await showSubscriptionPausedDialog(context);
         if (go == true && mounted) context.push('/subscription/manage');
         return;

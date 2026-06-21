@@ -142,6 +142,7 @@ class _PaymentResultScreenState extends State<PaymentResultScreen> {
         // grace-aware (subscriptionActive): единый источник с гейтами.
         VerificationStatus.hasSubscription = priv.subscriptionActive;
         VerificationStatus.subscriptionPaidUntilText = _fmtDateRu(until);
+        VerificationStatus.subscriptionPaidUntil = until;
       }
     } catch (_) {/* silent */}
   }

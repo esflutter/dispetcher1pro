@@ -72,6 +72,7 @@ Future<void> _bootstrapSubscription() async {
       // из-за чего в grace-окне гейты блокировали отклик, хотя сервер пускал.
       VerificationStatus.hasSubscription = priv!.subscriptionActive;
       VerificationStatus.subscriptionPaidUntilText = _fmtDateRu(paidUntil);
+      VerificationStatus.subscriptionPaidUntil = paidUntil;
     }
     if (priv?.email != null &&
         priv!.email!.isNotEmpty &&
@@ -86,9 +87,38 @@ Future<void> _bootstrapExecutorCard() async {
     final MyExecutorCard? c =
         await ExecutorCardService.instance.loadMine();
     if (c != null) {
+      // Наполняем статический кэш ТЕМ ЖЕ преобразованием, что и экран
+      // просмотра карточки (_loadFromDb). Раньше клали только cardCreated,
+      // а адрес/радиус/статус/опыт отбрасывали — и форма правки, открытая
+      // из ИИ-черновика до захода на экран просмотра, стартовала с пустыми
+      // статусом/опытом и при «Сохранить» затирала их в БД на null.
+      ExecutorCardData.location = c.locationAddress;
+      ExecutorCardData.radius =
+          c.radiusKm != null ? 'В радиусе ${c.radiusKm} км' : null;
+      ExecutorCardData.about = c.about;
+      ExecutorCardData.experience = c.experienceYears?.toString();
+      ExecutorCardData.status = _legalStatusLabel(c.legalStatus);
       ExecutorCardState.cardCreated = c.savedAt != null;
     }
   } catch (_) {/* фоллбэк: карточку поднимет executor_card_screen */}
+}
+
+/// Код правового статуса (`legal_status`) → подпись для формы. Зеркалит
+/// `_legalStatusLabel` в executor_card_screen — значения обязаны совпадать,
+/// иначе кэш разойдётся с тем, что грузит экран просмотра.
+String? _legalStatusLabel(String? code) {
+  switch (code) {
+    case 'individual':
+      return 'Физ. лицо';
+    case 'self_employed':
+      return 'Самозанятый';
+    case 'ip':
+      return 'ИП';
+    case 'legal_entity':
+      return 'Юр. лицо';
+    default:
+      return null;
+  }
 }
 
 Future<void> _bootstrapServices() async {

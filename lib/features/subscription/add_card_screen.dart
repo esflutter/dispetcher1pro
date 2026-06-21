@@ -3,6 +3,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'package:dispatcher_1/core/config/env.dart';
 import 'package:dispatcher_1/core/payments/models.dart';
 import 'package:dispatcher_1/core/payments/payment_service.dart';
 import 'package:dispatcher_1/core/profile/profile_service.dart';
@@ -184,15 +185,22 @@ class _CardsScreenState extends State<CardsScreen> {
     if (_binding) return;
     setState(() => _binding = true);
     try {
-      // Тот же deep-link, что используется для подписочных платежей:
-      // dispatcher1pro://payment/result?binding=1 уже зарегистрирован в
-      // AndroidManifest/Info.plist и ловится `app_links`.
-      // Передаём `?binding=1` в return_url — Edge Function допишет
-       // `&payment_id=<uuid>` к этой строке. Когда YooKassa в конце
-       // редиректит юзера на эту deep-link'у, мы получим оба параметра
-       // и поймём, что это привязка карты, а не обычный платёж.
-       const String returnDeeplink =
-           'dispatcher1pro://payment/result?binding=1';
+      // YooKassa должен вернуть юзера обратно в приложение — но Chrome
+      // (Android) НЕ открывает кастомные схемы (`dispatcher1pro://`)
+      // через прямой 302-редирект с чужого сайта (yoomoney.ru). Поэтому
+      // return_url отправляем на нашу промежуточную страницу (Edge
+      // Function `payment-return`), которая отдаёт HTML с JS-переходом на
+      // `dispatcher1pro://...` — такой переход Chrome допускает. Тот же
+      // приём используется в подписочных платежах (payment_method_card).
+      //
+      // Флаг `?binding=1` уходит в payment-return: Edge Function допишет
+      // `&payment_id=<uuid>`, и когда YooKassa в конце редиректит юзера,
+      // мы получим оба параметра и поймём, что это привязка карты, а не
+      // обычный платёж. База берётся из Env.supabaseUrl, а не хардкодом.
+      final String supabaseBase =
+          Env.supabaseUrl.replaceAll(RegExp(r'/+$'), '');
+      final String returnDeeplink =
+          '$supabaseBase/functions/v1/payment-return?binding=1';
       final PaymentCreateResult result =
           await PaymentService.instance.createPayment(
         kind: PaymentKind.cardBinding,

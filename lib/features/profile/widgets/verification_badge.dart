@@ -43,6 +43,14 @@ enum VerificationStatus {
   static set subscriptionPaidUntilText(String? v) =>
       subscriptionPaidUntilTextNotifier.value = v;
 
+  /// Сама дата `paid_until` (не текст). Нужна гейтам, чтобы отличить
+  /// «подписка приостановлена, но оплаченный период ещё идёт» от
+  /// «подписка полностью истекла». В первом случае показываем диалог
+  /// возобновления, во втором — маркетинговый paywall. `null` — оплаты
+  /// не было вовсе. Текстовое поле выше держим как есть: оно по-прежнему
+  /// показывает дату в профиле даже у истёкшей подписки.
+  static DateTime? subscriptionPaidUntil;
+
   bool get isVerified => this == VerificationStatus.verified;
 
   /// `true` если подписка активна ИЛИ приостановлена (переключатель
@@ -59,6 +67,7 @@ enum VerificationStatus {
     _notifier.value = VerificationStatus.notVerified;
     hasSubscriptionNotifier.value = false;
     subscriptionPaidUntilTextNotifier.value = null;
+    subscriptionPaidUntil = null;
   }
 }
 

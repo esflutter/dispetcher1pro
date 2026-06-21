@@ -110,6 +110,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       VerificationStatus.hasSubscription = priv.subscriptionActive;
       VerificationStatus.subscriptionPaidUntilText =
           paid == null ? null : _fmtPaidUntil(paid);
+      VerificationStatus.subscriptionPaidUntil = paid;
       // Email — тот же сценарий, что у имени: cold start → нет в кэше
       // → берём из БД. После Hot Restart введённый ранее email пропадал
       // из «Моей карточки» / профиля, потому что `loadMyPrivate.email`
