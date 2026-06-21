@@ -542,24 +542,6 @@ class _FilledCard extends StatelessWidget {
             },
           ),
           SizedBox(height: 16.h),
-          _SectionTitle('Категории услуг'),
-          SizedBox(height: 8.h),
-          // Категории — тот же computed-getter паттерн, что и спецтехника.
-          StatefulBuilder(
-            builder: (BuildContext ctx, StateSetter setInner) {
-              final List<String> items = ExecutorCardData.categories;
-              if (items.isNotEmpty) return _ChipWrap(items: items);
-              return _EmptyMachineryCta(
-                hint: 'Создайте первую услугу — и здесь появятся '
-                    'категории ваших работ.',
-                onTap: () async {
-                  await ctx.push('/services');
-                  if (ctx.mounted) setInner(() {});
-                },
-              );
-            },
-          ),
-          SizedBox(height: 16.h),
           _SectionTitle('Опыт работы'),
           SizedBox(height: 4.h),
           Text(_experienceText(ExecutorCardData.experience),
@@ -568,10 +550,6 @@ class _FilledCard extends StatelessWidget {
           _SectionTitle('Статус'),
           SizedBox(height: 4.h),
           Text(_val(ExecutorCardData.status), style: AppTextStyles.body),
-          SizedBox(height: 16.h),
-          _SectionTitle('О себе'),
-          SizedBox(height: 4.h),
-          Text(_val(ExecutorCardData.about), style: AppTextStyles.body),
         ],
       ),
     );

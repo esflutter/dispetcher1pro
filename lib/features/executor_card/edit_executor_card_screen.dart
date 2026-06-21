@@ -491,23 +491,9 @@ class _EditExecutorCardScreenState extends State<EditExecutorCardScreen> {
                     ],
                   ),
                 ),
-              SizedBox(height: AppSpacing.lg),
-              _SectionTitle('О себе'),
-              SizedBox(height: AppSpacing.xs),
-              _TintField(
-                controller: _about,
-                hint: 'Расскажите о себе',
-                minLines: 1,
-                maxLength: 500,
-                maxLines: 5,
-              ),
-              SizedBox(height: AppSpacing.xs),
-              Text(
-                'Информация о вас помогает другим лучше понять, '
-                'с кем они будут работать.',
-                style: AppTextStyles.caption
-                    .copyWith(color: AppColors.textMuted),
-              ),
+              // Поле «О себе» убрано из UI (карточка упрощена). Контроллер
+              // оставлен: он держит ранее сохранённое значение и пишет его
+              // обратно без изменений — существующий текст в БД не теряется.
                   SizedBox(height: AppSpacing.md),
                   ],
                 ),
@@ -901,54 +887,6 @@ class _PlainEditableField extends StatelessWidget {
     );
   }
 }
-
-class _TintField extends StatelessWidget {
-  const _TintField({
-    required this.controller,
-    this.hint,
-    this.minLines = 1,
-    this.maxLines = 1,
-    this.maxLength,
-  });
-  final TextEditingController controller;
-  final String? hint;
-  final int minLines;
-  final int maxLines;
-  final int? maxLength;
-
-  @override
-  Widget build(BuildContext context) {
-    return TextField(
-      controller: controller,
-      minLines: minLines,
-      maxLines: maxLines,
-      maxLength: maxLength,
-      buildCounter: maxLength != null ? (_, {required currentLength, required isFocused, required maxLength}) => null : null,
-      style: AppTextStyles.body,
-      decoration: InputDecoration(
-        hintText: hint,
-        hintStyle: AppTextStyles.body.copyWith(color: AppColors.textTertiary),
-        filled: true,
-        fillColor: AppColors.fieldFill,
-        contentPadding: EdgeInsets.symmetric(
-            horizontal: AppSpacing.md, vertical: AppSpacing.sm),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppSpacing.radiusM),
-          borderSide: BorderSide.none,
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppSpacing.radiusM),
-          borderSide: BorderSide.none,
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppSpacing.radiusM),
-          borderSide: const BorderSide(color: AppColors.primary),
-        ),
-      ),
-    );
-  }
-}
-
 
 /// Склонение слова «год» для числа лет опыта.
 String experienceYearsWord(int n) {
