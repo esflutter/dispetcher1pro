@@ -747,7 +747,12 @@ class _HeaderRowState extends State<_HeaderRow> {
                     Image.asset('assets/images/catalog/star.webp',
                         width: 20.r, height: 20.r),
                     SizedBox(width: 4.w),
-                    Text(_fmtRating(_rating), style: AppTextStyles.body),
+                    Flexible(
+                      child: Text(_fmtRating(_rating),
+                          style: AppTextStyles.body,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis),
+                    ),
                     SizedBox(width: 16.w),
                   ],
                   GestureDetector(
@@ -823,7 +828,12 @@ class _RadioRow extends StatelessWidget {
                   : null,
             ),
             SizedBox(width: 12.w),
-            Text(label, style: AppTextStyles.body),
+            Flexible(
+              child: Text(label,
+                  style: AppTextStyles.body,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis),
+            ),
           ],
         ),
       ),

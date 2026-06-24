@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import 'package:dispatcher_1/core/ai/ai_navigation.dart';
+import 'package:dispatcher_1/core/auth/guest_gate.dart';
 import 'package:dispatcher_1/features/profile/account_block.dart';
 import 'package:dispatcher_1/core/network_status.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
@@ -35,10 +36,28 @@ class MainShell extends StatefulWidget {
 }
 
 class _MainShellState extends State<MainShell> {
+  // Гость (без входа) видит ленту заказов, но «Заказы» и «Профиль» требуют
+  // входа — показываем заглушку с кнопкой «Войти». После входа приложение
+  // заходит во ВНОВЬ созданный MainShell (isGuest=false), поэтому фиксируем
+  // флаг один раз при создании.
+  late final bool _guest = isGuest;
   late final List<Widget> _screens = <Widget>[
     const CatalogCategoriesScreen(),
-    MyOrdersScreen(onGoToCatalog: () => MainShell.selectedTab.value = 0),
-    const ProfileScreen(),
+    _guest
+        ? const GuestLockedView(
+            title: 'Войдите в аккаунт',
+            subtitle:
+                'Чтобы откликаться на заказы и видеть свои — нужно войти.',
+            icon: Icons.assignment_outlined,
+          )
+        : MyOrdersScreen(onGoToCatalog: () => MainShell.selectedTab.value = 0),
+    _guest
+        ? const GuestLockedView(
+            title: 'Войдите в аккаунт',
+            subtitle: 'Профиль, услуги и график доступны после входа.',
+            icon: Icons.person_outline,
+          )
+        : const ProfileScreen(),
   ];
 
   Timer? _blockExpiryTimer;
@@ -75,9 +94,11 @@ class _MainShellState extends State<MainShell> {
   }
 
   void _openSupport() {
-    // Стартовый экран ассистента («С чего хотите начать?») показывается
-    // только один раз — сразу после регистрации (см. registration_screen.dart).
-    // По FAB всегда открываем чат напрямую.
+    // Ассистент доступен и гостю — поиск заказов и общие вопросы работают по
+    // гостевой квоте (как в приложении заказчика). Создание услуги/карточки
+    // внутри чата гейтится на вход отдельно (см. chat_screen.dart).
+    // Стартовый экран ассистента показывается только один раз после
+    // регистрации; по FAB всегда открываем чат напрямую.
     openAssistantChat(context);
   }
 

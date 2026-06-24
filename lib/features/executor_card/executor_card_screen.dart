@@ -612,13 +612,17 @@ class _HeaderRowState extends State<_HeaderRow> {
                     Text(_fmtRating(_rating), style: AppTextStyles.body),
                     SizedBox(width: 16.w),
                   ],
-                  GestureDetector(
-                    onTap: () => context.push('/profile/reviews'),
-                    child: Text(
-                      '$_reviewCount ${reviewsWord(_reviewCount)}',
-                      style: AppTextStyles.body.copyWith(
-                        color: AppColors.textPrimary,
-                        decoration: TextDecoration.underline,
+                  Flexible(
+                    child: GestureDetector(
+                      onTap: () => context.push('/profile/reviews'),
+                      child: Text(
+                        '$_reviewCount ${reviewsWord(_reviewCount)}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTextStyles.body.copyWith(
+                          color: AppColors.textPrimary,
+                          decoration: TextDecoration.underline,
+                        ),
                       ),
                     ),
                   ),

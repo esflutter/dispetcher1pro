@@ -37,6 +37,15 @@ class PushHandler {
 
   bool _initialized = false;
 
+  /// Маршрут из пуша, которым было открыто УБИТОЕ приложение (cold start).
+  /// НЕ навигируем по нему сразу: сплэш сначала доводит пользователя до
+  /// базового экрана (`/shell`), а потом сам открывает этот маршрут поверх
+  /// через [consumeColdStartRoute]. Иначе таймер сплэша (через 1.5 c делает
+  /// безусловный `go('/shell')`) затирал только что открытый экран, и тап
+  /// по пушу из шторки приземлял пользователя на главную вместо нужного
+  /// экрана. `null` — обычный старт без пуша.
+  static String? pendingColdStartRoute;
+
   Future<void> initialize() async {
     if (_initialized) return;
     _initialized = true;
@@ -76,13 +85,31 @@ class PushHandler {
     FirebaseMessaging.onMessageOpenedApp.listen(_routeFromMessage);
 
     // Cold-start: приложение было убито, юзер тапнул пуш — он нас разбудил.
+    // Сразу НЕ навигируем: запоминаем маршрут, его откроет сплэш поверх
+    // уже установленного `/shell` (см. [pendingColdStartRoute]). Раньше
+    // здесь был немедленный push через microtask — но сессия восстанавливается
+    // ещё до первого кадра, push успевал лечь поверх сплэша, и таймер сплэша
+    // через 1.5 c затирал его переходом на главную.
     final RemoteMessage? initial =
         await FirebaseMessaging.instance.getInitialMessage();
     if (initial != null) {
-      // Откладываем на microtask — иначе GoRouter затрёт наш push своим
-      // первичным redirect-ом (splash → home/auth).
-      scheduleMicrotask(() => _routeFromMessage(initial));
+      final dynamic route = initial.data['route'];
+      if (route is String && route.isNotEmpty) {
+        pendingColdStartRoute = route;
+      }
     }
+  }
+
+  /// Открывает отложенный cold-start маршрут поверх уже установленного
+  /// базового экрана. Зовётся сплэшем сразу после `go('/shell')` — только
+  /// когда есть валидная сессия и регистрация завершена. Сессия к этому
+  /// моменту точно восстановлена, поэтому цикл ожидания внутри [_safePush]
+  /// завершится на первой итерации.
+  Future<void> consumeColdStartRoute() async {
+    final String? route = pendingColdStartRoute;
+    pendingColdStartRoute = null;
+    if (route == null || route.isEmpty) return;
+    await _safePush(route);
   }
 
   Future<void> _handleForegroundMessage(RemoteMessage message) async {
@@ -121,7 +148,7 @@ class PushHandler {
       // `/profile/reviews`. Роутер сам разрулит:
       //   /orders/:id → OrderDetailRouteScreen → MyOrdersScreen откроет детали.
       //   /profile/reviews → ReviewsScreen.
-      _safePush(route);
+      unawaited(_safePush(route));
     }
   }
 
@@ -133,7 +160,7 @@ class PushHandler {
       if (data is Map<String, dynamic>) {
         final dynamic route = data['route'];
         if (route is String && route.isNotEmpty) {
-          _safePush(route);
+          unawaited(_safePush(route));
         }
       }
     } catch (e) {
@@ -141,12 +168,24 @@ class PushHandler {
     }
   }
 
-  void _safePush(String route) {
+  Future<void> _safePush(String route) async {
     try {
-      // БЕЗ СЕССИИ (пуш остался в шторке после выхода / принудительного
-      // разлогина) переход внутрь приложения давал пустые экраны и ложное
-      // «не найдено» — выглядело как потеря аккаунта. Ведём на вход.
-      if (Supabase.instance.client.auth.currentSession == null) {
+      // Холодный старт от пуша: Supabase и сессия восстанавливаются
+      // асинхронно, в первый момент сессии ещё нет — раньше из-за этого
+      // залогиненного пользователя по тапу уводило на экран входа. Ждём
+      // появления сессии до ~4с (терпим к ещё не готовому клиенту); и только
+      // если её действительно нет (вышел / разлогинен) — ведём на вход.
+      Session? session;
+      for (int i = 0; i < 40; i++) {
+        try {
+          session = Supabase.instance.client.auth.currentSession;
+        } catch (_) {
+          session = null; // Supabase ещё не инициализирован
+        }
+        if (session != null) break;
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
+      if (session == null) {
         appRouter.go('/auth/phone');
         return;
       }

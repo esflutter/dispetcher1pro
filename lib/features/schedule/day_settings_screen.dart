@@ -429,6 +429,8 @@ class _DaySettingsScreenState extends State<DaySettingsScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(v,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: AppTextStyles.chip.copyWith(
                       color: sel ? Colors.white : AppColors.textPrimary,
                       fontSize: 13.sp,
@@ -477,7 +479,12 @@ class _DaySettingsScreenState extends State<DaySettingsScreen> {
                   : null,
             ),
             SizedBox(width: 12.w),
-            Text(label, style: AppTextStyles.body),
+            Flexible(
+              child: Text(label,
+                  style: AppTextStyles.body,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis),
+            ),
           ],
         ),
       ),

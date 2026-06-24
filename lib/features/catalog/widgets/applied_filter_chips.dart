@@ -164,6 +164,8 @@ class _FilterChip extends StatelessWidget {
           children: <Widget>[
             Text(
               label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: AppTextStyles.chip.copyWith(
                 color: Colors.white,
                 fontSize: 13.sp,

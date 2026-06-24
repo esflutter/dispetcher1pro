@@ -73,9 +73,21 @@ class _ReviewScreenState extends State<ReviewScreen> {
         });
       } on PostgrestException catch (e) {
         if (!mounted) return;
+        // 23505 — уникальный индекс (match_id, author_id): отзыв на этот заказ
+        // уже оставлен (например, в прошлой сессии, а локальная отметка
+        // «оценено» не подтянулась). Не ошибка ввода — относимся как к «уже
+        // оставлен»: помечаем заказ оценённым (pop true) и закрываем, чтобы
+        // кнопка «Оставить отзыв» пропала, а не зацикливала ошибку.
+        if (e.code == '23505') {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Вы уже оставили отзыв на этот заказ.')),
+          );
+          Navigator.of(context).pop(true);
+          return;
+        }
         setState(() => _submitting = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Не удалось отправить отзыв: ${e.message}')),
+          const SnackBar(content: Text('Не удалось отправить отзыв. Попробуйте ещё раз.')),
         );
         return;
       } catch (_) {

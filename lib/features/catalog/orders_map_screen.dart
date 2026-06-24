@@ -740,15 +740,19 @@ class _OrdersMapFullScreenState extends State<OrdersMapFullScreen>
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: <Widget>[
-              Text(o.equipment,
-                  style: TextStyle(
-                    fontFamily: 'Roboto',
-                    fontSize: 12.sp,
-                    color: matched
-                        ? AppColors.primary
-                        : AppColors.textTertiary,
-                    height: 1.3,
-                  )),
+              Flexible(
+                child: Text(o.equipment,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontFamily: 'Roboto',
+                      fontSize: 12.sp,
+                      color: matched
+                          ? AppColors.primary
+                          : AppColors.textTertiary,
+                      height: 1.3,
+                    )),
+              ),
               Text(o.publishedAgo,
                   style: TextStyle(
                     fontFamily: 'Roboto',

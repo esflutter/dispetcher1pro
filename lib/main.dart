@@ -17,6 +17,7 @@ import 'core/auth/auth_reset.dart';
 import 'core/realtime/realtime_service.dart';
 import 'core/router.dart';
 import 'core/settings/settings_service.dart';
+import 'features/shell/main_shell.dart';
 import 'features/support/chat_screen.dart';
 import 'core/theme/system_bar_style.dart';
 
@@ -123,6 +124,20 @@ Future<void> main() async {
         // Вошли — перечитываем настройки под токеном пользователя, чтобы
         // получить authenticated-only ключи (токен карт map.mapbox_token).
         unawaited(SettingsService.instance.reload());
+        // Вход/регистрация (в т.ч. из гостевого режима). Гость мог общаться с
+        // ассистентом — его переписка живёт в статической ленте чата и в
+        // гостевой серверной сессии (по device_id). При входе чистим их, чтобы
+        // они НЕ «прилипли» к только что вошедшему аккаунту: новый юзер
+        // начинает ассистента с чистого приветствия (resetHistory дёргает и
+        // AiClient.resetSessions — память + сохранённые id, дальше своя история
+        // подтянется из БД). На холодном старте уже-вошедшего юзера приходит
+        // initialSession (не signedIn), поэтому лишнего сброса при перезапуске
+        // не будет. Паритет с приложением заказчика.
+        ChatScreen.resetHistory();
+        // Гость мог стоять на вкладке «Заказы»/«Профиль» (заглушка). Активная
+        // вкладка живёт в статическом сторе и переживает пересоздание shell —
+        // после входа возвращаем на каталог.
+        MainShell.selectedTab.value = 0;
       }
       if (event.event == AuthChangeEvent.signedOut) {
         await RealtimeService.instance.stop();

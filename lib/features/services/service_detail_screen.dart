@@ -177,23 +177,10 @@ class _Content extends StatelessWidget {
                     ],
                   ),
                 ],
-                if (service.description != null &&
-                    service.description!.trim().isNotEmpty) ...<Widget>[
-                  SizedBox(height: 16.h),
-                  Text(
-                    service.description!,
-                    style: AppTextStyles.body
-                        .copyWith(fontSize: 14.sp, height: 1.4),
-                  ),
-                ],
                 SizedBox(height: 16.h),
                 _SectionTitle('Спецтехника'),
                 SizedBox(height: 8.h),
                 _ChipRow(items: service.machineryTitles),
-                SizedBox(height: 16.h),
-                _SectionTitle('Категория работ'),
-                SizedBox(height: 8.h),
-                _ChipRow(items: service.categoryTitles),
                 SizedBox(height: 16.h),
                 if (service.photos.isNotEmpty) ...<Widget>[
                   _SectionTitle('Фото'),

@@ -85,30 +85,38 @@ class CustomerHeader extends StatelessWidget {
                               ),
                             ),
                             SizedBox(width: 4.w),
-                            Text(
-                              _fmtRating(rating),
-                              style: TextStyle(
-                                fontFamily: 'Roboto',
-                                fontSize: 16.sp,
-                                fontWeight: FontWeight.w400,
-                                height: 1.3,
-                                color: AppColors.textPrimary,
+                            Flexible(
+                              child: Text(
+                                _fmtRating(rating),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontFamily: 'Roboto',
+                                  fontSize: 16.sp,
+                                  fontWeight: FontWeight.w400,
+                                  height: 1.3,
+                                  color: AppColors.textPrimary,
+                                ),
                               ),
                             ),
                             SizedBox(width: 16.w),
                           ],
-                          GestureDetector(
-                            behavior: HitTestBehavior.opaque,
-                            onTap: onReviewsTap,
-                            child: Text(
-                              '$reviews ${reviewsWord(reviews)}',
-                              style: TextStyle(
-                                fontFamily: 'Roboto',
-                                fontSize: 16.sp,
-                                fontWeight: FontWeight.w400,
-                                height: 1.3,
-                                color: AppColors.textPrimary,
-                                decoration: TextDecoration.underline,
+                          Flexible(
+                            child: GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: onReviewsTap,
+                              child: Text(
+                                '$reviews ${reviewsWord(reviews)}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontFamily: 'Roboto',
+                                  fontSize: 16.sp,
+                                  fontWeight: FontWeight.w400,
+                                  height: 1.3,
+                                  color: AppColors.textPrimary,
+                                  decoration: TextDecoration.underline,
+                                ),
                               ),
                             ),
                           ),

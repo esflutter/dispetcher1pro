@@ -396,7 +396,12 @@ class _AddCardTile extends StatelessWidget {
               fit: BoxFit.contain,
             ),
             SizedBox(width: 12.w),
-            Text('Добавить карту', style: AppTextStyles.bodyMedium),
+            Flexible(
+              child: Text('Добавить карту',
+                  style: AppTextStyles.bodyMedium,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis),
+            ),
           ],
         ),
       ),

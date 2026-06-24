@@ -3,6 +3,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 import 'package:smooth_page_indicator/smooth_page_indicator.dart';
 
+import '../../core/onboarding_prefs.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/widgets/primary_button.dart';
@@ -61,7 +62,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         curve: Curves.easeOut,
       );
     } else {
-      context.go('/auth/phone');
+      // Последний шаг — сразу в каталог (гость смотрит ленту без входа,
+      // App Store 5.1.1). Вход потребуется только на действиях и в аккаунтных
+      // разделах (см. guest_gate.dart). markSeen, чтобы онбординг не всплывал
+      // при каждом запуске.
+      OnboardingPrefs.markSeen();
+      context.go('/shell');
     }
   }
 
@@ -197,7 +203,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     ),
                     SizedBox(height: 19.h),
 
-                    // Button
+                    // Одна кнопка «Далее» на всех шагах; на последнем —
+                    // сразу открывает каталог без входа (см. _onNext).
                     Padding(
                       padding: EdgeInsets.symmetric(horizontal: 16.w),
                       child: PrimaryButton(

@@ -749,12 +749,9 @@ class _OrdersMapWithCardState extends State<_OrdersMapWithCard>
                   children: <Widget>[
                     // Все виды спецтехники заказа — тот же стиль, что
                     // в MyOrderCard и других списках (серый, 12sp, через
-                    // тройной пробел). Если техники много и она не
-                    // помещается в одну строку с датой публикации,
-                    // Expanded заворачивает её на следующие строки;
-                    // дата при этом остаётся справа сверху, между
-                    // техникой и датой — отступ 12.w, чтобы строки не
-                    // упирались друг в друга.
+                    // тройной пробел). Обычно влезает в одну строку; длинное
+                    // название с дефисом может уйти на вторую, дальше —
+                    // многоточие. Дата публикации остаётся справа, отступ 12.w.
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: <Widget>[
@@ -767,17 +764,22 @@ class _OrdersMapWithCardState extends State<_OrdersMapWithCard>
                               color: AppColors.textTertiary,
                               height: 1.3,
                             ),
-                            softWrap: true,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                         SizedBox(width: 12.w),
-                        Text(
-                          formatPublishedAgo(o.publishedAt),
-                          style: TextStyle(
-                            fontFamily: 'Roboto',
-                            fontSize: 12.sp,
-                            color: AppColors.textTertiary,
-                            height: 1.3,
+                        Flexible(
+                          child: Text(
+                            formatPublishedAgo(o.publishedAt),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontFamily: 'Roboto',
+                              fontSize: 12.sp,
+                              color: AppColors.textTertiary,
+                              height: 1.3,
+                            ),
                           ),
                         ),
                       ],

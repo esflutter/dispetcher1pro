@@ -62,6 +62,12 @@ class OrderCard extends StatelessWidget {
                       ],
                     ),
                     style: tagStyle,
+                    // Обычно техника влезает в одну строку. Длинное название с
+                    // дефисом (напр. «Кран-манипулятор») может уйти на вторую,
+                    // дальше — многоточие, а не бесконечный перенос. Все виды
+                    // всё равно видны на детали заказа.
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
                 SizedBox(width: 8.w),

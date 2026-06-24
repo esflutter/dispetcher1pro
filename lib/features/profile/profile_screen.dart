@@ -407,7 +407,10 @@ class _ProfileMenuItem extends StatelessWidget {
           child: Row(
             children: <Widget>[
               Expanded(
-                child: Text(label, style: AppTextStyles.body),
+                child: Text(label,
+                    style: AppTextStyles.body,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis),
               ),
               Image.asset('assets/icons/profile/arrow_right.webp',
                   width: 16.r, height: 16.r),
@@ -504,6 +507,9 @@ class _PrimaryActionButton extends StatelessWidget {
           ),
         ),
         child: Text(label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
             style: AppTextStyles.button.copyWith(color: Colors.white)),
       ),
     );

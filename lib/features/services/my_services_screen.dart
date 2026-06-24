@@ -315,9 +315,9 @@ class _ServicesList extends StatelessWidget {
           child: ServiceCard(
             title: item.title,
             machinery: item.machinery,
-            description: item.description,
             pricePerHour: item.pricePerHour,
             pricePerDay: item.pricePerDay,
+            minOrder: item.minOrder,
             onTap: () async {
               if (!item.isPaid) {
                 // Неоплаченная услуга — paywall «Оплатите размещение

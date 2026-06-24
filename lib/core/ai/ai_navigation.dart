@@ -16,6 +16,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:dispatcher_1/core/auth/guest_gate.dart';
 import 'package:dispatcher_1/core/utils/support_contact.dart';
 import 'package:dispatcher_1/features/shell/main_shell.dart';
 
@@ -53,6 +54,14 @@ Future<void> openAssistantChat(
 /// таба (а не push'ем второй копии), остальное — push'ем поверх чата.
 /// Неизвестный ключ — ничего не делаем (молча, без краша).
 void navigateAssistantAction(BuildContext context, String action) {
+  // Гость: разделы аккаунта (услуги/подписка/график/карточка/документы/отзывы/
+  // мои заказы/способы оплаты) доступны только после входа. Вместо «тупого»
+  // перехода в экран для вошедших показываем приглашение войти. Каталог
+  // (просмотр заказов) и поддержка (внешний мессенджер) — без входа.
+  if (isGuest && action != 'open_catalog' && action != 'contact_support') {
+    showGuestAuthPrompt(context, message: 'Этот раздел доступен после входа.');
+    return;
+  }
   switch (action) {
     case 'open_cards':
       context.push('/subscription/cards');

@@ -18,6 +18,7 @@ import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:dispatcher_1/core/ai/device_id.dart';
 import 'package:dispatcher_1/core/config/env.dart';
 import 'package:dispatcher_1/core/user_location.dart';
 
@@ -284,6 +285,22 @@ class AiClient {
     ];
     if (ids.isEmpty) return const <Map<String, dynamic>>[];
     try {
+      // Гость (без сессии) не может читать ai_messages напрямую (RLS только для
+      // вошедших). Историю отдаёт RPC по device_id — она вернёт сообщения
+      // только тех сессий, чей device_id совпадает (его знает только это устройство).
+      if (_sb.auth.currentSession == null) {
+        final String deviceId = await DeviceId.get();
+        final List<dynamic> grows = await _sb.rpc(
+          'get_guest_history',
+          params: <String, dynamic>{
+            'p_session_ids': ids,
+            'p_device_id': deviceId,
+          },
+        );
+        return grows
+            .whereType<Map<String, dynamic>>()
+            .toList(growable: false);
+      }
       final List<dynamic> rows = await _sb
           .from('ai_messages')
           .select('role, content, data, created_at')
@@ -313,18 +330,21 @@ class AiClient {
   Stream<AiChatChunk> chatStream(String message) async* {
     final sb = _sb;
     final session = sb.auth.currentSession;
-    if (session == null) {
-      throw Exception('unauthorized');
-    }
+    // Гость (без сессии) общается с ассистентом по device_id и анонимному
+    // ключу — сервер применит гостевые дневные лимиты (как в приложении заказчика).
+    final bool guest = session == null;
+    final String bearer = guest ? Env.supabaseAnonKey : session.accessToken;
+    final String? deviceId = guest ? await DeviceId.get() : null;
     final url = '${Env.supabaseUrl}/functions/v1/ai-chat-stream';
     final req = http.Request('POST', Uri.parse(url));
     req.headers['Content-Type']  = 'application/json';
-    req.headers['Authorization'] = 'Bearer ${session.accessToken}';
+    req.headers['Authorization'] = 'Bearer $bearer';
     req.headers['apikey']        = Env.supabaseAnonKey;
     req.body = jsonEncode(<String, dynamic>{
       'message': message,
       'app':     app,
       'session_id': ?_sessionIds[AiChatKind.chat],
+      'device_id':  ?deviceId,
     });
 
     // ВАЖНО: держим Client в переменной, чтобы закрыть его в finally —
@@ -347,6 +367,16 @@ class AiClient {
             msg = obj['message'] as String;
           }
         } catch (_) {/* тела нет/не JSON — оставляем дефолт */}
+        throw AiQuotaExceeded(msg);
+      }
+      if (resp.statusCode == 429) {
+        // Часовой лимит по IP (гость): показываем дружелюбный текст из тела.
+        String msg = 'Слишком много запросов за короткое время. '
+            'Попробуйте чуть позже или войдите в аккаунт.';
+        try {
+          final dynamic o = jsonDecode(await resp.stream.bytesToString());
+          if (o is Map && o['message'] is String) msg = o['message'] as String;
+        } catch (_) {/* тела нет — оставляем дефолт */}
         throw AiQuotaExceeded(msg);
       }
       if (resp.statusCode == 400) {
@@ -465,11 +495,17 @@ class AiClient {
     AiChatKind kind,
     String? intent,
   ) async {
+    // Гость (без сессии) — передаём device_id для гостевой квоты ассистента
+    // (поиск заказов). Создание (slot-fill) и общий не-стрим чат гостю
+    // недоступны: сервер ответит 401, экран предложит войти.
+    final String? deviceId =
+        _sb.auth.currentSession == null ? await DeviceId.get() : null;
     final body = <String, dynamic>{
       'message': message,
       'app':     app,
       'session_id': ?_sessionIds[_sessionBucket(kind)],
       'intent':     ?intent,
+      'device_id':  ?deviceId,
       // GPS-координаты пользователя (если он разрешил геолокацию): в поиске
       // сервер считает по ним точное расстояние «от вас», а при создании
       // услуги — сам определяет город/адрес по координатам (обратный
@@ -584,6 +620,12 @@ class AiClient {
     final Map<String, dynamic> qp = <String, dynamic>{'format': format};
     // Для сырого PCM (фолбэк без Opus) серверу нужна частота дискретизации.
     if (format == 'lpcm') qp['sample_rate'] = '16000';
+    // Гость: device_id + app для гостевой квоты голоса (тело занято аудио,
+    // поэтому идентификаторы — в query-параметрах).
+    if (_sb.auth.currentSession == null) {
+      qp['device_id'] = await DeviceId.get();
+      qp['app'] = app;
+    }
     try {
       final FunctionResponse res = await _sb.functions.invoke(
         'stt-yandex',

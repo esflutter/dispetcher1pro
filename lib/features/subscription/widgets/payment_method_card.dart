@@ -177,20 +177,26 @@ class _PaymentMethodCardState extends State<PaymentMethodCard> {
         activateTrial: widget.activateTrial,
       );
       if (!mounted) return;
-      // Уходим на экран результата (он сам поллит статус). Стек
-      // заменяется на /subscription/payment/result, paywall
-      // размонтируется. После «Готово» payment_result_screen
-      // уведёт на returnPath (или /shell, если не задан).
-      context.go(
-        '/subscription/payment/result'
-        '?id=${Uri.encodeComponent(result.paymentId)}$returnTail$bindingTail',
-      );
-      if (result.confirmationUrl != null) {
-        final bool ok = await launchUrl(
-          Uri.parse(result.confirmationUrl!),
-          mode: LaunchMode.externalApplication,
-        );
-        if (!ok && mounted) {
+      final String? confUrl = result.confirmationUrl;
+      // Если нужно подтверждение в браузере (3DS / не-карточный сохранённый
+      // способ), открываем форму ДО перехода на экран ожидания. Раньше порядок
+      // был обратный (сначала context.go, потом launchUrl): после go виджет
+      // размонтирован, и обработчик неуспеха открытия (if (!ok && mounted)) не
+      // срабатывал — при невозможности открыть браузер юзер видел вечный
+      // спиннер без подсказки. Теперь сбой открытия виден, и в спиннер не уходим.
+      if (confUrl != null) {
+        bool ok = false;
+        try {
+          ok = await launchUrl(
+            Uri.parse(confUrl),
+            mode: LaunchMode.externalApplication,
+          );
+        } catch (_) {
+          ok = false;
+        }
+        if (!ok) {
+          if (!mounted) return;
+          setState(() => _saving = false);
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text(
@@ -200,8 +206,21 @@ class _PaymentMethodCardState extends State<PaymentMethodCard> {
               duration: Duration(seconds: 4),
             ),
           );
+          return;
         }
       }
+      if (!mounted) return;
+      // Уходим на экран результата (он сам поллит статус). Прокидываем
+      // confirmation_url — чтобы там была кнопка «Открыть форму оплаты»
+      // повторно (если юзер закрыл браузер не заплатив). После «Готово»
+      // экран уведёт на returnPath (или /shell, если не задан).
+      final String confTail =
+          confUrl == null ? '' : '&conf=${Uri.encodeComponent(confUrl)}';
+      context.go(
+        '/subscription/payment/result'
+        '?id=${Uri.encodeComponent(result.paymentId)}'
+        '$returnTail$bindingTail$confTail',
+      );
     } on PaymentError catch (e) {
       if (!mounted) return;
       setState(() => _saving = false);
@@ -342,13 +361,17 @@ class _NewCardRow extends StatelessWidget {
               height: 28.r,
             ),
             SizedBox(width: 12.w),
-            Text(
-              'Новая карта',
-              style: TextStyle(
-                fontFamily: 'Roboto',
-                fontSize: 16.sp,
-                fontWeight: FontWeight.w400,
-                color: AppColors.textPrimary,
+            Flexible(
+              child: Text(
+                'Новая карта',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontFamily: 'Roboto',
+                  fontSize: 16.sp,
+                  fontWeight: FontWeight.w400,
+                  color: AppColors.textPrimary,
+                ),
               ),
             ),
           ],

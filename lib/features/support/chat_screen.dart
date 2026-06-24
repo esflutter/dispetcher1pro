@@ -10,6 +10,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:dispatcher_1/core/ai/ai_client.dart';
 import 'package:dispatcher_1/core/ai/chat_intent.dart';
 import 'package:dispatcher_1/core/ai/stt_recorder.dart';
+import 'package:dispatcher_1/core/auth/guest_gate.dart';
 import 'package:dispatcher_1/core/storage/storage_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
@@ -141,6 +142,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
 
     if (initial == 'verify_documents') {
+      if (isGuest) {
+        showGuestAuthPrompt(context,
+            message: 'Авторизуйтесь, чтобы отправить документы на проверку.');
+        return;
+      }
       _awaitingDocuments = true;
       _addBotMessage(
         'Отправьте, пожалуйста, фото документов, чтобы мы могли '
@@ -157,6 +163,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
 
     if (initial == 'create_service' || initial == 'Разместить услугу') {
+      if (isGuest) {
+        showGuestAuthPrompt(context,
+            message: 'Авторизуйтесь, чтобы разместить услугу. '
+                'А пока можно искать заказы и задавать вопросы.');
+        return;
+      }
       _mode = AiChatKind.slotFillService;
       // Чистим прошлую слот-сессию — «Новая услуга» должна начинаться с пустого
       // черновика, а не продолжать предыдущую услугу этого же запуска.
@@ -174,6 +186,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     if (initial == 'create_card' ||
         initial == 'Заполнить карточку' ||
         initial == 'Создать карточку') {
+      if (isGuest) {
+        showGuestAuthPrompt(context,
+            message: 'Авторизуйтесь, чтобы создать карточку исполнителя.');
+        return;
+      }
       _mode = AiChatKind.slotFillCard;
       // Чистим прошлую слот-сессию карточки — «новая» карточка должна начинаться
       // с пустого черновика, иначе поля прошлой (город/радиус/статус/опыт)
@@ -439,6 +456,21 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       // местоположение», «у меня в Москве») — это ОТВЕТЫ слот-филлу, на них из
       // режима НЕ выходим (иначе терялись черновик и геопозиция).
       _mode = AiChatKind.chat;
+    }
+
+    // Гостю создание (услуга/карточка) недоступно — slot-fill требует входа.
+    // Перехватываем ПОСЛЕ детектора режима, ДО отправки на сервер (иначе он
+    // вернул бы 401 без понятного объяснения). Поиск и обычный чат гостю ок.
+    if (isGuest &&
+        (_mode == AiChatKind.slotFillService ||
+            _mode == AiChatKind.slotFillCard ||
+            _mode == AiChatKind.slotFillOrder)) {
+      _mode = AiChatKind.chat;
+      if (mounted) setState(() => _isProcessing = false);
+      await showGuestAuthPrompt(context,
+          message: 'Авторизуйтесь, чтобы создавать услуги и карточку. '
+              'А пока можно искать заказы и задавать вопросы.');
+      return;
     }
 
     if (_mode == AiChatKind.search) {
@@ -980,6 +1012,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                     _QuickActionChip(
                       label: 'Разместить услугу',
                       onTap: () {
+                        if (isGuest) {
+                          showGuestAuthPrompt(context,
+                              message: 'Авторизуйтесь, чтобы разместить услугу. '
+                                  'А пока можно искать заказы и задавать вопросы.');
+                          return;
+                        }
                         _mode = AiChatKind.slotFillService;
                         AiClient.instance.startFreshSlot(AiChatKind.slotFillService);
                         _addBotMessage('Давайте оформлю услугу. С какой техникой работаете и по какой цене (₽/час или ₽/день)? Можно голосом. При желании прикрепите фото техники/работ — добавлю их к услуге.');
@@ -997,6 +1035,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                     _QuickActionChip(
                       label: 'Заполнить карточку',
                       onTap: () {
+                        if (isGuest) {
+                          showGuestAuthPrompt(context,
+                              message:
+                                  'Авторизуйтесь, чтобы создать карточку исполнителя.');
+                          return;
+                        }
                         _mode = AiChatKind.slotFillCard;
                         AiClient.instance.startFreshSlot(AiChatKind.slotFillCard);
                         _addBotMessage('Заполню вашу карточку исполнителя. В каком городе вы работаете? Можно ответить голосом.');

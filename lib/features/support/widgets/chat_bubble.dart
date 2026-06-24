@@ -215,6 +215,9 @@ class _NavButton extends StatelessWidget {
         ),
         child: Text(
           label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.center,
           style: AppTextStyles.body.copyWith(
             color: AppColors.primary,
             fontSize: 14.sp,
@@ -553,6 +556,9 @@ class _DraftReadyHandoffState extends State<_DraftReadyHandoff> {
                 ),
                 child: Text(
                   buttonLabel,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
                   style: AppTextStyles.body.copyWith(
                     color: published ? AppColors.textTertiary : Colors.white,
                     fontSize: 15.sp, fontWeight: FontWeight.w600,

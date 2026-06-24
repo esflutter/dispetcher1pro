@@ -200,12 +200,14 @@ final GoRouter appRouter = GoRouter(
         final bool binding =
             state.uri.queryParameters['binding'] == '1';
         final String? returnPath = state.uri.queryParameters['return'];
+        final String? conf = state.uri.queryParameters['conf'];
         return PaymentResultScreen(
           paymentId: paymentId,
           binding: binding,
           returnPath: (returnPath == null || returnPath.isEmpty)
               ? null
               : returnPath,
+          confirmationUrl: (conf == null || conf.isEmpty) ? null : conf,
         );
       },
     ),

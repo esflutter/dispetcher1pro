@@ -139,9 +139,22 @@ class DeepLinks {
 
   Future<String?> _findLatestPendingPaymentId() async {
     try {
-      final SupabaseClient client = Supabase.instance.client;
-      final User? user = client.auth.currentUser;
+      // Холодный старт по возврату с оплаты: сессия восстанавливается
+      // асинхронно — в первый момент currentUser ещё null, хотя юзер
+      // залогинен. Ждём её появления до ~4с, иначе свежесозданный
+      // pending-платёж не находится и экран результата зависает.
+      User? user;
+      for (int i = 0; i < 40; i++) {
+        try {
+          user = Supabase.instance.client.auth.currentUser;
+        } catch (_) {
+          user = null; // Supabase ещё не инициализирован
+        }
+        if (user != null) break;
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
       if (user == null) return null;
+      final SupabaseClient client = Supabase.instance.client;
       // Окно 10 минут — гарантирует, что мы подхватим тот pending,
       // который юзер только что создал из приложения и пошёл оплачивать
       // в браузер. Старые «трупы» pending'ов от брошенных оплат

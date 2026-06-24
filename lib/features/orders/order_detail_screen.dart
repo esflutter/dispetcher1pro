@@ -16,6 +16,7 @@ import 'package:dispatcher_1/core/widgets/photo_gallery_screen.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
 import 'package:dispatcher_1/features/catalog/customer_card_screen.dart';
 import 'package:dispatcher_1/features/catalog/widgets/catalog_search_bar.dart';
+import 'package:dispatcher_1/features/catalog/widgets/subscription_paywall.dart';
 import 'package:dispatcher_1/features/orders/review_screen.dart';
 import 'package:dispatcher_1/features/orders/widgets/order_alerts.dart';
 import 'package:dispatcher_1/features/orders/widgets/order_status_pill.dart';
@@ -698,8 +699,29 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
                   return;
                 }
                 if (!VerificationStatus.hasSubscription) {
-                  final bool? go = await showSubscriptionPausedDialog(context);
-                  if (go == true && mounted) context.push('/subscription/manage');
+                  // «Приостановлена» (возобновить) показываем ТОЛЬКО пока
+                  // оплаченный период ещё не истёк — тогда выключено лишь
+                  // автосписание. Если период закончился (paid_until в прошлом
+                  // или его нет) — подписка реально закончилась, и предлагать
+                  // «возобновить» нечего: ведём в маркетинговый paywall, как и
+                  // в гейте отклика. На текст диалога ориентироваться нельзя —
+                  // он остаётся заполненным и у полностью истёкшей подписки.
+                  final DateTime? paidUntil =
+                      VerificationStatus.subscriptionPaidUntil;
+                  if (paidUntil != null && paidUntil.isAfter(DateTime.now())) {
+                    final bool? go =
+                        await showSubscriptionPausedDialog(context);
+                    if (go == true && mounted) {
+                      context.push('/subscription/manage');
+                    }
+                    return;
+                  }
+                  await Navigator.of(context).push<void>(
+                    MaterialPageRoute<void>(
+                      fullscreenDialog: true,
+                      builder: (_) => const SubscriptionPaywall(),
+                    ),
+                  );
                   return;
                 }
                 // На `waiting_executor` → `accepted` уже зафиксирована

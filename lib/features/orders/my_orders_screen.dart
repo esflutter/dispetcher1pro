@@ -535,16 +535,27 @@ class _OrdersSegmented extends StatelessWidget {
                         color: i == index
                             ? AppColors.primary
                             : AppColors.surface,
-                        child: Text(
-                          items[i],
-                          style: TextStyle(
-                            fontFamily: 'Roboto',
-                            fontSize: 14.sp,
-                            fontWeight: FontWeight.w400,
-                            height: 1.3,
-                            color: i == index
-                                ? Colors.white
-                                : AppColors.textPrimary,
+                        // «Не принятые» длиннее «Новые»/«Принятые». Чтобы не
+                        // переносить на вторую строку: одна строка, единый чуть
+                        // меньший кегль для всех вкладок; если совсем не влезает —
+                        // многоточие, а не кривой перенос.
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 4.w),
+                          child: Text(
+                            items[i],
+                            maxLines: 1,
+                            softWrap: false,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontFamily: 'Roboto',
+                              fontSize: 13.sp,
+                              fontWeight: FontWeight.w400,
+                              height: 1.3,
+                              color: i == index
+                                  ? Colors.white
+                                  : AppColors.textPrimary,
+                            ),
                           ),
                         ),
                       ),

@@ -13,7 +13,6 @@ import 'package:dispatcher_1/core/my_services/my_services_service.dart';
 import 'package:dispatcher_1/core/storage/storage_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
-import 'package:dispatcher_1/core/utils/photo_source.dart';
 import 'package:dispatcher_1/core/utils/thousand_separator_formatter.dart';
 import 'package:dispatcher_1/core/widgets/dark_sub_app_bar.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
@@ -293,25 +292,6 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
   }
 
 
-  Future<void> _addPhoto() async {
-    final int remaining = 8 - _photos.length;
-    if (remaining <= 0) return;
-    final List<String> picked =
-        await pickMultipleImagesFromGallery(limit: remaining, context: context);
-    if (picked.isEmpty || !mounted) return;
-    final List<String> kept =
-        picked.length > remaining ? picked.sublist(0, remaining) : picked;
-    setState(() => _photos.addAll(kept));
-    if (picked.length > remaining) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Можно добавить не более 8 фото. Добавлены первые ${kept.length}.',
-          ),
-        ),
-      );
-    }
-  }
 
   @override
   void dispose() {
@@ -520,28 +500,6 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
                       ..add(v);
                   }),
                 ),
-                SizedBox(height: 16.h),
-                _SectionTitle('Фото'),
-                SizedBox(height: 4.h),
-                Text(
-                  'По желанию добавьте фото, до 8 шт.',
-                  style: TextStyle(
-                    fontFamily: 'Roboto',
-                    fontSize: 14.sp,
-                    fontWeight: FontWeight.w400,
-                    height: 1.3,
-                    color: AppColors.textTertiary,
-                  ),
-                ),
-                SizedBox(height: 8.h),
-                if (_photos.isNotEmpty) ...[
-                  _PhotosGrid(
-                    photos: _photos,
-                    onRemove: (i) => setState(() => _photos.removeAt(i)),
-                  ),
-                  SizedBox(height: 8.h),
-                ],
-                _AddPhotosButton(onTap: _addPhoto),
                 SizedBox(height: 16.h),
                 _SectionTitle('Стоимость'),
                 SizedBox(height: 8.h),
@@ -1058,96 +1016,6 @@ class _RadiusOption extends StatelessWidget {
     );
   }
 }
-
-class _PhotosGrid extends StatelessWidget {
-  const _PhotosGrid({required this.photos, required this.onRemove});
-  final List<String> photos;
-  final ValueChanged<int> onRemove;
-
-  @override
-  Widget build(BuildContext context) {
-    return Wrap(
-      spacing: 8.w,
-      runSpacing: 8.h,
-      children: List.generate(photos.length, (i) {
-        return SizedBox(
-          width: 72.r,
-          height: 72.r,
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(10.r),
-                child: imageFromPath(
-                  photos[i],
-                  width: 72.r,
-                  height: 72.r,
-                  fit: BoxFit.cover,
-                  cacheWidth: 300,
-                ),
-              ),
-              Positioned(
-                top: 4.w,
-                right: 4.w,
-                child: GestureDetector(
-                  onTap: () => onRemove(i),
-                  child: Image.asset(
-                    'assets/icons/ui/close_photo.webp',
-                    width: 24.r,
-                    height: 24.r,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      }),
-    );
-  }
-}
-
-class _AddPhotosButton extends StatelessWidget {
-  const _AddPhotosButton({required this.onTap});
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: double.infinity,
-        height: 42.h,
-        decoration: BoxDecoration(
-          color: AppColors.primary,
-          borderRadius: BorderRadius.circular(16.r),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Image.asset(
-              'assets/icons/ui/add_circle.webp',
-              width: 24.r,
-              height: 24.r,
-              fit: BoxFit.contain,
-            ),
-            SizedBox(width: 8.w),
-            Text(
-              'Добавить изображения',
-              style: TextStyle(
-                fontFamily: 'Roboto',
-                fontSize: 15.sp,
-                fontWeight: FontWeight.w600,
-                height: 1.3,
-                color: Colors.white,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 
 /// AppBar режима создания услуги: тёмный фон, крестик вместо стрелки назад.
 class _CreateAppBar extends StatelessWidget implements PreferredSizeWidget {

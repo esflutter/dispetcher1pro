@@ -18,12 +18,17 @@ class Review {
     required this.rating,
     required this.text,
     this.authorAvatarUrl,
+    this.orderTitle,
   });
   final String author;
   final String date;
   final int rating;
   final String text;
   final String? authorAvatarUrl;
+
+  /// Название заказа, по которому оставлен отзыв (строка под именем).
+  /// null/пусто — если связанный заказ недоступен по правам или не найден.
+  final String? orderTitle;
 }
 
 /// Про кого открыт список отзывов. [executor] — отзывы заказчиков об
@@ -110,7 +115,8 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
       final List<Map<String, dynamic>> rows = await client
           .from('reviews')
           .select(
-            'id, rating, text, created_at, '
+            'id, rating, text, created_at, order_title, '
+            'author_name, author_avatar_url, '
             'author:profiles!reviews_author_id_fkey(name, avatar_url)',
           )
           .eq('target_id', targetId)
@@ -140,6 +146,9 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
       } catch (_) {
         // При недоступном агрегате ниже считаем по выборке.
       }
+      // Название заказа теперь хранится прямо в строке отзыва
+      // (денормализовано триггером на сервере, миграция 099) — поэтому видно
+      // и при просмотре ЧУЖИХ отзывов, где сам заказ недоступен по правам.
       return _ReviewsBundle(
         reviews: rows.map(_dbToReview).toList(),
         aggregate: aggregate,
@@ -151,13 +160,21 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
   }
 
   Review _dbToReview(Map<String, dynamic> r) {
+    // Имя/аватар берём из самой строки отзыва (денормализовано триггером,
+    // миграция 106) — оно есть даже когда профиль автора не читается по правам
+    // (чужой заказчик не виден в каталоге). Join к profiles оставлен мягким
+    // фолбэком на случай пустого значения.
     final dynamic author = r['author'];
-    final String authorName = author is Map<String, dynamic>
-        ? (author['name'] as String?) ?? 'Пользователь'
-        : 'Пользователь';
-    final String? authorAvatarUrl = author is Map<String, dynamic>
-        ? author['avatar_url'] as String?
-        : null;
+    final String? joinedName =
+        author is Map<String, dynamic> ? author['name'] as String? : null;
+    final String? denormName = r['author_name'] as String?;
+    final String authorName = (denormName != null && denormName.trim().isNotEmpty)
+        ? denormName
+        : (joinedName != null && joinedName.trim().isNotEmpty
+            ? joinedName
+            : 'Пользователь');
+    final String? authorAvatarUrl = (r['author_avatar_url'] as String?) ??
+        (author is Map<String, dynamic> ? author['avatar_url'] as String? : null);
     // Supabase возвращает timestamptz всегда в UTC. Без toLocal()
     // отзыв, оставленный в 02:00 МСК (= 23:00 UTC предыдущих суток),
     // показывался юзеру датой на день раньше.
@@ -172,6 +189,7 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
       rating: (r['rating'] as num?)?.toInt() ?? 0,
       text: (r['text'] as String?) ?? '',
       authorAvatarUrl: authorAvatarUrl,
+      orderTitle: r['order_title'] as String?,
     );
   }
 
@@ -311,14 +329,35 @@ class _ReviewCard extends StatelessWidget {
                 children: <Widget>[
                   Row(
                     children: <Widget>[
-                      Text(review.author, style: AppTextStyles.bodyMMedium),
+                      Flexible(
+                        child: Text(review.author,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTextStyles.bodyMMedium),
+                      ),
                       SizedBox(width: 8.w),
                       Image.asset('assets/images/catalog/star.webp',
                           width: 20.r, height: 20.r),
                       SizedBox(width: 3.w),
-                      Text('${review.rating}', style: AppTextStyles.body),
+                      Flexible(
+                        child: Text('${review.rating}',
+                            style: AppTextStyles.body,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis),
+                      ),
                     ],
                   ),
+                  // Название заказа между именем и датой — тем же шрифтом, что
+                  // дата; длинное обрезаем многоточием, без переноса.
+                  if (review.orderTitle != null &&
+                      review.orderTitle!.isNotEmpty) ...<Widget>[
+                    SizedBox(height: 2.h),
+                    Text(review.orderTitle!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTextStyles.body
+                            .copyWith(color: AppColors.textTertiary)),
+                  ],
                   SizedBox(height: 2.h),
                   Text(review.date,
                       style: AppTextStyles.body

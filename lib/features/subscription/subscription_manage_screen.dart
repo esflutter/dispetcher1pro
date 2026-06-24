@@ -313,8 +313,9 @@ Future<bool?> _showDisableDialog(BuildContext context) {
             ),
             SizedBox(height: AppSpacing.xs),
             Text(
-              'Доступ к заказам будет закрыт, а ваши услуги не '
-              'будут отображаться в каталоге',
+              'Автопродление отключится, повторных списаний не будет. '
+              'Доступ к заказам и показ ваших услуг в каталоге сохранятся '
+              'до конца оплаченного периода.',
               style: AppTextStyles.body
                   .copyWith(color: AppColors.textSecondary),
               textAlign: TextAlign.center,

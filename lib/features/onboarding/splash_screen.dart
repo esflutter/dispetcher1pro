@@ -1,9 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/bootstrap/post_login_bootstrap.dart';
+import '../../core/onboarding_prefs.dart';
+import '../../core/push/push_handler.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 
@@ -68,9 +72,22 @@ class _SplashScreenState extends State<SplashScreen> {
 
     await minDelay;
     if (_disposed || !mounted) return;
-    context.go(session == null
-        ? '/onboarding'
-        : (needsRegistration ? '/auth/registration' : '/shell'));
+    if (session == null) {
+      // Гость: после первого онбординга пускаем сразу в ленту заказов
+      // (просмотр без входа разрешён, см. миграцию 101). Вход требуется
+      // только в аккаунтных разделах и на действиях (см. guest_gate.dart).
+      final bool onbSeen = await OnboardingPrefs.seen();
+      if (_disposed || !mounted) return;
+      context.go(onbSeen ? '/shell' : '/onboarding');
+    } else if (needsRegistration) {
+      context.go('/auth/registration');
+    } else {
+      context.go('/shell');
+      // Холодный старт по тапу из пуша: базовый экран установлен, теперь
+      // открываем нужный экран поверх — стек получается [/shell, экран],
+      // и кнопка «назад» ведёт на главную (а не в пустой сплэш).
+      unawaited(PushHandler.instance.consumeColdStartRoute());
+    }
   }
 
   @override

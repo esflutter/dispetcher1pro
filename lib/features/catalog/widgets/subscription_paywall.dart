@@ -160,8 +160,18 @@ class _SubscriptionPaywallState extends State<SubscriptionPaywall>
                   kind: _trialUsed
                       ? PaymentKind.subscription
                       : PaymentKind.cardBinding,
-                  amount: _trialUsed ? (_priceRub ?? 1000) : 1,
+                  // Сумма — только подпись на кнопке; реально списывает сервер
+                  // (берёт цену из settings/фолбэка). Если цена ещё не загрузилась
+                  // (_priceRub == null), НЕ подставляем выдуманное число — карта
+                  // оплаты покажет просто «Оплатить». Раньше тут стоял фолбэк
+                  // 1000, а серверный фолбэк — 490: подпись и списание расходились.
+                  amount: _trialUsed ? _priceRub : 1,
                   activateTrial: !_trialUsed,
+                  // Пейволл вызван из каталога/«Откликнуться». После активации
+                  // триала (он идёт через card_binding) возвращаем юзера на
+                  // главный экран, а не в «Способы оплаты». Без returnPath
+                  // привязочная ветка экрана результата увела бы в список карт.
+                  returnPath: '/shell',
                 ),
               ),
             ),

@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:dispatcher_1/core/ai/ai_navigation.dart';
 import 'package:dispatcher_1/core/analytics/app_analytics.dart';
+import 'package:dispatcher_1/core/auth/guest_gate.dart';
 import 'package:dispatcher_1/core/catalog/catalog_service.dart';
 import 'package:dispatcher_1/core/catalog/format.dart';
 import 'package:dispatcher_1/core/catalog/models.dart';
@@ -98,6 +99,13 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
 
   Future<void> _onRespondTap(OrderDetail order) async {
     if (_responding) return;
+
+    // 0. Гость (без входа) может смотреть заказ, но отклик требует аккаунта.
+    if (isGuest) {
+      await showGuestAuthPrompt(context,
+          message: 'Авторизуйтесь, чтобы откликаться на заказы.');
+      return;
+    }
 
     // 1. Профиль заблокирован.
     if (AccountBlock.isBlocked) {
@@ -427,14 +435,20 @@ class _OrderDetailBody extends StatelessWidget {
                 SizedBox(height: 10.h),
                 Text('№${order.displayNumber.toString().padLeft(8, '0')}',
                     style: AppTextStyles.caption
-                        .copyWith(color: AppColors.textTertiary)),
+                        .copyWith(color: AppColors.textTertiary),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis),
                 SizedBox(height: 4.h),
                 Text(order.title,
-                    style: AppTextStyles.titleL.copyWith(height: 1.2)),
+                    style: AppTextStyles.titleL.copyWith(height: 1.2),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis),
                 SizedBox(height: 7.h),
                 Text(publishedAgo,
                     style: AppTextStyles.caption
-                        .copyWith(color: AppColors.textTertiary)),
+                        .copyWith(color: AppColors.textTertiary),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis),
                 SizedBox(height: 11.h),
                 LabeledSection(
                   title: 'Дата и время аренды',

@@ -93,14 +93,33 @@ class CategoryCard extends StatelessWidget {
               child: Align(
                 alignment: Alignment.topLeft,
                 child: FractionallySizedBox(
-                  widthFactor: 0.66,
-                  child: Text(
-                    title,
-                    style: AppTextStyles.chip,
-                    textAlign: TextAlign.left,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                  widthFactor: 0.82,
+                  child: title.contains('-')
+                      // Через дефис («Экскаватор-погрузчик») — разрешаем перенос
+                      // на вторую строку по дефису. Первая строка идёт по верху
+                      // карточки, где иллюстрации ещё нет, так что не наезжает.
+                      ? Text(
+                          title,
+                          style: AppTextStyles.chip,
+                          textAlign: TextAlign.left,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        )
+                      // Одно слово («Миниэкскаватор», «Минипогрузчик») — держим в
+                      // одну строку. Если на узком экране/крупном системном шрифте
+                      // не помещается — слегка поджимаем размер, но НЕ рвём слово
+                      // посреди и не ставим многоточие.
+                      : FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            title,
+                            style: AppTextStyles.chip,
+                            textAlign: TextAlign.left,
+                            maxLines: 1,
+                            softWrap: false,
+                          ),
+                        ),
                 ),
               ),
             ),

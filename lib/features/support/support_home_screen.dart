@@ -168,6 +168,8 @@ class _ActionChip extends StatelessWidget {
             alignment: Alignment.centerLeft,
             child: Text(
               label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: AppTextStyles.body.copyWith(
                 color: Colors.white,
                 fontSize: 15.sp,

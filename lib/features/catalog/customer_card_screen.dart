@@ -169,8 +169,6 @@ class _Content extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final String statusLabel = _legalStatusLabel(profile.legalStatus);
-    final bool hasAbout =
-        profile.about != null && profile.about!.trim().isNotEmpty;
     final bool showPhone = phone != null && phone!.trim().isNotEmpty;
     final bool showEmail = email != null && email!.trim().isNotEmpty;
     return SafeArea(
@@ -188,10 +186,6 @@ class _Content extends StatelessWidget {
             ],
             if (showEmail) ...<Widget>[
               _Field(label: 'Электронная почта', value: email!),
-              SizedBox(height: 16.h),
-            ],
-            if (hasAbout) ...<Widget>[
-              _Field(label: 'О себе', value: profile.about!),
               SizedBox(height: 16.h),
             ],
             _Field(label: 'Статус', value: statusLabel),
@@ -243,7 +237,10 @@ class _HeaderBlock extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              Text(profile.name, style: AppTextStyles.titleS),
+              Text(profile.name,
+                  style: AppTextStyles.titleS,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis),
               SizedBox(height: 4.h),
               Row(
                 children: <Widget>[

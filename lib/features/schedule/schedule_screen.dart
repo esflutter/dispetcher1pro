@@ -1215,6 +1215,8 @@ class _OrderCard extends StatelessWidget {
         Text(
           order.machinery.join('   '),
           style: tagStyle,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
         ),
         SizedBox(height: 8.h),
         Text(

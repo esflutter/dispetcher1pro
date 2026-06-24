@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'package:dispatcher_1/core/analytics/app_analytics.dart';
 import 'package:dispatcher_1/core/payments/models.dart';
@@ -22,6 +23,7 @@ class PaymentResultScreen extends StatefulWidget {
     required this.paymentId,
     this.binding = false,
     this.returnPath,
+    this.confirmationUrl,
   });
 
   final String paymentId;
@@ -41,6 +43,13 @@ class PaymentResultScreen extends StatefulWidget {
   /// `null` = `/shell` (поведение по умолчанию для неопознанных оплат
   /// и cold-start deep-link'ов без параметра).
   final String? returnPath;
+
+  /// URL формы подтверждения оплаты ЮKassa (3DS / кошелёк). Если задан — во
+  /// время ожидания показываем кнопку «Открыть форму оплаты», чтобы вернуть
+  /// пользователя к подтверждению (браузер не открылся / закрыт не заплатив).
+  /// Приходит только при оплате; из deep-link возврата не передаётся (там
+  /// оплата уже подтверждена).
+  final String? confirmationUrl;
 
   @override
   State<PaymentResultScreen> createState() => _PaymentResultScreenState();
@@ -101,6 +110,14 @@ class _PaymentResultScreenState extends State<PaymentResultScreen> {
     if (!mounted || myAttempt != _attempt) return;
     if (first == PaymentStatus.succeeded ||
         first == PaymentStatus.refunded) {
+      // Платёж уже подтверждён — гасим режим ожидания, чтобы убрать кнопку
+      // «Открыть форму оплаты» (открывать уже нечего) ещё до авто-закрытия.
+      if (mounted && myAttempt == _attempt) {
+        setState(() {
+          _status = first;
+          _polling = false;
+        });
+      }
       AppAnalytics.log('payment_success', <String, Object>{
         'kind': widget.binding ? 'card_binding' : 'payment',
       });
@@ -192,50 +209,74 @@ class _PaymentResultScreenState extends State<PaymentResultScreen> {
   void _onClose() {
     if (_closed) return;
     _closed = true;
+
+    // Whitelist обязателен: returnPath приходит из deep-link
+    // `dispatcher1pro://payment/result?return=...`. Без проверки
+    // злоумышленник мог бы оформить ссылку с return=/admin/... (когда такой
+    // роут появится) — и мы открыли бы его сами после успешного callback'а
+    // от YooKassa.
+    const Set<String> allowedReturnPaths = <String>{
+      '/shell',
+      '/profile',
+      '/services',
+      '/executor-card',
+      '/subscription/manage',
+      '/subscription/cards',
+    };
+    final String? rp = widget.returnPath;
+    final String? safeRp =
+        (rp != null && allowedReturnPaths.contains(rp)) ? rp : null;
+
+    // Уводит по returnPath, если он задан; возвращает false, если returnPath
+    // нет (тогда вызывающий применяет дефолт). Для не-корневых путей строим
+    // синтетический стек /profile → returnPath, чтобы back с «Моих услуг» /
+    // «Карточки исполнителя» вёл на вкладку «Профиль» главного шелла.
+    bool goByReturnPath() {
+      if (safeRp == null) return false;
+      if (safeRp == '/shell' || safeRp == '/profile') {
+        appRouter.go(safeRp);
+      } else {
+        appRouter.go('/profile');
+        appRouter.push(safeRp);
+      }
+      return true;
+    }
+
     if (widget.binding) {
-      appRouter.go('/shell');
-      appRouter.push('/subscription/manage');
-      appRouter.push('/subscription/cards');
+      // Привязка карты приходит сюда в ДВУХ сценариях:
+      //  - «Добавить карту» из «Способов оплаты» (returnPath нет) — оставляем
+      //    стек /shell → управление → карты, чтобы back вёл к списку карт;
+      //  - активация пробного периода из каталога/услуги/карточки (returnPath
+      //    задан) — уводим туда, ради чего юзер активировал триал, а не в
+      //    «Способы оплаты». Пейволл открыт через MaterialPageRoute, поэтому
+      //    чистим root Navigator (как в ветке ниже), иначе под go_router
+      //    остаётся невидимый слой и back срабатывает не сразу.
+      if (safeRp != null) {
+        final NavigatorState root =
+            Navigator.of(context, rootNavigator: true);
+        while (root.canPop()) {
+          root.pop();
+        }
+        goByReturnPath();
+      } else {
+        appRouter.go('/shell');
+        appRouter.push('/subscription/manage');
+        appRouter.push('/subscription/cards');
+      }
     } else {
       // ServicePaywall и подобные открываются через
       // `Navigator.of(context).push(MaterialPageRoute(...))` поверх
-      // GoRouter-страницы. После `appRouter.go('/services')` go_router
-      // меняет верхнюю страницу, но MaterialPageRoute из root Navigator
-      // не выпадает — остаётся невидимый «слой», и back-кнопка на
-      // /services сначала закрывает его (выглядит как «не работает»).
+      // GoRouter-страницы. После `appRouter.go(...)` go_router меняет верхнюю
+      // страницу, но MaterialPageRoute из root Navigator не выпадает —
+      // остаётся невидимый «слой», и back-кнопка сперва закрывает его.
       // Чистим root Navigator до go_router'а.
       final NavigatorState root =
           Navigator.of(context, rootNavigator: true);
       while (root.canPop()) {
         root.pop();
       }
-      // Строим синтетический стек go_router: /profile → returnPath. Так
-      // back-кнопка на «Мои услуги» / «Карточка исполнителя» вернёт
-      // юзера на вкладку «Профиль» главного шелла (а не куда-то в
-      // зависимости от того, откуда он зашёл в paywall). Для общей
-      // подписки или других кейсов без returnPath — просто /shell.
-      //
-      // Whitelist обязателен: returnPath приходит из deep-link
-      // `dispatcher1pro://payment/result?return=...`. Без проверки
-      // злоумышленник может оформить ссылку с return=/admin/...
-      // (когда такой роут появится) — и мы откроем его сами после
-      // успешного callback'а от YooKassa.
-      const Set<String> allowedReturnPaths = <String>{
-        '/shell',
-        '/profile',
-        '/services',
-        '/executor-card',
-        '/subscription/manage',
-        '/subscription/cards',
-      };
-      final String? rp = widget.returnPath;
-      final String? safeRp =
-          (rp != null && allowedReturnPaths.contains(rp)) ? rp : null;
-      if (safeRp == null || safeRp == '/shell' || safeRp == '/profile') {
-        appRouter.go(safeRp ?? '/shell');
-      } else {
-        appRouter.go('/profile');
-        appRouter.push(safeRp);
+      if (!goByReturnPath()) {
+        appRouter.go('/shell');
       }
     }
   }
@@ -306,8 +347,10 @@ class _PaymentResultScreenState extends State<PaymentResultScreen> {
           SizedBox(height: AppSpacing.sm),
           Text(
             _slow
-                ? 'Платёж обрабатывается дольше обычного. Можно закрыть экран — подписка активируется автоматически, как только банк подтвердит оплату.'
-                : 'Если вы только что оплатили в браузере — статус обновится через несколько секунд.',
+                ? 'Платёж обрабатывается дольше обычного. Можно закрыть экран — всё активируется автоматически, как только банк подтвердит оплату.'
+                : widget.confirmationUrl != null
+                    ? 'Завершите оплату в открывшемся браузере и вернитесь — статус обновится автоматически. Если браузер не открылся, нажмите кнопку ниже.'
+                    : 'Если вы только что оплатили в браузере — статус обновится через несколько секунд.',
             textAlign: TextAlign.center,
             style: AppTextStyles.bodyMRegular
                 .copyWith(color: AppColors.textSecondary),
@@ -384,11 +427,44 @@ class _PaymentResultScreenState extends State<PaymentResultScreen> {
     );
   }
 
+  /// Повторно открыть форму подтверждения оплаты (если браузер не открылся
+  /// или пользователь закрыл его не заплатив). Платёж тот же — confirmation_url
+  /// ЮKassa остаётся валидным до завершения/отмены.
+  Future<void> _reopenPaymentForm() async {
+    if (_closed) return;
+    final String? url = widget.confirmationUrl;
+    if (url == null) return;
+    final Uri? uri = Uri.tryParse(url);
+    // conf приходит из query маршрута — открываем только https-ссылки доменов
+    // ЮKassa/ЮMoney, чтобы подменённый сторонний deep-link не увёл на внешний
+    // сайт (по аналогии с белым списком для returnPath).
+    if (uri == null ||
+        uri.scheme != 'https' ||
+        !(uri.host == 'yoomoney.ru' ||
+            uri.host.endsWith('.yoomoney.ru') ||
+            uri.host == 'yookassa.ru' ||
+            uri.host.endsWith('.yookassa.ru'))) {
+      return;
+    }
+    try {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {/* кнопка остаётся — можно повторить */}
+  }
+
   Widget _buildButton() {
-    // Во время поллинга — без кнопки. Экран сам авто-проверяет статус
-    // и без таймаута. X в левом верхнем углу остаётся как способ выйти
-    // раньше (поллинг прервётся через isCancelled при unmount).
-    if (_polling) return const SizedBox.shrink();
+    if (_polling) {
+      // Если оплата требует подтверждения в браузере — во время ожидания
+      // даём кнопку открыть форму ещё раз (вдруг браузер не открылся или
+      // закрыт не заплатив). Иначе кнопки нет: X слева закрывает, поллинг
+      // прервётся через isCancelled при unmount.
+      if (widget.confirmationUrl != null) {
+        return PrimaryButton(
+          label: 'Открыть форму оплаты',
+          onPressed: _reopenPaymentForm,
+        );
+      }
+      return const SizedBox.shrink();
+    }
     final bool ok = _status == PaymentStatus.succeeded ||
         (widget.binding && _status == PaymentStatus.refunded);
     final String label = ok ? 'Готово' : 'Закрыть';
