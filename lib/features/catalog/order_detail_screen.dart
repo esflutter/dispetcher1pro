@@ -474,17 +474,6 @@ class _OrderDetailBody extends StatelessWidget {
                         .toList(),
                   ),
                 ),
-                if (order.categoryTitles.isNotEmpty)
-                  LabeledSection(
-                    title: 'Категория работ',
-                    child: Wrap(
-                      spacing: 8.w,
-                      runSpacing: 8.h,
-                      children: order.categoryTitles
-                          .map((String c) => _OutlinedChip(label: c))
-                          .toList(),
-                    ),
-                  ),
                 if (order.works.isNotEmpty)
                   LabeledSection(
                     title: 'Характер работ',
