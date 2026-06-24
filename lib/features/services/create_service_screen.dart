@@ -129,15 +129,10 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
     if (pd is num) _priceDayCtrl.text  = pd.toString();
     if (mh is num) _minHoursCtrl.text  = mh.toString();
 
-    // Фото, прикреплённые в чате ассистента (локальные пути) — кладём в форму
-    // как обычные фото: при публикации зальются в service-photos. Лимит 8.
-    final aiPhotos = draft['ai_photos'];
-    if (aiPhotos is List) {
-      for (final p in aiPhotos.whereType<String>()) {
-        if (_photos.length >= 8) break;
-        if (p.trim().isNotEmpty && !_photos.contains(p)) _photos.add(p);
-      }
-    }
+    // Фото из формы услуги убраны (услуга = вид техники + цена + мин. заказ),
+    // поэтому ассистентские ai_photos НЕ подставляем — иначе услуга
+    // публиковалась бы с фото, которыми исполнитель не управляет и которых
+    // не видит в форме.
 
     final machIds = (draft['machinery_ids'] is List)
         ? (draft['machinery_ids'] as List).whereType<int>().toSet()
