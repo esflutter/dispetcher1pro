@@ -1,12 +1,13 @@
 import 'package:geolocator/geolocator.dart';
 
-import 'location_permission.dart';
-
 /// Кэш геопозиции пользователя для ИИ-ассистента.
 ///
-/// Один раз спрашиваем разрешение и берём координаты — дальше переиспользуем.
-/// Нужно ассистенту, чтобы считать расстояние «от вас» точно (от реального
-/// местоположения пользователя), а не от центра города.
+/// Координаты берём ТОЛЬКО если пользователь уже разрешил геолокацию (через
+/// карту, кнопку «Моё местоположение» или фильтр). Сам ассистент разрешение
+/// НЕ запрашивает — иначе системный диалог всплывал бы прямо при открытии
+/// чата (Apple Guideline 5.1.1(iv): запрос разрешения — только по явному
+/// действию пользователя). Если права нет — координаты остаются пустыми, и
+/// ассистент работает по названному городу/центру, как и задумано фолбэком.
 class UserLocation {
   UserLocation._();
 
@@ -38,19 +39,28 @@ class UserLocation {
   // иначе он записал бы чужую геопозицию уже в новую сессию.
   static int _generation = 0;
 
-  /// Best-effort получение координат. Если они уже есть — ничего не делает.
-  /// НИКОГДА не бросает: при отказе в разрешении, выключенном сервисе или
-  /// таймауте просто оставляет координаты пустыми, и ассистент работает по
-  /// городу/центру, как раньше.
+  /// Best-effort: тихо берёт координаты, ЕСЛИ право на геолокацию уже выдано.
+  /// Разрешение НЕ запрашивает (никаких системных диалогов). Если координаты
+  /// уже есть — ничего не делает. Никогда не бросает.
   static Future<void> ensure() {
     if (has) return Future<void>.value();
     return _inFlight ??= _fetch();
   }
 
+  /// Прежнее имя тихого варианта — оставлено для мест, что зовут его явно
+  /// (фоновая сортировка каталога «ближе — выше»). Поведение совпадает с
+  /// [ensure]: разрешение не запрашивается.
+  static Future<void> ensureQuiet() => ensure();
+
   static Future<void> _fetch() async {
     final int gen = _generation;
     try {
-      if (!await ensureLocationPermission()) return;
+      if (!await Geolocator.isLocationServiceEnabled()) return;
+      final LocationPermission p = await Geolocator.checkPermission();
+      if (p != LocationPermission.always &&
+          p != LocationPermission.whileInUse) {
+        return; // права ещё нет — НЕ запрашиваем, тихо выходим
+      }
       final Position pos = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.low,
@@ -63,7 +73,7 @@ class UserLocation {
       lat = pos.latitude;
       lng = pos.longitude;
     } catch (_) {
-      // нет геопозиции — не страшно, поиск работает по названному городу
+      // нет геопозиции — не страшно, ассистент работает по названному городу
     } finally {
       if (gen == _generation) _inFlight = null;
     }
