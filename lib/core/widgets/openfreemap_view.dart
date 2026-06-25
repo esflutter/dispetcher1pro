@@ -622,11 +622,12 @@ class _OpenFreeMapViewState extends State<OpenFreeMapView>
             FlutterMap(
               mapController: _controller,
               options: MapOptions(
-                // Дефолт — Москва. RU-приложение, чужие страны нам
-                // показывать незачем (style.center у OpenFreeMap раньше
-                // ронял карту в Дублин/Атлантику).
+                // Дефолт — Новосибирск (город запуска). RU-приложение, чужие
+                // страны нам показывать незачем (style.center у OpenFreeMap
+                // раньше ронял карту в Дублин/Атлантику). Москву как дефолт
+                // убрали: запуск с НСО, столица здесь — неверный центр.
                 initialCenter:
-                    widget.initialCenter ?? const LatLng(55.7558, 37.6173),
+                    widget.initialCenter ?? const LatLng(55.0084, 82.9357),
                 initialZoom: widget.initialZoom,
                 maxZoom: 18,
                 minZoom: 4,

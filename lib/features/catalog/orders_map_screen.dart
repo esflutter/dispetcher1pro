@@ -250,8 +250,9 @@ class _OrdersMapFullScreenState extends State<OrdersMapFullScreen>
         }
       } catch (_) {/* ignore */}
     }
-    // 5. Совсем ничего — центр РФ (не падаем в Дублин/океан).
-    center ??= const LatLng(55.7558, 37.6173);
+    // 5. Совсем ничего (нет заказов, GPS и города в карточке) — центр
+    // Новосибирска, города запуска. Не Москва: запуск с НСО.
+    center ??= const LatLng(55.0084, 82.9357);
     if (!mounted) return;
     setState(() {
       _initialCenter = center;

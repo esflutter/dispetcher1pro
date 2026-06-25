@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 
 import 'package:dispatcher_1/core/ai/ai_navigation.dart';
@@ -542,6 +543,126 @@ class _OrdersMapWithCardState extends State<_OrdersMapWithCard>
   /// её прячет.
   bool _cardVisible = false;
 
+  /// Умный центр карты, найденный один раз за сессию приложения: GPS, если
+  /// рядом (≤150 км) есть заказы, иначе город с наибольшим числом заказов.
+  /// Кэш статический, потому что виджет карты пересоздаётся по
+  /// ValueKey(orders) при каждой смене фильтра — без кэша центр
+  /// пересчитывался бы и камера прыгала бы в дефолт (Москву).
+  static LatLng? _sessionCenter;
+  static double _sessionZoom = 11;
+
+  @override
+  void initState() {
+    super.initState();
+    // Резолвим центр один раз за сессию. На пустой ленте (заказы ещё грузятся)
+    // выходим без результата — при появлении заказов виджет пересоздастся по
+    // новому ValueKey, initState вызовется снова и центр определится.
+    if (_sessionCenter == null) {
+      // ignore: discarded_futures
+      _resolveCenter();
+    }
+  }
+
+  /// Центр первого рендера: кэш сессии, иначе синхронно — город с
+  /// наибольшим числом заказов (чтобы не было вспышки дефолтной Москвы).
+  LatLng? get _initialCenter => _sessionCenter ?? _densest(_orderCoords());
+  double get _initialZoom => _sessionCenter != null ? _sessionZoom : 11;
+
+  /// Грубый bbox РФ — отсекает бутафорские координаты эмулятора и реальную
+  /// локацию за пределами страны (показывать заказы в РФ, а не пустой океан).
+  static bool _inRussia(double lat, double lon) =>
+      lat >= 41 && lat <= 82 && lon >= 19 && lon <= 180;
+
+  /// Координаты заказов с реальной геопозицией в РФ (без выдуманных моков).
+  List<LatLng> _orderCoords() {
+    final List<LatLng> out = <LatLng>[];
+    for (final OrderListItem o in widget.orders) {
+      final double? lat = o.latitude;
+      final double? lng = o.longitude;
+      if (lat == null || lng == null) continue;
+      if (!_inRussia(lat, lng)) continue;
+      out.add(LatLng(lat, lng));
+    }
+    return out;
+  }
+
+  /// Центр самого «густого» скопления заказов — город, где их больше всего.
+  /// Группируем по ячейкам ~0.5° (≈ размер города), берём самую населённую.
+  static LatLng? _densest(List<LatLng> coords) {
+    if (coords.isEmpty) return null;
+    final Map<String, List<LatLng>> cells = <String, List<LatLng>>{};
+    for (final LatLng p in coords) {
+      final String key =
+          '${(p.latitude * 2).round()}:${(p.longitude * 2).round()}';
+      (cells[key] ??= <LatLng>[]).add(p);
+    }
+    List<LatLng>? best;
+    for (final List<LatLng> list in cells.values) {
+      if (best == null || list.length > best.length) best = list;
+    }
+    double lat = 0, lng = 0;
+    for (final LatLng p in best!) {
+      lat += p.latitude;
+      lng += p.longitude;
+    }
+    return LatLng(lat / best.length, lng / best.length);
+  }
+
+  static bool _ordersNear(LatLng p, List<LatLng> coords) {
+    const Distance d = Distance();
+    for (final LatLng c in coords) {
+      if (d.as(LengthUnit.Kilometer, p, c) <= 150) return true;
+    }
+    return false;
+  }
+
+  /// GPS пользователя в РФ, без диалога разрешения. null — нет разрешения,
+  /// служб, фикса или позиция вне страны.
+  Future<LatLng?> _gps() async {
+    try {
+      final LocationPermission perm = await Geolocator.checkPermission();
+      if (perm != LocationPermission.always &&
+          perm != LocationPermission.whileInUse) {
+        return null;
+      }
+      if (!await Geolocator.isLocationServiceEnabled()) return null;
+      Position? pos = await Geolocator.getLastKnownPosition();
+      pos ??= await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.medium,
+          timeLimit: Duration(seconds: 8),
+        ),
+      );
+      if (_inRussia(pos.latitude, pos.longitude)) {
+        return LatLng(pos.latitude, pos.longitude);
+      }
+    } catch (_) {/* нет геолокации — вернём null */}
+    return null;
+  }
+
+  /// Определяет умный центр и плавно ведёт к нему камеру (если карта уже
+  /// отрисована). Приоритет — как у полноэкранной карты: GPS рядом с
+  /// заказами → город с наибольшим числом заказов.
+  Future<void> _resolveCenter() async {
+    final List<LatLng> coords = _orderCoords();
+    final LatLng? densest = _densest(coords);
+    final LatLng? gps = await _gps();
+    LatLng? center;
+    double zoom = 11;
+    if (gps != null && _ordersNear(gps, coords)) {
+      center = gps;
+      zoom = 13;
+    }
+    center ??= densest;
+    if (center == null) return; // заказов нет — оставляем дефолт карты
+    _sessionCenter = center;
+    _sessionZoom = zoom;
+    if (!mounted) return;
+    try {
+      _mapController.animatedMove(center, zoom, vsync: this);
+    } catch (_) {/* карта ещё не отрисована — поможет initialCenter */}
+  }
+
   @override
   void dispose() {
     // Анимация камеры (animatedMove) хранится глобально по контроллеру и
@@ -631,6 +752,8 @@ class _OrdersMapWithCardState extends State<_OrdersMapWithCard>
     if (widget.orders.isEmpty) {
       return OrdersMapScreen(
         mapController: _mapController,
+        initialCenter: _initialCenter,
+        initialZoom: _initialZoom,
         showZoomControls: true,
         showMyLocation: true,
       );
@@ -649,6 +772,8 @@ class _OrdersMapWithCardState extends State<_OrdersMapWithCard>
         Positioned.fill(
           child: OrdersMapScreen(
             markers: markers,
+            initialCenter: _initialCenter,
+            initialZoom: _initialZoom,
             mapController: _mapController,
             showZoomControls: true,
             showMyLocation: true,
