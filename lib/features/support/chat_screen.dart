@@ -773,11 +773,14 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     final granted = await SttRecorder.instance.ensurePermission();
     if (!granted) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: const Text('Нет доступа к микрофону. Разрешите его в настройках, чтобы отправлять голосовые.'),
-        action: SnackBarAction(
-          label: 'Настройки',
-          onPressed: () => SttRecorder.instance.openSettings(),
+      // НЕ уводим в Настройки (требование Apple, Guideline 5.1.1(iv)):
+      // после отказа в доступе к микрофону просто информируем и предлагаем
+      // текстовый ввод. Системный запрос показывается при первом обращении
+      // (внутри ensurePermission → Permission.microphone.request()).
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text(
+          'Голосовой ввод недоступен без доступа к микрофону — напишите, '
+          'пожалуйста, сообщение текстом.',
         ),
       ));
       return;

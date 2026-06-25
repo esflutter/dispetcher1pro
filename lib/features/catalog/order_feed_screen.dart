@@ -12,7 +12,6 @@ import 'package:dispatcher_1/core/catalog/format.dart';
 import 'package:dispatcher_1/core/catalog/models.dart';
 import 'package:dispatcher_1/core/realtime/realtime_service.dart';
 import 'package:dispatcher_1/core/dadata/dadata_service.dart';
-import 'package:dispatcher_1/core/location_permission.dart';
 import 'package:dispatcher_1/core/utils/mock_coords.dart';
 import 'package:dispatcher_1/core/widgets/openfreemap_view.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
@@ -259,8 +258,12 @@ class _OrderFeedScreenState extends State<OrderFeedScreen> {
                 index: _tab,
                 items: const <String>['Списком', 'На карте'],
                 onChanged: (int v) {
+                  // НЕ запрашиваем геолокацию при переключении на «На карте»
+                  // (Apple 5.1.1(iv): системный запрос — только по явному
+                  // действию пользователя). Сама карта тихо проверяет уже
+                  // выданное право и показывает синюю точку, а кнопку
+                  // «Моё местоположение» пользователь жмёт сам, когда хочет.
                   setState(() => _tab = v);
-                  if (v == 1) ensureLocationPermission();
                 },
               ),
               if (_hasActiveFilter)

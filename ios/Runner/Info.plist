@@ -8,8 +8,6 @@
 		<string>Приложение использует ваше местоположение, чтобы показать заказы и технику поблизости на карте.</string>
 		<key>NSPhotoLibraryUsageDescription</key>
 		<string>Приложение запрашивает доступ к фотографиям, чтобы прикреплять их к услугам и обновлять аватар профиля.</string>
-		<key>NSCameraUsageDescription</key>
-		<string>Приложение использует камеру, чтобы вы могли сделать новое фото для услуги или аватара профиля.</string>
 		<key>NSMicrophoneUsageDescription</key>
 		<string>Микрофон нужен для голосовых сообщений ассистенту — вы диктуете запрос вместо набора текста.</string>
 		<key>CFBundleDevelopmentRegion</key>

@@ -53,9 +53,6 @@ class SttRecorder {
     return result.isGranted;
   }
 
-  /// Открывает настройки приложения (для случая permanently denied).
-  Future<void> openSettings() => openAppSettings();
-
   Future<bool> start() async {
     final granted = await ensurePermission();
     if (!granted) return false;

@@ -1297,19 +1297,15 @@ class AddressBottomSheetState extends State<AddressBottomSheet> {
       final bool granted = await ensureLocationPermission();
       if (!mounted) return;
       if (!granted) {
+        // НЕ уводим в Настройки (Apple Guideline 5.1.1(iv)): при отказе в
+        // геолокации просто информируем и предлагаем ввести адрес вручную.
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text(
-              'Нет доступа к геолокации. Разрешите его в настройках, '
-              'чтобы определить адрес автоматически.',
+          const SnackBar(
+            content: Text(
+              'Не удалось определить адрес автоматически без доступа к '
+              'геолокации — введите адрес вручную.',
             ),
-            duration: const Duration(seconds: 4),
-            // При «больше не спрашивать» системное окно уже не появится —
-            // без этой кнопки совет «разрешите в настройках» был тупиком.
-            action: SnackBarAction(
-              label: 'Настройки',
-              onPressed: () => Geolocator.openAppSettings(),
-            ),
+            duration: Duration(seconds: 4),
           ),
         );
         return;

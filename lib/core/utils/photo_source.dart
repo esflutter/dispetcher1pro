@@ -33,8 +33,7 @@ void _showDeniedSnack(BuildContext context) {
   ScaffoldMessenger.of(context).showSnackBar(
     const SnackBar(
       content: Text(
-        'Нет доступа к галерее. Разрешите его в настройках, '
-        'чтобы прикрепить фото.',
+        'Не удалось добавить фото без доступа к галерее.',
       ),
       duration: Duration(seconds: 3),
     ),
