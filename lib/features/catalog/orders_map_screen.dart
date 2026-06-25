@@ -218,10 +218,12 @@ class _OrdersMapFullScreenState extends State<OrdersMapFullScreen>
     final LatLng? gps = await _tryGps();
 
     LatLng? center;
-    // 1. GPS — только когда рядом действительно есть заказы.
+    // 1. GPS — только когда рядом действительно есть заказы. Зум подбираем
+    // по дистанции до ближайшего заказа, чтобы он попал на экран, а не
+    // остался за краем при тесном приближении.
     if (gps != null && _ordersNear(gps, orders)) {
       center = gps;
-      zoom = 13;
+      zoom = _zoomForNearestOrders(gps, orders);
     }
     // 2. Продолжаем с последнего вида в этой сессии.
     if (center == null && _lastViewedCenter != null) {
@@ -302,6 +304,27 @@ class _OrdersMapFullScreenState extends State<OrdersMapFullScreen>
       }
     }
     return false;
+  }
+
+  /// Зум так, чтобы ближайший заказ попал на экран рядом с точкой
+  /// пользователя: тесно, если заказ под боком, и тем шире, чем дальше
+  /// ближайший. Иначе на тесном zoom 13 человек видел бы только свою точку,
+  /// а заказы оставались бы за краем экрана.
+  static double _zoomForNearestOrders(LatLng p, List<_MapOrder> orders) {
+    const Distance d = Distance();
+    double minKm = double.infinity;
+    for (final _MapOrder o in orders) {
+      final double? lat = o.latitude;
+      final double? lng = o.longitude;
+      if (lat == null || lng == null) continue;
+      final double km = d.as(LengthUnit.Kilometer, p, LatLng(lat, lng));
+      if (km < minKm) minKm = km;
+    }
+    if (minKm <= 2) return 13;
+    if (minKm <= 5) return 12;
+    if (minKm <= 12) return 11;
+    if (minKm <= 30) return 10;
+    return 9;
   }
 
   /// Центр самого «густого» скопления заказов — город, где их больше всего.

@@ -616,6 +616,24 @@ class _OrdersMapWithCardState extends State<_OrdersMapWithCard>
     return false;
   }
 
+  /// Зум так, чтобы ближайший заказ попал на экран рядом с точкой
+  /// пользователя: тесно, если заказ под боком, и тем шире, чем дальше
+  /// ближайший. Иначе на тесном zoom 13 человек видел бы только свою точку,
+  /// а заказы оставались бы за краем экрана.
+  static double _zoomForNearest(LatLng p, List<LatLng> coords) {
+    const Distance d = Distance();
+    double minKm = double.infinity;
+    for (final LatLng c in coords) {
+      final double km = d.as(LengthUnit.Kilometer, p, c);
+      if (km < minKm) minKm = km;
+    }
+    if (minKm <= 2) return 13;
+    if (minKm <= 5) return 12;
+    if (minKm <= 12) return 11;
+    if (minKm <= 30) return 10;
+    return 9;
+  }
+
   /// GPS пользователя в РФ, без диалога разрешения. null — нет разрешения,
   /// служб, фикса или позиция вне страны.
   Future<LatLng?> _gps() async {
@@ -651,7 +669,7 @@ class _OrdersMapWithCardState extends State<_OrdersMapWithCard>
     double zoom = 11;
     if (gps != null && _ordersNear(gps, coords)) {
       center = gps;
-      zoom = 13;
+      zoom = _zoomForNearest(gps, coords);
     }
     center ??= densest;
     if (center == null) return; // заказов нет — оставляем дефолт карты
