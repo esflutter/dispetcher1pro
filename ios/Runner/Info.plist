@@ -11,7 +11,12 @@
 		<key>NSMicrophoneUsageDescription</key>
 		<string>Микрофон нужен для голосовых сообщений ассистенту — вы диктуете запрос вместо набора текста.</string>
 		<key>CFBundleDevelopmentRegion</key>
-		<string>$(DEVELOPMENT_LANGUAGE)</string>
+		<string>ru</string>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>ru</string>
+		<string>en</string>
+	</array>
 		<key>CFBundleDisplayName</key>
 		<string>Диспетчер №1 PRO</string>
 		<key>CFBundleExecutable</key>
