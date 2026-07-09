@@ -25,7 +25,8 @@ class MyServicesService {
         .from('services')
         .select(
           'id, title, description, machinery_ids, category_ids, '
-          'price_per_hour, price_per_day, min_hours, is_paid',
+          'price_per_hour, price_per_day, min_hours, is_paid, '
+          'verification_status, verification_reject_reason',
         )
         .eq('executor_id', user.id)
         .eq('is_archived', false)
@@ -43,7 +44,8 @@ class MyServicesService {
           'id, title, description, machinery_ids, category_ids, '
           'price_per_hour, price_per_day, min_hours, photos, '
           'location_address, location_lat, location_lng, radius_km, '
-          'is_paid, is_archived',
+          'is_paid, is_archived, '
+          'verification_status, verification_reject_reason',
         )
         .eq('id', id)
         .eq('executor_id', user.id)
@@ -128,6 +130,11 @@ class MyServicesService {
       pricePerDay: _toDouble(r['price_per_day']),
       minHours: r['min_hours'] as int?,
       isPaid: r['is_paid'] as bool,
+      // При отсутствии колонки в ответе (старый сервер) — 'approved',
+      // чтобы ничего не блокировать.
+      verificationStatus:
+          (r['verification_status'] as String?) ?? 'approved',
+      verificationRejectReason: r['verification_reject_reason'] as String?,
     );
   }
 
@@ -152,6 +159,9 @@ class MyServicesService {
       radiusKm: r['radius_km'] as int?,
       isPaid: r['is_paid'] as bool,
       isArchived: r['is_archived'] as bool,
+      verificationStatus:
+          (r['verification_status'] as String?) ?? 'approved',
+      verificationRejectReason: r['verification_reject_reason'] as String?,
     );
   }
 

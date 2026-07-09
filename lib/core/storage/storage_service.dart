@@ -121,6 +121,15 @@ class StorageService {
     return path;
   }
 
+  /// Загружает фото документа для проверки КОНКРЕТНОЙ УСЛУГИ (СТС/ПТС,
+  /// право управления — миграция 108). Технически идентичен
+  /// [uploadVerificationDocument]: тот же приватный бакет и путь
+  /// `<user_id>/verification/<uuid>.jpg` — привязка к услуге происходит
+  /// на сервере (RPC `submit_service_verification` пишет
+  /// `verification_documents.service_id`).
+  Future<String> uploadServiceVerificationDocument(File file) =>
+      uploadVerificationDocument(file);
+
   /// Подготовка ДОКУМЕНТА верификации к загрузке: всегда JPEG (а не webp),
   /// качество выше обычного — чтобы мелкий текст паспорта/прав читался, а
   /// проверяющий мог открыть и распечатать файл привычным способом. HEIC из

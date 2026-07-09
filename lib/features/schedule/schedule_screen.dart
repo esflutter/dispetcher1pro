@@ -6,6 +6,7 @@ import 'package:dispatcher_1/core/catalog/format.dart';
 import 'package:dispatcher_1/core/my_orders/models.dart';
 import 'package:dispatcher_1/core/my_orders/my_orders_service.dart';
 import 'package:dispatcher_1/core/schedule/schedule_service.dart';
+import 'package:dispatcher_1/core/settings/settings_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
 import 'package:dispatcher_1/core/widgets/dark_sub_app_bar.dart';
@@ -249,6 +250,15 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
 
   bool _acceptingOrders = true;
 
+  /// Режим трактовки дня БЕЗ записи в `schedule_day_overrides`
+  /// (серверная настройка `schedule.unmarked_day_available`, миграция 107):
+  ///   true (легаси, дефолт) — день без записи считается РАБОЧИМ,
+  ///     «вернуть в рабочие» = удалить запись;
+  ///   false (новый режим) — день без записи считается НЕРАБОЧИМ,
+  ///     «сделать рабочим» = явная запись accepting=true.
+  /// Загружается один раз на старте экрана в [_loadFromDb].
+  bool _unmarkedDayAvailable = true;
+
   /// Заказы по конкретной дате (нормализованной до полуночи). Грузятся
   /// в [_loadFromDb] из `MyOrdersService.listMine()` — берём матчи в
   /// `pendingConfirmation`/`accepted` и группируем по `orderDateFrom`.
@@ -279,20 +289,23 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   }
 
   /// Загружаем все мои override'ы из `schedule_day_overrides` плюс
-  /// активные мэтчи (`pendingConfirmation`/`accepted`). Дни без записей
-  /// остаются дефолтно рабочими; матчи группируются по `orderDateFrom`
-  /// и попадают в [_ordersByDate].
+  /// активные мэтчи (`pendingConfirmation`/`accepted`). Как трактуются
+  /// дни без записей — зависит от [_unmarkedDayAvailable] (легаси —
+  /// рабочие, новый режим — нерабочие); матчи группируются по
+  /// `orderDateFrom` и попадают в [_ordersByDate].
   Future<void> _loadFromDb() async {
     try {
       final List<dynamic> results =
           await Future.wait<dynamic>(<Future<dynamic>>[
         ScheduleService.instance.loadMyOverrides(),
         MyOrdersService.instance.listMine(),
+        SettingsService.instance.unmarkedDayAvailable(),
       ]);
       if (!mounted) return;
       final Map<DateTime, ScheduleDayOverride> overrides =
           results[0] as Map<DateTime, ScheduleDayOverride>;
       final List<MyOrderMatch> matches = results[1] as List<MyOrderMatch>;
+      final bool unmarkedAvailable = results[2] as bool;
       // Контакты accepted/completed заказчиков — параллельно дёргаем
       // только для тех, кому уже можно звонить.
       final Set<String> needContact = <String>{
@@ -307,10 +320,16 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
           await MyOrdersService.instance.getCustomerContactsBulk(needContact);
       if (!mounted) return;
       setState(() {
+        _unmarkedDayAvailable = unmarkedAvailable;
         for (final MapEntry<DateTime, ScheduleDayOverride> e
             in overrides.entries) {
           final ScheduleDayOverride o = e.value;
-          if (!o.accepting) {
+          // «Выходной» — только accepting=false + is_day_off=true.
+          // accepting=false + is_day_off=false — «закрыт приём»: день
+          // не красится выходным, принятые заказы на нём видны (раньше
+          // такой день после перезапуска читался как выходной и заказ
+          // визуально пропадал).
+          if (!o.accepting && o.isDayOff) {
             _dayStates[e.key] = DayState.dayOff;
           }
           _daySettings[e.key] = DaySettings(
@@ -441,10 +460,11 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
 
   /// Принимает ли исполнитель новые заказы в указанный день.
   /// `false`, если день помечен выходным **или** пользователь временно
-  /// закрыл приём заказов зелёным тумблером.
+  /// закрыл приём заказов зелёным тумблером. День без записи: в легаси
+  /// режиме — принимает, в новом («нерабочие по умолчанию») — нет.
   bool _acceptingFor(DateTime d) {
     if (_stateFor(d) == DayState.dayOff) return false;
-    return _daySettings[_dateKey(d)]?.accepting ?? true;
+    return _daySettings[_dateKey(d)]?.accepting ?? _unmarkedDayAvailable;
   }
 
   /// Настройки дня: если пользователь уже редактировал этот день — его
@@ -483,7 +503,15 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     final key = _dateKey(d);
     if (_dayStates.containsKey(key)) return _dayStates[key]!;
     final orders = _ordersByDate[_dateKey(d)] ?? const <_ScheduledOrder>[];
-    return orders.isNotEmpty ? DayState.hasOrders : DayState.noOrders;
+    if (orders.isNotEmpty) return DayState.hasOrders;
+    // Новый режим «нерабочие по умолчанию»: день, который пользователь
+    // ни разу не настраивал (нет ни записи в БД, ни правок за сессию),
+    // рисуется как выходной. Дни с заказами выше уже показаны как
+    // рабочие — принятые заказы прятать нельзя.
+    if (!_unmarkedDayAvailable && !_daySettings.containsKey(key)) {
+      return DayState.dayOff;
+    }
+    return DayState.noOrders;
   }
 
   int get _currentPage {
@@ -516,6 +544,14 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       ),
     );
     if (updated == null) return;
+    // День был и остался выходным: пользователь заглянул в «Параметры
+    // дня» и вышел, не нажав «Отметить рабочим» — форма параметров у
+    // выходного недоступна, менять нечего. Без этого выхода UPSERT ниже
+    // в новом режиме превращал неотмеченный (нерабочий) день в рабочий
+    // простым открытием-закрытием экрана.
+    if (_stateFor(_selectedDate) == DayState.dayOff && !updated.clearDayOff) {
+      return;
+    }
     setState(() {
       if (updated.clearDayOff) _dayStates.remove(key);
       _daySettings[key] = updated;
@@ -546,6 +582,10 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       await ScheduleService.instance.upsertOverride(
         day: _selectedDate,
         accepting: updated.accepting,
+        // Сохранение из «Параметров дня» никогда не делает день
+        // выходным: выключенный тумблер «Приём заказов» — это «закрыт
+        // приём» (is_day_off=false), принятые заказы дня остаются видны.
+        isDayOff: false,
         timeFrom: tFrom,
         timeTo: tTo,
         wholeDay: wholeDay,
@@ -569,12 +609,23 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     if (state == DayState.dayOff) {
       setState(() {
         _dayStates.remove(key);
+        if (!_unmarkedDayAvailable) {
+          // Новый режим «нерабочие по умолчанию»: рабочий день — это
+          // явная запись accepting=true, поэтому фиксируем её и локально.
+          _updateAccepting(key, true);
+        }
         _acceptingOrders = _acceptingFor(_selectedDate);
       });
-      // День возвращается к дефолту → удаляем override.
-      try {
-        await ScheduleService.instance.resetToDefault(_selectedDate);
-      } catch (_) {/* silent */}
+      if (_unmarkedDayAvailable) {
+        // Легаси: день без записи и так рабочий → удаляем override.
+        try {
+          await ScheduleService.instance.resetToDefault(_selectedDate);
+        } catch (_) {/* silent */}
+      } else {
+        // Новый режим: UPSERT accepting=true (НЕ delete — без записи
+        // день снова стал бы нерабочим).
+        await _persistOverride(_selectedDate, accepting: true, isDayOff: false);
+      }
       return;
     }
 
@@ -618,10 +669,12 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
         ),
       );
     }
-    // Override: «нерабочий день» → accepting=false. Сохраняем все
-    // остальные параметры дня (время/радиус/техника/локация), чтобы
-    // при возврате на «рабочий» пользователь не потерял настройки.
-    await _persistOverride(_selectedDate, accepting: false);
+    // Override: «нерабочий день» → accepting=false + is_day_off=true
+    // (в отличие от тумблера «Приём заказов», который лишь закрывает
+    // приём). Сохраняем все остальные параметры дня (время/радиус/
+    // техника/локация), чтобы при возврате на «рабочий» пользователь
+    // не потерял настройки.
+    await _persistOverride(_selectedDate, accepting: false, isDayOff: true);
     // Отменяем accepted-мэтчи на этот день в БД (RPC сам пропускает
     // multidate-мэтчи). Cообщаем «Мои заказы», что данные могли
     // измениться — иначе там карточки висели в accepted до pull-to-refresh.
@@ -646,16 +699,23 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     });
     // Зелёный тумблер: если он переключён — это уже override от дефолта.
     // Передаём остальные параметры дня (время/техника/локация), чтобы
-    // UPSERT не затёр их null'ами.
-    await _persistOverride(_selectedDate, accepting: value);
+    // UPSERT не затёр их null'ами. is_day_off=false: выключенный тумблер —
+    // «закрыт приём новых заказов», а не выходной; день не красится
+    // выходным, и принятые заказы на нём продолжают показываться.
+    await _persistOverride(_selectedDate, accepting: value, isDayOff: false);
   }
 
   /// Записывает override на дату с сохранением всех ранее настроенных
   /// параметров (время работы, whole_day, радиус, локация, техника,
   /// категории). Раньше [_toggleDayOff] и [_toggleAcceptance] вызывали
   /// `upsertOverride(day: x, accepting: y)` без остальных полей —
-  /// UPSERT молча затирал их в БД.
-  Future<void> _persistOverride(DateTime day, {required bool accepting}) async {
+  /// UPSERT молча затирал их в БД. [isDayOff]: true — выходной, false —
+  /// «закрыт приём», null — не менять сохранённое значение.
+  Future<void> _persistOverride(
+    DateTime day, {
+    required bool accepting,
+    bool? isDayOff,
+  }) async {
     final DaySettings? s = _daySettings[_dateKey(day)];
     final TimeOfDay? from = s?.timeFrom;
     final TimeOfDay? to = s?.timeTo;
@@ -678,6 +738,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       await ScheduleService.instance.upsertOverride(
         day: day,
         accepting: accepting,
+        isDayOff: isDayOff,
         timeFrom: hm(from),
         timeTo: hm(to),
         wholeDay: s?.allDay ?? false,
@@ -949,13 +1010,20 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
 
   Widget _buildDayBody(DayState state) {
     if (state == DayState.dayOff) {
+      // В новом режиме день может быть нерабочим «по умолчанию» — без
+      // явной отметки пользователя. Текст в этом случае другой: юзер
+      // ничего не отмечал, ему надо подсказать, как сделать день рабочим.
+      final bool markedByUser =
+          _dayStates.containsKey(_dateKey(_selectedDate));
       return Padding(
         padding: EdgeInsets.only(bottom: 40.h),
         child: Center(
           child: Padding(
             padding: EdgeInsets.symmetric(horizontal: 32.w),
             child: Text(
-              'Вы отметили этот день выходным — заказы на него не принимаются',
+              markedByUser
+                  ? 'Вы отметили этот день выходным — заказы на него не принимаются'
+                  : 'День не отмечен рабочим — заказы на него не принимаются',
               style: AppTextStyles.body.copyWith(color: AppColors.textPrimary, height: 1.3),
               textAlign: TextAlign.center,
             ),

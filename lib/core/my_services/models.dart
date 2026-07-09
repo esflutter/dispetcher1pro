@@ -16,6 +16,8 @@ class MyServiceSummary {
     required this.pricePerDay,
     required this.minHours,
     required this.isPaid,
+    this.verificationStatus = 'approved',
+    this.verificationRejectReason,
   });
 
   final String id;
@@ -29,6 +31,15 @@ class MyServiceSummary {
   final double? pricePerDay;
   final int? minHours;
   final bool isPaid;
+
+  /// Статус проверки документов услуги (миграция 108):
+  /// 'none' | 'pending' | 'approved' | 'rejected'. Дефолт 'approved' —
+  /// если колонка не пришла в ответе, ничего не блокируем (поведение
+  /// как до появления проверки).
+  final String verificationStatus;
+
+  /// Причина отказа (только при 'rejected').
+  final String? verificationRejectReason;
 }
 
 class MyServiceDetail {
@@ -50,6 +61,8 @@ class MyServiceDetail {
     required this.radiusKm,
     required this.isPaid,
     required this.isArchived,
+    this.verificationStatus = 'approved',
+    this.verificationRejectReason,
   });
 
   final String id;
@@ -69,6 +82,10 @@ class MyServiceDetail {
   final int? radiusKm; // 10 / 20 / 50
   final bool isPaid;
   final bool isArchived;
+
+  /// См. [MyServiceSummary.verificationStatus].
+  final String verificationStatus;
+  final String? verificationRejectReason;
 }
 
 /// Черновик услуги для INSERT/UPDATE.

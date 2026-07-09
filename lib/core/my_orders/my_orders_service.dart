@@ -39,6 +39,16 @@ class MatchEngageBlockedException implements Exception {
   String toString() => message;
 }
 
+/// Сервер отклонил ручное завершение заказа (RPC `complete_match_manually`).
+/// Несёт готовый к показу русский текст — сама функция бросает технические
+/// коды (`too_early`, `not_accepted` и т.п.), которые нельзя показывать как есть.
+class CompleteMatchException implements Exception {
+  const CompleteMatchException(this.message);
+  final String message;
+  @override
+  String toString() => message;
+}
+
 /// Чтение/обновление моих откликов (`order_matches` WHERE executor_id = me).
 /// FSM-переходы статуса валидирует триггер `validate_match_transition`
 /// в БД — клиент только пишет целевой статус.
@@ -167,6 +177,70 @@ class MyOrdersService {
       return 'Профиль заблокирован — действие недоступно. Подробности в «Профиле».';
     }
     return null;
+  }
+
+  /// Ручное завершение принятого заказа (RPC `complete_match_manually`,
+  /// миграция 109). Возвращает `'completed'` либо `'already_completed'`
+  /// (крон или вторая сторона успели раньше — тоже успех). Переход в
+  /// `completed` на сервере сам архивирует заказ и шлёт пуши «Оставьте
+  /// отзыв» обеим сторонам — клиенту достаточно обновить своё состояние.
+  /// Серверные отказы приходят техническими кодами в message —
+  /// конвертируем в [CompleteMatchException] с готовым русским текстом.
+  Future<String> completeMatchManually(String matchId) async {
+    try {
+      final dynamic res = await _client.rpc<dynamic>(
+        'complete_match_manually',
+        params: <String, dynamic>{'p_match_id': matchId},
+      );
+      return res as String;
+    } on PostgrestException catch (e) {
+      throw CompleteMatchException(_completeErrorMessage(e.message));
+    }
+  }
+
+  /// Технический код отказа `complete_match_manually` → русский текст.
+  static String _completeErrorMessage(String serverMessage) {
+    if (serverMessage.contains('too_early')) {
+      return 'Завершить можно начиная с последнего дня работ';
+    }
+    if (serverMessage.contains('order_cancelled')) {
+      return 'Заказ отменён — завершить его нельзя';
+    }
+    if (serverMessage.contains('not_accepted')) {
+      return 'Заказ уже не в работе — обновите список заказов';
+    }
+    if (serverMessage.contains('match_not_found') ||
+        serverMessage.contains('forbidden') ||
+        serverMessage.contains('unauthorized')) {
+      return 'Не удалось завершить заказ — обновите список заказов';
+    }
+    return 'Не удалось завершить заказ. Попробуйте ещё раз';
+  }
+
+  /// Даты работ заказа по мэтчу — нужны экрану деталей для правила
+  /// «"Отметить выполненным" доступно с начала последнего дня заказа».
+  /// В сам экран даты не передаются (там только готовая строка
+  /// «15 июня · 09:00–18:00»), поэтому дотягиваем их отдельным запросом.
+  /// Возвращает `null`, если мэтч не найден / RLS не пропустил.
+  Future<({DateTime dateFrom, DateTime? dateTo})?> getMatchOrderDates(
+      String matchId) async {
+    try {
+      final Map<String, dynamic>? r = await _client
+          .from('order_matches')
+          .select('order:orders!order_matches_order_id_fkey(date_from, date_to)')
+          .eq('id', matchId)
+          .maybeSingle();
+      final Map<String, dynamic>? order = r?['order'] as Map<String, dynamic>?;
+      if (order == null) return null;
+      return (
+        dateFrom: DateTime.parse(order['date_from'] as String).toLocal(),
+        dateTo: order['date_to'] == null
+            ? null
+            : DateTime.parse(order['date_to'] as String).toLocal(),
+      );
+    } on PostgrestException {
+      return null;
+    }
   }
 
   /// Отказаться от заказа, которого мы ждали подтверждать

@@ -8,6 +8,7 @@ import 'package:dispatcher_1/core/payments/models.dart';
 import 'package:dispatcher_1/core/payments/payment_service.dart';
 import 'package:dispatcher_1/core/profile/profile_service.dart';
 import 'package:dispatcher_1/core/router.dart';
+import 'package:dispatcher_1/core/schedule/schedule_prompt_prefs.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_spacing.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
@@ -121,6 +122,10 @@ class _PaymentResultScreenState extends State<PaymentResultScreen> {
       AppAnalytics.log('payment_success', <String, Object>{
         'kind': widget.binding ? 'card_binding' : 'payment',
       });
+      // Привязка карты = активация триала: поднимаем сигнал для разового
+      // попапа «Заполните график работы» — его покажет корневой экран или
+      // карточка исполнителя после первого кадра.
+      if (widget.binding) SchedulePromptPrefs.pending = true;
       // Обновляем подписку и в быстром пути, и для привязки карты/триала
       // (binding): триал нового исполнителя идёт через привязку карты, и без
       // этого гейты в каталоге/карточке сразу после оплаты снова показывают
@@ -150,6 +155,9 @@ class _PaymentResultScreenState extends State<PaymentResultScreen> {
       AppAnalytics.log('payment_success', <String, Object>{
         'kind': widget.binding ? 'card_binding' : 'payment',
       });
+      // Триал активирован через привязку карты — сигнал для разового
+      // попапа «Заполните график работы» (см. быстрый путь выше).
+      if (widget.binding) SchedulePromptPrefs.pending = true;
       // Обновляем и для binding — триал нового исполнителя идёт через
       // привязку карты, иначе гейты сразу после оплаты снова покажут paywall.
       // ignore: discarded_futures

@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:dispatcher_1/core/ai/ai_navigation.dart';
 import 'package:dispatcher_1/core/my_services/models.dart';
 import 'package:dispatcher_1/core/my_services/my_services_service.dart';
+import 'package:dispatcher_1/core/settings/settings_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_spacing.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
@@ -63,6 +64,7 @@ class ServiceData {
         minOrder: s.minHours?.toString() ?? '',
         description: s.description ?? '',
         isPaid: s.isPaid,
+        verificationStatus: s.verificationStatus,
       );
 
   static String _formatPrice(double? v) {
@@ -138,6 +140,7 @@ class ServiceMock {
     this.address,
     this.radiusIndex = -1,
     this.isPaid = true,
+    this.verificationStatus = 'approved',
   });
   final String id;
   final String title;
@@ -156,6 +159,11 @@ class ServiceMock {
   /// не съедают лимит [ServiceData.maxServices], но юзер видит их в
   /// «Моих услугах» с подписью «не оплачена».
   final bool isPaid;
+
+  /// Статус проверки документов услуги ('none'|'pending'|'approved'|
+  /// 'rejected'). Влияет на карточку только в режиме «документы при
+  /// каждой публикации» (серверный флаг perServiceDocs).
+  final String verificationStatus;
 }
 
 /// Экран «Мои услуги» — список услуг исполнителя или пустое состояние.
@@ -169,10 +177,18 @@ class MyServicesScreen extends StatefulWidget {
 class _MyServicesScreenState extends State<MyServicesScreen> {
   late Future<void> _initial;
 
+  /// Режим «документы при каждой публикации» (серверный флаг). Пока
+  /// выключен — карточки выглядят и ведут себя как раньше.
+  bool _docsMode = false;
+
   @override
   void initState() {
     super.initState();
     _initial = ServiceData.refresh();
+    // ignore: discarded_futures
+    SettingsService.instance.perServiceDocs().then((bool v) {
+      if (mounted && v) setState(() => _docsMode = true);
+    });
   }
 
   Future<void> _reload() async {
@@ -210,6 +226,7 @@ class _MyServicesScreenState extends State<MyServicesScreen> {
                       : _ServicesList(
                           items: ServiceData.services,
                           onRefresh: _reload,
+                          docsMode: _docsMode,
                         ),
                 ),
                 Container(
@@ -290,9 +307,18 @@ class _ServicesError extends StatelessWidget {
 }
 
 class _ServicesList extends StatelessWidget {
-  const _ServicesList({required this.items, required this.onRefresh});
+  const _ServicesList({
+    required this.items,
+    required this.onRefresh,
+    this.docsMode = false,
+  });
   final List<ServiceMock> items;
   final VoidCallback onRefresh;
+
+  /// Режим «документы при каждой публикации»: оплаченная услуга без
+  /// одобренных документов не активна в каталоге — карточка ведёт на
+  /// экран подачи документов и помечается бейджем статуса.
+  final bool docsMode;
 
   @override
   Widget build(BuildContext context) {
@@ -302,6 +328,14 @@ class _ServicesList extends StatelessWidget {
       separatorBuilder: (_, _) => SizedBox(height: 8.h),
       itemBuilder: (context, index) {
         final item = items[index];
+        // Нужен ли услуге шаг с документами (только в режиме docsMode,
+        // только после оплаты — до оплаты приоритетнее бейдж «Не оплачена»).
+        final bool needsDocs = docsMode &&
+            item.isPaid &&
+            (item.verificationStatus == 'none' ||
+                item.verificationStatus == 'rejected');
+        final bool onReview =
+            docsMode && item.isPaid && item.verificationStatus == 'pending';
         // Каждая карточка — контейнер с мягкой оранжевой заливкой
         // (`AppColors.fieldFill`). Визуально делит список на «плитки»
         // — так же, как в приложении заказчика (`_ServiceTile` в
@@ -334,41 +368,73 @@ class _ServicesList extends StatelessWidget {
                 onRefresh();
                 return;
               }
+              if (needsDocs) {
+                // Оплачена, но без документов (или их отклонили) —
+                // сразу на экран подачи, там же видна причина отказа.
+                await context.push('/services/${item.id}/docs');
+                onRefresh();
+                return;
+              }
               await context.push('/services/${item.id}');
               onRefresh();
             },
           ),
         );
-        if (item.isPaid) return card;
-        // Полупрозрачная карточка + бейдж «Не активна — оплатите».
-        return Stack(
-          children: <Widget>[
-            Opacity(opacity: 0.55, child: card),
-            Positioned(
-              top: 8.h,
-              right: 8.w,
-              child: Container(
-                padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 5.h),
-                decoration: BoxDecoration(
-                  // Бренд-цвет вместо красного: «Не оплачена» — это
-                  // CTA «оплатите», а не ошибка/опасность. И стандартное
-                  // скругление AppSpacing.radiusM (12.r), как у других
-                  // прямоугольных бейджей в приложении.
-                  color: AppColors.primary,
-                  borderRadius:
-                      BorderRadius.circular(AppSpacing.radiusM),
-                ),
-                child: Text(
-                  'Не оплачена',
-                  style: AppTextStyles.caption.copyWith(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
+
+        // Бейдж поверх карточки (в правом верхнем углу).
+        Widget badged({
+          required String label,
+          required Color color,
+          bool dimmed = false,
+        }) {
+          return Stack(
+            children: <Widget>[
+              dimmed ? Opacity(opacity: 0.55, child: card) : card,
+              Positioned(
+                top: 8.h,
+                right: 8.w,
+                child: Container(
+                  padding:
+                      EdgeInsets.symmetric(horizontal: 10.w, vertical: 5.h),
+                  decoration: BoxDecoration(
+                    color: color,
+                    borderRadius: BorderRadius.circular(AppSpacing.radiusM),
+                  ),
+                  child: Text(
+                    label,
+                    style: AppTextStyles.caption.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ),
-            ),
-          ],
-        );
+            ],
+          );
+        }
+
+        if (!item.isPaid) {
+          // Бренд-цвет вместо красного: «Не оплачена» — это CTA
+          // «оплатите», а не ошибка/опасность.
+          return badged(
+              label: 'Не оплачена', color: AppColors.primary, dimmed: true);
+        }
+        if (needsDocs) {
+          return item.verificationStatus == 'rejected'
+              ? badged(
+                  label: 'Документы отклонены',
+                  color: AppColors.error,
+                  dimmed: true)
+              : badged(
+                  label: 'Приложите документы',
+                  color: AppColors.primary,
+                  dimmed: true);
+        }
+        if (onReview) {
+          return badged(
+              label: 'Документы на проверке', color: AppColors.textTertiary);
+        }
+        return card;
       },
     );
   }

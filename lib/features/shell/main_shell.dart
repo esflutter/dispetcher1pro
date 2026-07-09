@@ -15,6 +15,7 @@ import 'package:dispatcher_1/core/widgets/no_internet_view.dart';
 import 'package:dispatcher_1/features/catalog/catalog_categories_screen.dart';
 import 'package:dispatcher_1/features/orders/my_orders_screen.dart';
 import 'package:dispatcher_1/features/profile/profile_screen.dart';
+import 'package:dispatcher_1/features/schedule/widgets/schedule_alerts.dart';
 import 'package:dispatcher_1/features/shell/widgets/main_bottom_nav_bar.dart';
 import 'package:dispatcher_1/features/shell/widgets/support_fab.dart';
 
@@ -78,7 +79,12 @@ class _MainShellState extends State<MainShell> {
     // Первый реальный экран после сплэша — здесь один раз за запуск
     // проверяем, не пора ли обновиться (тихо, если сеть/настройка недоступны).
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) UpdateChecker.maybePromptOnce(context);
+      if (!mounted) return;
+      UpdateChecker.maybePromptOnce(context);
+      // Разовый попап «Заполните график работы»: shell пересоздаётся после
+      // успешной привязки карты (активации триала), сигнал pending поднят
+      // экраном результата оплаты. В остальные запуски это no-op.
+      ScheduleAlerts.maybeShowFillSchedulePrompt(context);
     });
   }
 

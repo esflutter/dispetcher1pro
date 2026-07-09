@@ -27,6 +27,7 @@ import '../features/schedule/schedule_screen.dart';
 import '../features/services/create_service_screen.dart';
 import '../features/services/my_services_screen.dart';
 import '../features/services/service_detail_screen.dart';
+import '../features/services/service_docs_screen.dart';
 import '../features/shell/main_shell.dart';
 import '../features/subscription/add_card_screen.dart';
 import '../features/subscription/payment_result_screen.dart';
@@ -165,6 +166,12 @@ final GoRouter appRouter = GoRouter(
       path: '/services/:id/edit',
       builder: (_, state) =>
           CreateServiceScreen(serviceId: state.pathParameters['id']),
+    ),
+    // Документы услуги (режим «документы при каждой публикации»).
+    GoRoute(
+      path: '/services/:id/docs',
+      builder: (_, state) =>
+          ServiceDocsScreen(serviceId: state.pathParameters['id'] ?? ''),
     ),
 
     // Мой график

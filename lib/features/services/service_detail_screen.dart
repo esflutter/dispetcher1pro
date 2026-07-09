@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:dispatcher_1/core/ai/ai_navigation.dart';
 import 'package:dispatcher_1/core/my_services/models.dart';
 import 'package:dispatcher_1/core/my_services/my_services_service.dart';
+import 'package:dispatcher_1/core/settings/settings_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
 import 'package:dispatcher_1/core/utils/photo_source.dart';
@@ -34,10 +35,18 @@ class ServiceDetailScreen extends StatefulWidget {
 class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
   late Future<MyServiceDetail?> _future;
 
+  /// Режим «документы при каждой публикации» (серверный флаг): только в
+  /// нём на экране показывается строка статуса проверки документов.
+  bool _docsMode = false;
+
   @override
   void initState() {
     super.initState();
     _future = MyServicesService.instance.getMine(widget.serviceId);
+    // ignore: discarded_futures
+    SettingsService.instance.perServiceDocs().then((bool v) {
+      if (mounted && v) setState(() => _docsMode = true);
+    });
   }
 
   @override
@@ -73,8 +82,17 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
           }
           return _Content(
             service: s,
+            docsMode: _docsMode,
             onEdit: () async {
               await context.push('/services/${widget.serviceId}/edit');
+              if (!mounted) return;
+              setState(() {
+                _future =
+                    MyServicesService.instance.getMine(widget.serviceId);
+              });
+            },
+            onOpenDocs: () async {
+              await context.push('/services/${widget.serviceId}/docs');
               if (!mounted) return;
               setState(() {
                 _future =
@@ -89,9 +107,66 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
 }
 
 class _Content extends StatelessWidget {
-  const _Content({required this.service, required this.onEdit});
+  const _Content({
+    required this.service,
+    required this.onEdit,
+    this.docsMode = false,
+    this.onOpenDocs,
+  });
   final MyServiceDetail service;
   final VoidCallback onEdit;
+
+  /// См. [_ServiceDetailScreenState._docsMode].
+  final bool docsMode;
+  final VoidCallback? onOpenDocs;
+
+  /// Строка статуса проверки документов услуги (только в docsMode и
+  /// только пока статус не approved — одобренная услуга живёт как раньше).
+  Widget? _verificationStrip() {
+    if (!docsMode || service.verificationStatus == 'approved') return null;
+    final String status = service.verificationStatus;
+    final String text;
+    final Color color;
+    switch (status) {
+      case 'pending':
+        text = 'Документы на проверке — услуга станет видна заказчикам '
+            'после одобрения.';
+        color = AppColors.textSecondary;
+      case 'rejected':
+        final String reason = (service.verificationRejectReason ?? '').trim();
+        text = reason.isEmpty
+            ? 'Документы отклонены — приложите новые.'
+            : 'Документы отклонены: $reason';
+        color = AppColors.error;
+      default: // 'none'
+        text = 'Услуга не видна заказчикам — приложите документы на технику.';
+        color = AppColors.primaryDark;
+    }
+    final bool canOpenDocs =
+        (status == 'none' || status == 'rejected') && onOpenDocs != null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(text, style: AppTextStyles.body.copyWith(color: color)),
+        if (canOpenDocs)
+          TextButton(
+            onPressed: onOpenDocs,
+            style: TextButton.styleFrom(
+              padding: EdgeInsets.zero,
+              minimumSize: Size(0, 32.h),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: Text(
+              'Приложить документы',
+              style: AppTextStyles.bodyMedium.copyWith(
+                color: AppColors.primary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
 
   String _fmtPrice(double? v) {
     if (v == null) return '';
@@ -111,6 +186,7 @@ class _Content extends StatelessWidget {
     final String perDay = _fmtPrice(service.pricePerDay);
     final bool hasPerHour = perHour.isNotEmpty;
     final bool hasPerDay = perDay.isNotEmpty;
+    final Widget? verificationStrip = _verificationStrip();
     return Column(
       children: <Widget>[
         Expanded(
@@ -126,6 +202,10 @@ class _Content extends StatelessWidget {
                     height: 1.2,
                   ),
                 ),
+                if (verificationStrip != null) ...<Widget>[
+                  SizedBox(height: 10.h),
+                  verificationStrip,
+                ],
                 if (hasPerHour || hasPerDay) SizedBox(height: 16.h),
                 if (hasPerHour || hasPerDay)
                   Row(

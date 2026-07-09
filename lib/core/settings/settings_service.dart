@@ -128,6 +128,33 @@ class SettingsService {
     return ((_values['legal.privacy_url'] as String?) ?? '').trim();
   }
 
+  /// Режим графика: считается ли день БЕЗ отметки в расписании рабочим.
+  /// true (легаси, по умолчанию) — как в старых сборках: не трогал график,
+  /// значит работаешь. false (новый режим «нерабочие по умолчанию») — день
+  /// рабочий только если явно отмечен. Флаг серверный
+  /// (schedule.unmarked_day_available), переключается вместе с релизом
+  /// сборки — до флипа новые сборки ведут себя как старые (миграция 107).
+  Future<bool> unmarkedDayAvailable() async {
+    await _load();
+    final Object? v = _values['schedule.unmarked_day_available'];
+    if (v is bool) return v;
+    if (v is num) return v != 0;
+    if (v is String) return v.trim().toLowerCase() != 'false';
+    return true;
+  }
+
+  /// Требуются ли документы при КАЖДОЙ публикации услуги
+  /// (verification.per_service_docs, миграция 108). false (по умолчанию) —
+  /// одноразовая проверка на аккаунт, как раньше.
+  Future<bool> perServiceDocs() async {
+    await _load();
+    final Object? v = _values['verification.per_service_docs'];
+    if (v is bool) return v;
+    if (v is num) return v != 0;
+    if (v is String) return v.trim().toLowerCase() == 'true';
+    return false;
+  }
+
   /// Источник карт: 'mapbox' (по умолчанию) или 'openfreemap'. Аварийный
   /// рубильник в админке — выключает расход квоты Mapbox без пересборки
   /// приложения. Всё, что не 'openfreemap', трактуется как mapbox.

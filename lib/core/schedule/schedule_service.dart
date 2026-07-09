@@ -5,8 +5,11 @@ import 'package:dispatcher_1/core/catalog/catalog_service.dart';
 import 'package:dispatcher_1/core/catalog/models.dart';
 
 /// Sparse-storage модель графика: `schedule_day_overrides` содержит
-/// только дни, отличающиеся от дефолта. По умолчанию все дни рабочие.
-/// Если на дату нет override — клиент использует параметры из карточки
+/// только дни, отличающиеся от дефолта. Как трактуется день БЕЗ записи —
+/// решает серверная настройка `schedule.unmarked_day_available`
+/// (см. SettingsService.unmarkedDayAvailable): true — рабочий (легаси),
+/// false — нерабочий, пока исполнитель явно не отметит его рабочим.
+/// Параметры дня без собственных настроек берутся из карточки
 /// исполнителя (executor_cards).
 class ScheduleService {
   ScheduleService._();
@@ -27,8 +30,8 @@ class ScheduleService {
     PostgrestFilterBuilder<List<Map<String, dynamic>>> q = _client
         .from('schedule_day_overrides')
         .select(
-          'day, accepting, time_from, time_to, whole_day, radius_km, '
-          'location_address, location_lat, location_lng, '
+          'day, accepting, is_day_off, time_from, time_to, whole_day, '
+          'radius_km, location_address, location_lat, location_lng, '
           'machinery_ids, category_ids',
         )
         .eq('user_id', user.id);
@@ -62,6 +65,11 @@ class ScheduleService {
       out[DateTime(day.year, day.month, day.day)] = ScheduleDayOverride(
         day: day,
         accepting: r['accepting'] as bool,
+        // Отсутствие поля (сервер без миграции 107) трактуем как
+        // «выходной» — так вели себя старые сборки, где accepting=false
+        // всегда означал выходной. Легаси-строки на сервере бэкфилнуты
+        // в is_day_off=true, это только подстраховка.
+        isDayOff: (r['is_day_off'] as bool?) ?? true,
         timeFrom: r['time_from'] as String?,
         timeTo: r['time_to'] as String?,
         wholeDay: r['whole_day'] as bool,
@@ -84,9 +92,15 @@ class ScheduleService {
   }
 
   /// UPSERT override'а на конкретную дату.
+  ///
+  /// [isDayOff] различает «выходной» (true) и «закрыт приём заказов»
+  /// (false при accepting=false — принятые заказы дня остаются видимыми).
+  /// null — колонку не шлём: при UPDATE существующей записи сохраняется
+  /// прежнее значение, при INSERT срабатывает серверный дефолт (false).
   Future<void> upsertOverride({
     required DateTime day,
     required bool accepting,
+    bool? isDayOff,
     String? timeFrom,
     String? timeTo,
     bool wholeDay = false,
@@ -139,7 +153,7 @@ class ScheduleService {
       categoryIds.add(id);
     }
 
-    await _client.from('schedule_day_overrides').upsert(<String, dynamic>{
+    final Map<String, dynamic> row = <String, dynamic>{
       'user_id': user.id,
       'day': _isoDate(day),
       'accepting': accepting,
@@ -152,7 +166,11 @@ class ScheduleService {
       'location_lng': locationLng,
       'machinery_ids': machineryIds,
       'category_ids': categoryIds,
-    });
+    };
+    if (isDayOff != null) {
+      row['is_day_off'] = isDayOff;
+    }
+    await _client.from('schedule_day_overrides').upsert(row);
   }
 
   /// Возвращает день к дефолту (рабочий, параметры из карточки исполнителя).
@@ -189,6 +207,7 @@ class ScheduleDayOverride {
   const ScheduleDayOverride({
     required this.day,
     required this.accepting,
+    required this.isDayOff,
     required this.timeFrom,
     required this.timeTo,
     required this.wholeDay,
@@ -202,6 +221,11 @@ class ScheduleDayOverride {
 
   final DateTime day;
   final bool accepting;
+
+  /// true — выходной (день серый, заказы не показываются); false при
+  /// accepting=false — «закрыт приём»: новые заказы не приходят, но
+  /// принятые на этот день остаются видимыми в графике.
+  final bool isDayOff;
   final String? timeFrom; // 'HH:mm:ss'
   final String? timeTo;
   final bool wholeDay;

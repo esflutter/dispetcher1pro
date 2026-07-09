@@ -18,6 +18,7 @@ import 'package:dispatcher_1/features/auth/photo_crop_screen.dart';
 import 'package:dispatcher_1/core/utils/plural.dart';
 import 'package:dispatcher_1/features/profile/account_block.dart';
 import 'package:dispatcher_1/features/profile/widgets/verification_badge.dart';
+import 'package:dispatcher_1/features/schedule/widgets/schedule_alerts.dart';
 import 'package:dispatcher_1/features/services/my_services_screen.dart';
 
 import 'package:dispatcher_1/core/widgets/dialog_close_button.dart';
@@ -106,7 +107,13 @@ class _ExecutorCardScreenState extends State<ExecutorCardScreen> {
     // Любая правка профиля в дочерних экранах (avatar/name/about/...) → бьёт
     // по changeBeacon, перетягиваем DB чтобы шапка не залипала на старом.
     ProfileService.changeBeacon.addListener(_onProfileChanged);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _maybeShowStatusAlert());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _maybeShowStatusAlert();
+      // Разовый попап «Заполните график работы»: сюда возвращает
+      // returnPath после активации триала из пейволла карточки —
+      // сигнал pending поднят экраном результата оплаты.
+      if (mounted) ScheduleAlerts.maybeShowFillSchedulePrompt(context);
+    });
     _loadFromDb();
   }
 

@@ -53,6 +53,89 @@ Future<bool?> showConfirmWithdrawDialog(BuildContext context) {
   );
 }
 
+/// Алерт «Заказ выполнен?» — подтверждение ручного завершения заказа
+/// кнопкой «Отметить выполненным». Возвращает `true`, если пользователь
+/// нажал «Да, выполнен»; сам RPC вызывает экран уже ПОСЛЕ закрытия
+/// диалога (тот же контракт, что у [showConfirmRefuseDialog]).
+Future<bool?> showConfirmCompleteDialog(BuildContext context) {
+  return showDialog<bool>(
+    context: context,
+    barrierColor: Colors.black.withValues(alpha: 0.35),
+    builder: (BuildContext ctx) => Dialog(
+      insetPadding: EdgeInsets.symmetric(horizontal: 16.w),
+      backgroundColor: Colors.transparent,
+      child: Container(
+        padding: EdgeInsets.fromLTRB(16.r, 14.r, 16.r, 22.r),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(20.r),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Align(
+              alignment: Alignment.centerRight,
+              child: DialogCloseButton(
+                onTap: () => Navigator.of(ctx).pop(),
+                color: AppColors.textTertiary,
+                iconSize: 22.r,
+              ),
+            ),
+            SizedBox(height: 12.h),
+            Text(
+              'Заказ выполнен?',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontFamily: 'Roboto',
+                fontSize: 20.sp,
+                fontWeight: FontWeight.w600,
+                height: 1.3,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            SizedBox(height: 10.h),
+            Text(
+              'Заказ будет завершён у вас и у заказчика. После этого можно оставить отзыв.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontFamily: 'Roboto',
+                fontSize: 16.sp,
+                fontWeight: FontWeight.w400,
+                height: 1.3,
+                color: AppColors.textSecondary,
+              ),
+            ),
+            SizedBox(height: 20.h),
+            PrimaryButton(
+              label: 'Да, выполнен',
+              onPressed: () => Navigator.of(ctx).pop(true),
+            ),
+            SizedBox(height: 20.h),
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => Navigator.of(ctx).pop(),
+              child: Center(
+                child: Text(
+                  'Вернуться',
+                  style: TextStyle(
+                    fontFamily: 'Roboto',
+                    fontSize: 16.sp,
+                    fontWeight: FontWeight.w500,
+                    height: 1.3,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ),
+            ),
+            SizedBox(height: 8.h),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
 /// Алерт «Заказ принят. Свяжитесь с заказчиком по указанным на странице
 /// данным.» — показывается исполнителю сразу после подтверждения заказа
 /// из статуса «Ждёт подтверждения». Аналог `showExecutorSelectedDialog`

@@ -187,6 +187,14 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
   String? _dbCustomerPhone;
   String? _dbCustomerEmail;
 
+  /// Даты работ заказа (`orders.date_from` / `date_to`) — подгружаются по
+  /// matchId для правила видимости кнопки «Отметить выполненным»: она
+  /// появляется, когда по локальному времени устройства наступил
+  /// ПОСЛЕДНИЙ день заказа (date_to, а без него date_from). В сам экран
+  /// даты не передаются — в `rentDate` уже готовая строка для показа.
+  DateTime? _orderDateFrom;
+  DateTime? _orderDateTo;
+
   /// Локальный снапшот рейтинга/количества отзывов заказчика. Изначально
   /// = widget.customerRating/customerReviews; после возврата с экрана
   /// отзыва обновляется через [getCustomerRatingSnapshot], чтобы шапка
@@ -211,6 +219,9 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
     if (_state == MyOrderDetailState.confirmed ||
         _state == MyOrderDetailState.completed) {
       _loadContacts();
+    }
+    if (_state == MyOrderDetailState.confirmed) {
+      _loadOrderDates();
     }
     if (_state == MyOrderDetailState.completed) {
       _checkExistingReview();
@@ -262,7 +273,76 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
       if (next == MyOrderDetailState.confirmed || next == MyOrderDetailState.completed) {
         _loadContacts();
       }
+      if (next == MyOrderDetailState.confirmed) {
+        _loadOrderDates();
+      }
     } catch (_) {/* сеть/доступ — оставим текущее состояние */}
+  }
+
+  /// Тянем даты работ заказа для правила времени кнопки «Отметить
+  /// выполненным». Ошибка сети — кнопка просто не появится до следующего
+  /// захода на экран (правило «не показывать, пока не уверены»).
+  Future<void> _loadOrderDates() async {
+    final String? matchId = widget.matchId;
+    if (matchId == null || _orderDateFrom != null) return;
+    final ({DateTime dateFrom, DateTime? dateTo})? dates =
+        await MyOrdersService.instance.getMatchOrderDates(matchId);
+    if (dates == null || !mounted) return;
+    setState(() {
+      _orderDateFrom = dates.dateFrom;
+      _orderDateTo = dates.dateTo;
+    });
+  }
+
+  /// Правило видимости «Отметить выполненным»: мэтч принят (state ==
+  /// confirmed гарантирует accepted) И по локальному времени устройства
+  /// уже наступил последний день заказа (date_to, без него date_from).
+  /// Сервер проверяет то же по московской дате (для Сибири мягче
+  /// клиента), поэтому ложного too_early при видимой кнопке не будет.
+  bool get _canCompleteNow {
+    if (widget.matchId == null) return false;
+    final DateTime? from = _orderDateFrom;
+    if (from == null) return false;
+    final DateTime finalDay = _orderDateTo ?? from;
+    final DateTime finalDayStart =
+        DateTime(finalDay.year, finalDay.month, finalDay.day);
+    return !DateTime.now().isBefore(finalDayStart);
+  }
+
+  /// «Отметить выполненным»: подтверждение → RPC → перевод экрана в
+  /// completed (появится существующая кнопка «Оставить отзыв»).
+  /// `already_completed` — тоже успех (крон или заказчик успели раньше).
+  Future<void> _completeManually() async {
+    if (_busy) return;
+    final bool? confirmed = await showConfirmCompleteDialog(context);
+    if (confirmed != true || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      await MyOrdersService.instance
+          .completeMatchManually(widget.matchId!);
+      if (!mounted) return;
+      setState(() => _state = MyOrderDetailState.completed);
+      // Список «Мои заказы» под этим экраном ещё держит старый статус —
+      // будим его, чтобы при возврате заказ уже был в «Завершённых».
+      MyOrdersService.bumpChangeBeacon();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Заказ завершён')),
+      );
+    } on CompleteMatchException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message)),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Не удалось завершить заказ. Попробуйте ещё раз.'),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   /// При открытии завершённого мэтча проверяем в БД, оставил ли я уже
@@ -407,7 +487,16 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
         ),
       ),
       floatingActionButton: Padding(
-        padding: EdgeInsets.only(bottom: _state == MyOrderDetailState.waitingConfirm ? 148.h : _hasBottomBar ? 88.h : 24.h),
+        // 148.h — когда в нижней панели ДВЕ кнопки (waitingConfirm, а также
+        // confirmed с доступной «Отметить выполненным»), 88.h — одна.
+        padding: EdgeInsets.only(
+          bottom: _state == MyOrderDetailState.waitingConfirm ||
+                  (_state == MyOrderDetailState.confirmed && _canCompleteNow)
+              ? 148.h
+              : _hasBottomBar
+                  ? 88.h
+                  : 24.h,
+        ),
         child: AiAssistantFab(onTap: () => openAssistantChat(context)),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
@@ -762,6 +851,9 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
                 // Подгружаем контакты сразу, иначе номер появлялся только
                 // после перезахода на экран.
                 _loadContacts();
+                // И даты работ — от них зависит появление кнопки
+                // «Отметить выполненным» в только что открывшемся confirmed.
+                _loadOrderDates();
                 // Мэтч: заказ подтверждён — показываем попап с подсказкой
                 // связаться с заказчиком. Контакты уже открылись на
                 // текущей странице (accepted), куда попадает пользователь
@@ -795,15 +887,29 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
         // Деструктивное действие на уже принятом заказе — выводим
         // outline-стилем (SecondaryButton), чтобы визуально отличить
         // от основных оранжевых CTA («Подтвердить», «Оставить отзыв»)
-        // и снизить вероятность случайного тапа.
-        return SecondaryButton(
-          label: 'Отказаться от заказа',
-          onPressed: _busy
-              ? null
-              : () => _runRemove(
-                    showDialog: () => showConfirmRefuseDialog(context),
-                    action: widget.onRefuse,
-                  ),
+        // и снизить вероятность случайного тапа. Выше неё — «Отметить
+        // выполненным», когда наступил последний день работ заказа.
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            if (_canCompleteNow) ...<Widget>[
+              PrimaryButton(
+                label: 'Отметить выполненным',
+                enabled: !_busy,
+                onPressed: _completeManually,
+              ),
+              SizedBox(height: 8.h),
+            ],
+            SecondaryButton(
+              label: 'Отказаться от заказа',
+              onPressed: _busy
+                  ? null
+                  : () => _runRemove(
+                        showDialog: () => showConfirmRefuseDialog(context),
+                        action: widget.onRefuse,
+                      ),
+            ),
+          ],
         );
       case MyOrderDetailState.completed:
         if (_reviewLeft) return const SizedBox.shrink();
