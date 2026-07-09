@@ -799,6 +799,25 @@ class CatalogService {
     return out;
   }
 
+  /// Судьба заказа для экрана деталей (RPC `order_engagement_state`,
+  /// миграция 110): 'taken' — уже взят другим исполнителем (есть принятый
+  /// или завершённый мэтч), 'open' — опубликован и свободен, 'gone' —
+  /// нет/отменён/истёк. RLS не даёт клиенту отличить «взят» от «истёк»
+  /// (чужие мэтчи не видны) — различает сервер, раскрывая только сам
+  /// факт занятости. На любую ошибку — 'unknown' (экран ведёт себя как
+  /// раньше, ничего не ломаем).
+  Future<String> getOrderEngagementState(String orderId) async {
+    try {
+      final dynamic res = await _client.rpc<dynamic>(
+        'order_engagement_state',
+        params: <String, dynamic>{'p_order_id': orderId},
+      );
+      return res is String ? res : 'unknown';
+    } catch (_) {
+      return 'unknown';
+    }
+  }
+
   /// Есть ли у меня активный (не терминальный) отклик на этот заказ.
   /// Используется, чтобы на экране заказа кнопка сразу стала "Вы уже
   /// откликнулись".

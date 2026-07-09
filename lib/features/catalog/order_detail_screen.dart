@@ -91,10 +91,18 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     final List<dynamic> results = await Future.wait<dynamic>(<Future<dynamic>>[
       svc.getOrderDetail(widget.orderId),
       svc.hasActiveMatchForOrder(widget.orderId),
+      // Судьба заказа: отличить «уже взят другим» от «не найден/истёк» —
+      // по пушу «Новый заказ рядом» люди приходят и на занятые заказы.
+      svc.getOrderEngagementState(widget.orderId),
     ]);
     final OrderDetail? order = results[0] as OrderDetail?;
     final bool hasMatch = results[1] as bool;
-    return _OrderScreenData(order: order, alreadyResponded: hasMatch);
+    final String engagement = results[2] as String;
+    return _OrderScreenData(
+      order: order,
+      alreadyResponded: hasMatch,
+      takenByOther: engagement == 'taken' && !hasMatch,
+    );
   }
 
   Future<void> _onRespondTap(OrderDetail order) async {
@@ -357,13 +365,18 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
           final _OrderScreenData? data = snap.data;
           final OrderDetail? order = data?.order;
           if (data == null || order == null) {
-            return _OrderNotFound();
+            // «Взят другим» вместо нейтрального «не найден»: по пушу
+            // «Новый заказ рядом» люди приходят и на заказы, которые уже
+            // успели забрать (а после завершения такой заказ ещё и не
+            // виден по RLS — раньше это выглядело как «заказ пропал»).
+            return _OrderNotFound(taken: data?.takenByOther ?? false);
           }
           final bool alreadyResponded =
               data.alreadyResponded || _justResponded;
           return _OrderDetailBody(
             order: order,
             alreadyResponded: alreadyResponded,
+            takenByOther: data.takenByOther,
             responding: _responding,
             fromCustomerCard: widget.fromCustomerCard,
             onRespond: () => _onRespondTap(order),
@@ -375,9 +388,17 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
 }
 
 class _OrderScreenData {
-  const _OrderScreenData({required this.order, required this.alreadyResponded});
+  const _OrderScreenData({
+    required this.order,
+    required this.alreadyResponded,
+    this.takenByOther = false,
+  });
   final OrderDetail? order;
   final bool alreadyResponded;
+
+  /// Заказ уже взят ДРУГИМ исполнителем (по серверной проверке; свой
+  /// активный отклик сюда не попадает — для него есть alreadyResponded).
+  final bool takenByOther;
 }
 
 class _OrderDetailBody extends StatelessWidget {
@@ -387,6 +408,7 @@ class _OrderDetailBody extends StatelessWidget {
     required this.responding,
     required this.fromCustomerCard,
     required this.onRespond,
+    this.takenByOther = false,
   });
 
   final OrderDetail order;
@@ -394,6 +416,11 @@ class _OrderDetailBody extends StatelessWidget {
   final bool responding;
   final bool fromCustomerCard;
   final VoidCallback onRespond;
+
+  /// Заказ уже взят другим исполнителем — вместо кнопки отклика
+  /// показываем честную плашку (раньше кнопка была активной, а тап
+  /// отбивался сервером — выглядело сломанным).
+  final bool takenByOther;
 
   @override
   Widget build(BuildContext context) {
@@ -521,23 +548,34 @@ class _OrderDetailBody extends StatelessWidget {
           // блокировке показывает _BlockedDialog). Раньше onPressed=null гасил
           // кнопку наглухо, и причина блокировки нигде на этом экране не
           // всплывала — исполнитель недоумевал так же, как заказчик.
-          child: GestureDetector(
-            onTap: (!alreadyResponded && !responding && AccountBlock.isBlocked)
-                ? onRespond
-                : null,
-            child: PrimaryButton(
-              label: alreadyResponded
-                  ? 'Вы уже откликнулись'
-                  : (responding ? 'Отправка...' : 'Откликнуться'),
-              enabled: !alreadyResponded &&
-                  !responding &&
-                  !AccountBlock.isBlocked,
-              onPressed:
-                  (alreadyResponded || responding || AccountBlock.isBlocked)
-                      ? null
-                      : onRespond,
-            ),
-          ),
+          child: takenByOther && !alreadyResponded
+              // Заказ уже взят другим — честная плашка вместо кнопки,
+              // тап по которой всё равно отбил бы сервер.
+              ? PrimaryButton(
+                  label: 'Заказ уже взят другим исполнителем',
+                  enabled: false,
+                  onPressed: null,
+                )
+              : GestureDetector(
+                  onTap: (!alreadyResponded &&
+                          !responding &&
+                          AccountBlock.isBlocked)
+                      ? onRespond
+                      : null,
+                  child: PrimaryButton(
+                    label: alreadyResponded
+                        ? 'Вы уже откликнулись'
+                        : (responding ? 'Отправка...' : 'Откликнуться'),
+                    enabled: !alreadyResponded &&
+                        !responding &&
+                        !AccountBlock.isBlocked,
+                    onPressed: (alreadyResponded ||
+                            responding ||
+                            AccountBlock.isBlocked)
+                        ? null
+                        : onRespond,
+                  ),
+                ),
         ),
       ],
     );
@@ -585,16 +623,41 @@ class _OrderDetailBody extends StatelessWidget {
 }
 
 class _OrderNotFound extends StatelessWidget {
+  const _OrderNotFound({this.taken = false});
+
+  /// true — заказ уже взят другим исполнителем (серверная проверка).
+  /// Показываем честную причину вместо нейтрального «не найден»:
+  /// по пушу «Новый заказ рядом» люди приходят и на занятые заказы,
+  /// и «не найден» выглядел как поломка.
+  final bool taken;
+
   @override
   Widget build(BuildContext context) {
     return Center(
       child: Padding(
         padding: EdgeInsets.all(16.w),
-        child: Text(
-          'Заказ не найден или снят с публикации',
-          style: AppTextStyles.bodyMRegular
-              .copyWith(color: AppColors.textTertiary),
-          textAlign: TextAlign.center,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Text(
+              taken
+                  ? 'Этот заказ уже взят другим исполнителем'
+                  : 'Заказ не найден или снят с публикации',
+              style: AppTextStyles.bodyMRegular
+                  .copyWith(color: AppColors.textPrimary),
+              textAlign: TextAlign.center,
+            ),
+            if (taken) ...<Widget>[
+              SizedBox(height: 8.h),
+              Text(
+                'Такое бывает: кто-то откликнулся раньше. '
+                'Загляните в ленту — там есть другие заказы.',
+                style: AppTextStyles.bodyMRegular
+                    .copyWith(color: AppColors.textTertiary),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ],
         ),
       ),
     );
