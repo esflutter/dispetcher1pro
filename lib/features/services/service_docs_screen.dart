@@ -93,10 +93,24 @@ class _ServiceDocsScreenState extends State<ServiceDocsScreen> {
         const SnackBar(content: Text('Документы отправлены на проверку')),
       );
       Navigator.of(context).pop();
+    } on TimeoutException {
+      // Таймаут НЕ означает провал: сервер мог уже закоммитить (вставить
+      // документы и перевести услугу в pending), а ответ не дошёл. Файлы
+      // НЕ удаляем — иначе у зарегистрированных документов пропали бы фото.
+      // Повторная подача на сервере сама заменит этот круг (миграция 111).
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Долго нет ответа. Проверьте раздел «Мои услуги»: если статус '
+            'стал «на проверке» — документы отправлены.',
+          ),
+        ),
+      );
+      Navigator.of(context).pop();
     } catch (_) {
-      // Подчищаем осиротевшие файлы в приватном бакете: RPC не прошёл —
-      // документы нигде не зарегистрированы, ночная чистка их не достаёт.
-      // Best-effort, как при сбое верификации в чате ассистента.
+      // Явная ошибка ДО коммита (нет сети, отказ RPC): документы нигде не
+      // зарегистрированы — подчищаем осиротевшие файлы в приватном бакете.
       unawaited(StorageService.instance.removeVerificationDocuments(uploaded));
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

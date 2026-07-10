@@ -361,17 +361,12 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
               m.status != MyMatchStatus.awaitingExecutor) {
             continue;
           }
-          final DateTime key = DateTime(
-            m.orderDateFrom.year,
-            m.orderDateFrom.month,
-            m.orderDateFrom.day,
-          );
           final MyOrderStatus uiStatus =
               m.status == MyMatchStatus.accepted
                   ? MyOrderStatus.accepted
                   : MyOrderStatus.pendingConfirmation;
           final ({String? phone, String? email})? c = contacts[m.customerId];
-          (_ordersByDate[key] ??= <_ScheduledOrder>[]).add(_ScheduledOrder(
+          final _ScheduledOrder scheduled = _ScheduledOrder(
             status: uiStatus,
             machinery: m.orderMachineryTitles,
             title: m.orderTitle,
@@ -402,7 +397,23 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
             agreedPricePerHour: m.agreedPricePerHour,
             agreedPricePerDay: m.agreedPricePerDay,
             serviceMachineryTitle: m.serviceMachineryTitle,
-          ));
+          );
+          // Заказ занимает ВСЕ свои дни, а не только день начала: иначе
+          // многодневный заказ виден только на date_from, а на остальных
+          // днях (в новом режиме) они рисуются выходными, и заказ визуально
+          // «пропадает». Раскладываем по каждому дню диапазона [from..to]
+          // (ограничение 60 дней — страховка от абсурдных диапазонов).
+          final DateTime from = DateTime(m.orderDateFrom.year,
+              m.orderDateFrom.month, m.orderDateFrom.day);
+          final DateTime to = m.orderDateTo == null
+              ? from
+              : DateTime(m.orderDateTo!.year, m.orderDateTo!.month,
+                  m.orderDateTo!.day);
+          for (DateTime d = from;
+              !d.isAfter(to) && d.difference(from).inDays <= 60;
+              d = d.add(const Duration(days: 1))) {
+            (_ordersByDate[d] ??= <_ScheduledOrder>[]).add(scheduled);
+          }
         }
         _acceptingOrders = _acceptingFor(_selectedDate);
       });
@@ -618,6 +629,10 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       });
       if (_unmarkedDayAvailable) {
         // Легаси: день без записи и так рабочий → удаляем override.
+        // Чистим и локальные настройки дня: в БД строки больше нет (день =
+        // дефолт из карточки), поэтому полоска настроек и «Параметры дня»
+        // не должны показывать старое время/технику/радиус, которых уже нет.
+        setState(() => _daySettings.remove(key));
         try {
           await ScheduleService.instance.resetToDefault(_selectedDate);
         } catch (_) {/* silent */}
