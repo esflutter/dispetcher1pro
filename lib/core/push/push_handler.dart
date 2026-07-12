@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import '../router.dart';
+import '../profile/profile_service.dart';
 import '../../features/shell/main_shell.dart';
 
 /// Обработка пушей на клиенте.
@@ -113,6 +114,17 @@ class PushHandler {
   }
 
   Future<void> _handleForegroundMessage(RemoteMessage message) async {
+    // Пуш о верификации/блокировке пришёл, пока приложение открыто (в т.ч.
+    // когда пользователь стоит на экране профиля). Дёргаем «маячок» профиля,
+    // чтобы статус («Верификация в процессе» → «Документы одобрены») обновился
+    // живьём, без перезахода. Верификация/блокировка ведут на /profile или
+    // /executor-card.
+    final dynamic fgRoute = message.data['route'];
+    if (fgRoute is String &&
+        (fgRoute.startsWith('/profile') || fgRoute.startsWith('/executor-card'))) {
+      ProfileService.changeBeacon.value++;
+    }
+
     final RemoteNotification? n = message.notification;
     if (n == null) return;
 

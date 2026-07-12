@@ -35,7 +35,8 @@ class ProfileScreen extends StatefulWidget {
   State<ProfileScreen> createState() => _ProfileScreenState();
 }
 
-class _ProfileScreenState extends State<ProfileScreen> {
+class _ProfileScreenState extends State<ProfileScreen>
+    with WidgetsBindingObserver {
   String? _rejectReason;
 
   VerificationStatus get _status => VerificationStatus.current;
@@ -57,9 +58,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
     AccountBlock.notifier.addListener(_refresh);
     // Любая правка профиля в дочерних экранах (имя/email/avatar/about/
     // status/опыт) бьёт по changeBeacon → заново тянем DB, чтобы аватар
-    // и т.д. обновились без hot reload.
+    // и т.д. обновились без hot reload. Сюда же прилетает пуш о верификации
+    // (push_handler бьёт по changeBeacon) — статус обновляется живьём, даже
+    // если пользователь стоит на этом экране в момент одобрения.
     ProfileService.changeBeacon.addListener(_onProfileChanged);
+    // Возврат в приложение из фона — перечитываем статус: админ мог одобрить
+    // документы, пока приложение было свёрнуто. Раньше требовался полный
+    // перезапуск, чтобы «Верификация в процессе» сменилась на «пройдена».
+    WidgetsBinding.instance.addObserver(this);
     _loadFromDb();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _loadFromDb();
   }
 
   void _onProfileChanged() {
@@ -133,6 +145,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     VerificationStatus.notifier.removeListener(_refresh);
     AccountBlock.notifier.removeListener(_refresh);
     ProfileService.changeBeacon.removeListener(_onProfileChanged);
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
