@@ -148,6 +148,14 @@ class SettingsService {
   /// одноразовая проверка на аккаунт, как раньше.
   Future<bool> perServiceDocs() async {
     await _load();
+    return perServiceDocsCached;
+  }
+
+  /// Синхронная версия [perServiceDocs] по УЖЕ ПРОГРЕТОМУ кэшу (warmup в
+  /// main + reload после входа). Нужна там, где флаг читается синхронно
+  /// (маппинг статуса верификации при загрузке профиля). До прогрева и при
+  /// сбое загрузки — false (легаси-режим), это безопасный дефолт.
+  bool get perServiceDocsCached {
     final Object? v = _values['verification.per_service_docs'];
     if (v is bool) return v;
     if (v is num) return v != 0;

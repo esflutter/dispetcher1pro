@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import 'package:dispatcher_1/core/ai/ai_navigation.dart';
 import 'package:dispatcher_1/core/profile/profile_service.dart';
+import 'package:dispatcher_1/core/settings/settings_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_spacing.dart';
 import 'package:dispatcher_1/core/utils/legal_links.dart';
@@ -92,12 +93,18 @@ class _ProfileScreenState extends State<ProfileScreen>
       }
       // Синхронизируем мок-сторы с реальным состоянием в БД.
       AccountBlock.setUntil(p.blockedUntil);
-      VerificationStatus.current = switch (p.verificationStatus) {
-        'approved' => VerificationStatus.verified,
-        'pending' => VerificationStatus.inProgress,
-        'rejected' => VerificationStatus.rejected,
-        _ => VerificationStatus.notVerified,
-      };
+      // Режим «документы при каждой услуге»: верификации личности аккаунта
+      // нет (доступ на сервере — по одобренной услуге). Клиент считает
+      // аккаунт «пройденным», чтобы карточка/отклик не требовали её.
+      VerificationStatus.current =
+          SettingsService.instance.perServiceDocsCached
+              ? VerificationStatus.verified
+              : switch (p.verificationStatus) {
+                  'approved' => VerificationStatus.verified,
+                  'pending' => VerificationStatus.inProgress,
+                  'rejected' => VerificationStatus.rejected,
+                  _ => VerificationStatus.notVerified,
+                };
       ReviewsData.setFromDb(
         rating: p.ratingAsExecutor,
         reviewCount: p.reviewCountAsExecutor,
@@ -261,6 +268,11 @@ class _ProfileScreenState extends State<ProfileScreen>
                 textAlign: TextAlign.left,
               ),
               SizedBox(height: 16.h),
+            ] else if (SettingsService.instance.perServiceDocsCached) ...<Widget>[
+              // Режим «документы при каждой услуге»: проверки личности
+              // аккаунта нет — блок верификации в профиле не показываем
+              // (документы прикладываются к каждой услуге в «Моих услугах»).
+              SizedBox(height: 4.h),
             ] else ...<Widget>[
               FullWidthVerificationPill(status: status),
               if (status == VerificationStatus.notVerified) ...<Widget>[

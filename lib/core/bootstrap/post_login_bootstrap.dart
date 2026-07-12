@@ -10,6 +10,7 @@ import '../../features/services/my_services_screen.dart';
 import '../auth/phone_format.dart';
 import '../executor_card/executor_card_service.dart';
 import '../profile/profile_service.dart';
+import '../settings/settings_service.dart';
 import '../push/push_service.dart';
 
 /// Тянет приватный профиль (подписка), карточку исполнителя и услуги
@@ -67,12 +68,18 @@ Future<void> _bootstrapVerification() async {
     final MyProfile? p = await ProfileService.instance.loadMine();
     if (p == null) return;
     AccountBlock.setUntil(p.blockedUntil);
-    VerificationStatus.current = switch (p.verificationStatus) {
-      'approved' => VerificationStatus.verified,
-      'pending' => VerificationStatus.inProgress,
-      'rejected' => VerificationStatus.rejected,
-      _ => VerificationStatus.notVerified,
-    };
+    // В режиме «документы при каждой услуге» проверки личности аккаунта нет —
+    // доступ на сервере завязан на одобренную услугу. Клиент считает аккаунт
+    // «пройденным», чтобы карточка и отклик не требовали верификации аккаунта.
+    VerificationStatus.current =
+        SettingsService.instance.perServiceDocsCached
+            ? VerificationStatus.verified
+            : switch (p.verificationStatus) {
+                'approved' => VerificationStatus.verified,
+                'pending' => VerificationStatus.inProgress,
+                'rejected' => VerificationStatus.rejected,
+                _ => VerificationStatus.notVerified,
+              };
   } catch (_) {/* фоллбэк: статус поднимет profile_screen */}
 }
 
