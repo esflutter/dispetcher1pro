@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:dispatcher_1/core/catalog/catalog_service.dart';
 import 'package:dispatcher_1/core/catalog/models.dart';
+import 'package:dispatcher_1/core/settings/settings_service.dart';
 
 import 'models.dart';
 
@@ -166,7 +167,12 @@ class MyOrdersService {
       return 'Подписка неактивна. Продлите её, чтобы принимать заказы.';
     }
     if (serverMessage.contains('executor_not_verified')) {
-      return 'Аккаунт ещё не верифицирован — дождитесь проверки документов.';
+      // В режиме «документы при каждой услуге» единой верификации аккаунта нет:
+      // доступ к принятию завязан на услугу с одобренными документами.
+      return SettingsService.instance.perServiceDocsCached
+          ? 'Для принятия заказа нужна услуга с одобренными документами. '
+              'Проверьте статус в «Моих услугах».'
+          : 'Аккаунт ещё не верифицирован — дождитесь проверки документов.';
     }
     if (serverMessage.contains('card_not_published')) {
       return 'Опубликуйте карточку исполнителя, чтобы принимать заказы.';

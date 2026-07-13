@@ -8,6 +8,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import '../router.dart';
 import '../profile/profile_service.dart';
+import '../../features/services/my_services_screen.dart' show ServiceData;
 import '../../features/shell/main_shell.dart';
 
 /// Обработка пушей на клиенте.
@@ -123,6 +124,13 @@ class PushHandler {
     if (fgRoute is String &&
         (fgRoute.startsWith('/profile') || fgRoute.startsWith('/executor-card'))) {
       ProfileService.changeBeacon.value++;
+    }
+    // Решение по документам конкретной услуги (одобрено/отклонено) ведёт на
+    // /services. Обновляем кэш услуг и бьём маячок, чтобы открытый экран
+    // «Мои услуги» перерисовал статус услуги живьём, без перезахода.
+    if (fgRoute is String && fgRoute.startsWith('/services')) {
+      unawaited(ServiceData.refresh());
+      ServiceData.changeBeacon.value++;
     }
 
     final RemoteNotification? n = message.notification;

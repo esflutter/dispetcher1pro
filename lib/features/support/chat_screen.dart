@@ -11,6 +11,7 @@ import 'package:dispatcher_1/core/ai/ai_client.dart';
 import 'package:dispatcher_1/core/ai/chat_intent.dart';
 import 'package:dispatcher_1/core/ai/stt_recorder.dart';
 import 'package:dispatcher_1/core/auth/guest_gate.dart';
+import 'package:dispatcher_1/core/settings/settings_service.dart';
 import 'package:dispatcher_1/core/storage/storage_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
@@ -147,18 +148,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             message: 'Авторизуйтесь, чтобы отправить документы на проверку.');
         return;
       }
-      _awaitingDocuments = true;
-      _addBotMessage(
-        'Отправьте, пожалуйста, фото документов, чтобы мы могли '
-        'подтвердить ваш профиль:\n\n'
-        '• ФИО или название организации\n'
-        '• Паспорт (первая страница)\n'
-        '• Фото техники\n'
-        '• Документы на технику\n'
-        '• Удостоверение на право управления техникой\n'
-        '• Водительское удостоверение\n\n'
-        'Можно отправить всё одним сообщением или по отдельности.',
-      );
+      // Режим проверки решаем асинхронно (флаг настроек), поэтому запуск
+      // приёма фото выносим в отдельный метод — initState не может ждать.
+      unawaited(_startVerifyDocumentsFlow());
       return;
     }
 
@@ -205,6 +197,34 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       _mode = AiChatKind.chat;
       _handleSend(initial);
     });
+  }
+
+  /// Запуск флоу «прислать документы» из старой кнопки/диплинка
+  /// `verify_documents`. В режиме «документы при каждой услуге» единой
+  /// проверки аккаунта больше нет — приём фото здесь отправил бы паспорт в
+  /// невидимую очередь, поэтому вместо загрузчика показываем, куда идти.
+  Future<void> _startVerifyDocumentsFlow() async {
+    final bool perService = await SettingsService.instance.perServiceDocs();
+    if (!mounted) return;
+    if (perService) {
+      _addBotMessage(
+        'Проверка теперь проходит по каждой услуге отдельно. Приложите '
+        'документы в разделе «Мои услуги» → выберите услугу → «Документы».',
+      );
+      return;
+    }
+    _awaitingDocuments = true;
+    _addBotMessage(
+      'Отправьте, пожалуйста, фото документов, чтобы мы могли '
+      'подтвердить ваш профиль:\n\n'
+      '• ФИО или название организации\n'
+      '• Паспорт (первая страница)\n'
+      '• Фото техники\n'
+      '• Документы на технику\n'
+      '• Удостоверение на право управления техникой\n'
+      '• Водительское удостоверение\n\n'
+      'Можно отправить всё одним сообщением или по отдельности.',
+    );
   }
 
   /// Подчистка при открытии экрана: список сообщений статический и переживает
@@ -417,10 +437,15 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       // Картинка без текста и вне режима отправки документов: распознавать
       // изображения ассистент не умеет — не молчим, а подсказываем, что делать.
       if (hasImages) {
+        // Куда нести документы — зависит от режима проверки: в режиме
+        // документов-по-услугам это раздел конкретной услуги, а не профиль.
+        final String docsHint = SettingsService.instance.perServiceDocsCached
+            ? ' (Документы прикладываются к конкретной услуге — «Мои услуги» → услуга → «Документы».)'
+            : ' (А документы для проверки профиля — через «Пройти проверку» в профиле.)';
         _addBotMessage(
           'Фото получил — сам картинки не читаю, но прикреплю их к услуге, когда '
           'будем её создавать. Опишите словами или голосом, что за техника и по '
-          'какой цене. (А документы для проверки профиля — через «Пройти проверку» в профиле.)',
+          'какой цене.$docsHint',
         );
       }
       return;

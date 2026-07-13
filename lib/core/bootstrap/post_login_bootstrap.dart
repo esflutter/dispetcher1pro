@@ -71,15 +71,17 @@ Future<void> _bootstrapVerification() async {
     // В режиме «документы при каждой услуге» проверки личности аккаунта нет —
     // доступ на сервере завязан на одобренную услугу. Клиент считает аккаунт
     // «пройденным», чтобы карточка и отклик не требовали верификации аккаунта.
-    VerificationStatus.current =
-        SettingsService.instance.perServiceDocsCached
-            ? VerificationStatus.verified
-            : switch (p.verificationStatus) {
-                'approved' => VerificationStatus.verified,
-                'pending' => VerificationStatus.inProgress,
-                'rejected' => VerificationStatus.rejected,
-                _ => VerificationStatus.notVerified,
-              };
+    // await-геттер сам дожидается/повторяет загрузку настроек — при
+    // непрогретом кэше не откатываемся ложно в легаси-UI (верификация аккаунта).
+    final bool perService = await SettingsService.instance.perServiceDocs();
+    VerificationStatus.current = perService
+        ? VerificationStatus.verified
+        : switch (p.verificationStatus) {
+            'approved' => VerificationStatus.verified,
+            'pending' => VerificationStatus.inProgress,
+            'rejected' => VerificationStatus.rejected,
+            _ => VerificationStatus.notVerified,
+          };
   } catch (_) {/* фоллбэк: статус поднимет profile_screen */}
 }
 

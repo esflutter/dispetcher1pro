@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:dispatcher_1/core/my_orders/my_orders_service.dart'
     show AlreadyRespondedException, MatchAlreadyTakenException;
+import 'package:dispatcher_1/core/settings/settings_service.dart';
 import 'package:dispatcher_1/core/utils/geo_distance.dart';
 
 import 'models.dart';
@@ -773,7 +774,12 @@ class CatalogService {
     await _primeDirectories();
     final User? user = _client.auth.currentUser;
     if (user == null) return const <MyActiveService>[];
-    final List<Map<String, dynamic>> rows = await _client
+    // В режиме «документы при каждой публикации» в шторку выбора услуги при
+    // отклике должны попадать только услуги с ОДОБРЕННЫМИ документами: иначе
+    // исполнитель выберет неодобренную, а сервер откажет (service_not_verified,
+    // миграция 118). В легаси-режиме статуса нет (у новых услуг он 'none') —
+    // фильтровать нельзя, иначе из шторки пропали бы вообще все услуги.
+    var query = _client
         .from('services')
         .select(
           'id, title, machinery_ids, price_per_hour, price_per_day, min_hours',
@@ -781,6 +787,10 @@ class CatalogService {
         .eq('executor_id', user.id)
         .eq('is_archived', false)
         .eq('is_paid', true);
+    if (SettingsService.instance.perServiceDocsCached) {
+      query = query.eq('verification_status', 'approved');
+    }
+    final List<Map<String, dynamic>> rows = await query;
     final List<MyActiveService> out = <MyActiveService>[];
     for (final Map<String, dynamic> r in rows) {
       final List<int> ids = List<int>.from(r['machinery_ids'] as List);

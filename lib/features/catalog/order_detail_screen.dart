@@ -11,6 +11,7 @@ import 'package:dispatcher_1/core/catalog/format.dart';
 import 'package:dispatcher_1/core/catalog/models.dart';
 import 'package:dispatcher_1/core/my_orders/my_orders_service.dart'
     show AlreadyRespondedException, MatchAlreadyTakenException;
+import 'package:dispatcher_1/core/settings/settings_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
 import 'package:dispatcher_1/core/widgets/clickable_address.dart';
@@ -148,6 +149,42 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
       return;
     }
 
+    // 3.5. Режим «документы при каждой услуге»: перед подпиской проверяем, что
+    // есть хотя бы одна услуга с ОДОБРЕННЫМИ документами. Иначе сервер всё
+    // равно откажет (service_not_verified) — а новый исполнитель уже успел бы
+    // заплатить за подписку впустую. Зеркалит серверный порядок гейтов
+    // (executor_gate_ok раньше подписки). listMyActiveServices под флагом уже
+    // отдаёт только approved — пустой список = ни одной одобренной услуги.
+    final bool docsMode = SettingsService.instance.perServiceDocsCached;
+    List<MyActiveService>? approvedServices;
+    if (docsMode) {
+      setState(() => _responding = true);
+      try {
+        approvedServices = await CatalogService.instance.listMyActiveServices();
+      } catch (e) {
+        if (!mounted) return;
+        setState(() => _responding = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(friendlyError(e))),
+        );
+        return;
+      }
+      if (!mounted) return;
+      setState(() => _responding = false);
+      if (approvedServices.isEmpty) {
+        await showDialog<void>(
+          context: context,
+          barrierColor: Colors.black.withValues(alpha: 0.35),
+          builder: (_) => const _DocsPendingDialog(
+            message:
+                'Документы услуги ещё не одобрены — дождитесь проверки, '
+                'тогда сможете откликаться.',
+          ),
+        );
+        return;
+      }
+    }
+
     // 4. Подписка не активна — paywall либо «приостановлена» с возобновлением.
     if (!VerificationStatus.hasSubscription) {
       // «Приостановлена» показываем ТОЛЬКО пока оплаченный период ещё не
@@ -201,8 +238,10 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     setState(() => _responding = true);
     try {
       final CatalogService svc = CatalogService.instance;
+      // В режиме документов-по-услугам список уже загрузили на шаге 3.5
+      // (только approved) — переиспользуем, чтобы не дёргать запрос дважды.
       final List<MyActiveService> myServices =
-          await svc.listMyActiveServices();
+          approvedServices ?? await svc.listMyActiveServices();
       // Пересечение моих услуг с техникой заказа: одна услуга = одна
       // строка в шторке выбора, разные тарифы за один и тот же экскаватор
       // не схлопываются.
@@ -216,7 +255,16 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
         await showDialog<void>(
           context: context,
           barrierColor: Colors.black.withValues(alpha: 0.35),
-          builder: (_) => _NoMatchingMachineryDialog(),
+          // В режиме документов-по-услугам список отфильтрован по approved:
+          // пустое пересечение чаще значит «есть услуга на эту технику, но её
+          // документы ещё не одобрены», а не «услуги нет вовсе».
+          builder: (_) => docsMode
+              ? const _DocsPendingDialog(
+                  message:
+                      'Документы по вашей услуге для этой техники ещё не '
+                      'одобрены — дождитесь проверки.',
+                )
+              : _NoMatchingMachineryDialog(),
         );
         return;
       }
@@ -1005,6 +1053,80 @@ class _CheckRow extends StatelessWidget {
 /// Диалог «Нет подходящей техники» — показывается когда исполнитель
 /// пытается откликнуться на заказ, но ни один из требуемых видов
 /// спецтехники не заведён у него в услугах. Кнопка ведёт в «Мои услуги».
+/// Режим «документы при каждой услуге»: у исполнителя нет услуги с одобренными
+/// документами — совсем (перед подпиской) или под технику этого заказа. Сервер
+/// в обоих случаях откажет (service_not_verified), поэтому вместо paywall/общего
+/// «нет техники» объясняем, что нужно дождаться проверки, и ведём в «Мои услуги».
+class _DocsPendingDialog extends StatelessWidget {
+  const _DocsPendingDialog({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      insetPadding: EdgeInsets.symmetric(horizontal: 16.w),
+      backgroundColor: Colors.transparent,
+      child: Container(
+        padding: EdgeInsets.fromLTRB(16.r, 14.r, 16.r, 22.r),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(20.r),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Align(
+              alignment: Alignment.centerRight,
+              child: DialogCloseButton(
+                onTap: () => Navigator.of(context).pop(),
+                color: AppColors.textTertiary,
+                iconSize: 22.r,
+              ),
+            ),
+            SizedBox(height: 20.h),
+            Text(
+              'Документы ещё\nна проверке',
+              textAlign: TextAlign.center,
+              style:
+                  AppTextStyles.titleL.copyWith(fontWeight: FontWeight.w700),
+            ),
+            SizedBox(height: 8.h),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: AppTextStyles.bodyMRegular
+                  .copyWith(color: AppColors.textSecondary),
+            ),
+            SizedBox(height: 18.h),
+            PrimaryButton(
+              label: 'Перейти к моим услугам',
+              onPressed: () {
+                Navigator.of(context).pop();
+                context.push('/services');
+              },
+            ),
+            SizedBox(height: 20.h),
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => Navigator.of(context).pop(),
+              child: Center(
+                child: Text(
+                  'Вернуться',
+                  style: AppTextStyles.bodyMedium
+                      .copyWith(color: AppColors.textPrimary),
+                ),
+              ),
+            ),
+            SizedBox(height: 8.h),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _NoMatchingMachineryDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {

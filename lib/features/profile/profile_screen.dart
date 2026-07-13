@@ -96,15 +96,18 @@ class _ProfileScreenState extends State<ProfileScreen>
       // Режим «документы при каждой услуге»: верификации личности аккаунта
       // нет (доступ на сервере — по одобренной услуге). Клиент считает
       // аккаунт «пройденным», чтобы карточка/отклик не требовали её.
-      VerificationStatus.current =
-          SettingsService.instance.perServiceDocsCached
-              ? VerificationStatus.verified
-              : switch (p.verificationStatus) {
-                  'approved' => VerificationStatus.verified,
-                  'pending' => VerificationStatus.inProgress,
-                  'rejected' => VerificationStatus.rejected,
-                  _ => VerificationStatus.notVerified,
-                };
+      // await-геттер сам дожидается/повторяет загрузку настроек — при
+      // непрогретом кэше не откатываемся ложно в легаси-UI.
+      final bool perService = await SettingsService.instance.perServiceDocs();
+      if (!mounted) return;
+      VerificationStatus.current = perService
+          ? VerificationStatus.verified
+          : switch (p.verificationStatus) {
+              'approved' => VerificationStatus.verified,
+              'pending' => VerificationStatus.inProgress,
+              'rejected' => VerificationStatus.rejected,
+              _ => VerificationStatus.notVerified,
+            };
       ReviewsData.setFromDb(
         rating: p.ratingAsExecutor,
         reviewCount: p.reviewCountAsExecutor,

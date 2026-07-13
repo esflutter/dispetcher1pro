@@ -10,6 +10,7 @@ import 'package:dispatcher_1/core/my_services/my_services_service.dart';
 import 'package:dispatcher_1/core/storage/storage_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
+import 'package:dispatcher_1/core/utils/friendly_error.dart';
 import 'package:dispatcher_1/core/utils/photo_source.dart';
 import 'package:dispatcher_1/core/widgets/dark_sub_app_bar.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
@@ -110,17 +111,15 @@ class _ServiceDocsScreenState extends State<ServiceDocsScreen> {
         ),
       );
       Navigator.of(context).pop();
-    } catch (_) {
+    } catch (e) {
       // Явная ошибка ДО коммита (нет сети, отказ RPC): документы нигде не
       // зарегистрированы — подчищаем осиротевшие файлы в приватном бакете.
       unawaited(StorageService.instance.removeVerificationDocuments(uploaded));
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Не удалось отправить документы. '
-            'Проверьте интернет и попробуйте ещё раз.',
-          ),
+        SnackBar(
+          content: Text(friendlyError(e,
+              fallback: 'Не удалось отправить документы. Попробуйте ещё раз.')),
         ),
       );
     } finally {

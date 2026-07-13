@@ -34,6 +34,12 @@ class ServiceData {
   /// после refresh.
   static final ValueNotifier<int> revision = ValueNotifier<int>(0);
 
+  /// Маячок «пришло решение по документам услуги» (пуш с route `/services`).
+  /// Отдельный от [revision]: тот инкрементится самим [refresh], а этот — только
+  /// из обработчика пушей, чтобы открытый экран «Мои услуги» перечитал список
+  /// без перезахода и без риска зациклиться на собственном refresh.
+  static final ValueNotifier<int> changeBeacon = ValueNotifier<int>(0);
+
   /// Полная перезагрузка из БД. Вызывается при открытии "Моих услуг",
   /// после create/update/archive, а также из мест, где старый код
   /// ждёт актуальный snapshot перед чтением (например, вычисление
@@ -188,6 +194,23 @@ class _MyServicesScreenState extends State<MyServicesScreen> {
     // ignore: discarded_futures
     SettingsService.instance.perServiceDocs().then((bool v) {
       if (mounted && v) setState(() => _docsMode = true);
+    });
+    // Пуш «решение по документам услуги» бьёт по этому маячку — перечитываем
+    // список, чтобы статус услуги («на проверке» → «одобрено»/«отклонено»)
+    // обновился на открытом экране без перезахода.
+    ServiceData.changeBeacon.addListener(_onDocsBeacon);
+  }
+
+  @override
+  void dispose() {
+    ServiceData.changeBeacon.removeListener(_onDocsBeacon);
+    super.dispose();
+  }
+
+  void _onDocsBeacon() {
+    // ignore: discarded_futures
+    ServiceData.refresh().then((_) {
+      if (mounted) setState(() {});
     });
   }
 
