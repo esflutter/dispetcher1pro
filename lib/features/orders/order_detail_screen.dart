@@ -1025,12 +1025,20 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
         // модератор, о решении придёт пуш.
         if (_completionState == 'disputed') {
           final String? reason = _completionDeclineReason?.trim();
+          // Слова заказчика показываем только когда это МОЙ запрос он
+          // отклонил — свою причину исполнитель и так знает.
+          final bool declinedByCustomer = _completionRequestedByMe;
           return _CompletionPlaque(
-            text: reason == null || reason.isEmpty
+            text: !declinedByCustomer
                 ? 'Заказ на проверке у модератора. '
                     'Мы пришлём уведомление о решении.'
-                : 'Заказ на проверке у модератора. Причина: $reason. '
-                    'Мы пришлём уведомление о решении.',
+                : (reason == null || reason.isEmpty)
+                    ? 'Заказчик не подтвердил завершение — заказ на '
+                        'проверке у модератора. Мы пришлём уведомление '
+                        'о решении.'
+                    : 'Заказчик не подтвердил завершение и написал: '
+                        '«$reason». Заказ на проверке у модератора — '
+                        'мы пришлём уведомление о решении.',
           );
         }
         // Живой запрос завершения. Мой — ждём заказчика (плашка вместо
