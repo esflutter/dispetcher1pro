@@ -8,6 +8,7 @@ import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_spacing.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
 import 'package:dispatcher_1/core/profile/profile_service.dart';
+import 'package:dispatcher_1/core/settings/settings_service.dart';
 import 'package:dispatcher_1/core/widgets/avatar_circle.dart';
 import 'package:dispatcher_1/core/widgets/clickable_address.dart';
 import 'package:dispatcher_1/core/widgets/dark_sub_app_bar.dart';
@@ -326,7 +327,11 @@ class _EmptyContent extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           SizedBox(height: 22.h),
-          if (VerificationStatus.current.isVerified)
+          // В режиме «документы при каждой услуге» верификации аккаунта нет
+          // (статус форсится в verified чисто для гейтов) — плашку у пустой
+          // карточки не показываем, она вводила бы в заблуждение.
+          if (VerificationStatus.current.isVerified &&
+              !SettingsService.instance.perServiceDocsCached)
             const FullWidthVerificationPill(
                 status: VerificationStatus.verified),
           Expanded(
