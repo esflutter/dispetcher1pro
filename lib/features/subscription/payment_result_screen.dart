@@ -123,9 +123,10 @@ class _PaymentResultScreenState extends State<PaymentResultScreen> {
         'kind': widget.binding ? 'card_binding' : 'payment',
       });
       // Привязка карты = активация триала: поднимаем сигнал для разового
-      // попапа «Заполните график работы» — его покажет корневой экран или
-      // карточка исполнителя после первого кадра.
-      if (widget.binding) SchedulePromptPrefs.pending = true;
+      // попапа «Заполните график работы». Покажется он только после
+      // создания карточки исполнителя (до неё «Мой график» закрыт), поэтому
+      // сигнал дублируется на диск — переживает перезапуск приложения.
+      if (widget.binding) unawaited(SchedulePromptPrefs.setPending());
       // Обновляем подписку и в быстром пути, и для привязки карты/триала
       // (binding): триал нового исполнителя идёт через привязку карты, и без
       // этого гейты в каталоге/карточке сразу после оплаты снова показывают
@@ -157,7 +158,7 @@ class _PaymentResultScreenState extends State<PaymentResultScreen> {
       });
       // Триал активирован через привязку карты — сигнал для разового
       // попапа «Заполните график работы» (см. быстрый путь выше).
-      if (widget.binding) SchedulePromptPrefs.pending = true;
+      if (widget.binding) unawaited(SchedulePromptPrefs.setPending());
       // Обновляем и для binding — триал нового исполнителя идёт через
       // привязку карты, иначе гейты сразу после оплаты снова покажут paywall.
       // ignore: discarded_futures

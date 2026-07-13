@@ -15,8 +15,9 @@ import 'package:dispatcher_1/core/widgets/dark_sub_app_bar.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
 
 /// Экран «Документы услуги» (режим `verification.per_service_docs`):
-/// исполнитель прикладывает фото документов на технику (СТС/ПТС, право
-/// управления) по конкретной услуге. После отправки RPC
+/// исполнитель прикладывает фото документов по конкретной услуге (паспорт,
+/// фото машины, документы на машину, удостоверение на право управления
+/// техникой, водительское). После отправки RPC
 /// `submit_service_verification` переводит услугу в статус 'pending',
 /// решение принимает администратор в панели верификации.
 class ServiceDocsScreen extends StatefulWidget {
@@ -29,9 +30,10 @@ class ServiceDocsScreen extends StatefulWidget {
 }
 
 class _ServiceDocsScreenState extends State<ServiceDocsScreen> {
-  /// Максимум фото документов за одну подачу. Сервер допускает до 12,
-  /// но 8 достаточно (СТС/ПТС с двух сторон + права + пара запасных).
-  static const int _maxDocs = 8;
+  /// Максимум фото документов за одну подачу — серверный потолок RPC.
+  /// Категорий пять (паспорт, фото машины, документы на машину,
+  /// удостоверение на технику, водительское), часть — по 2 страницы.
+  static const int _maxDocs = 12;
 
   /// Услуга из БД — ради статуса и причины отказа (при 'rejected').
   late Future<MyServiceDetail?> _future;
@@ -181,10 +183,21 @@ class _ServiceDocsScreenState extends State<ServiceDocsScreen> {
                   SizedBox(height: 12.h),
                 ],
                 Text(
-                  'Приложите документы на технику: СТС/ПТС, право '
-                  'управления. Проверка занимает до 1 рабочего дня.',
+                  'Приложите фото документов:',
                   style: AppTextStyles.body
                       .copyWith(color: AppColors.textSecondary),
+                ),
+                SizedBox(height: 6.h),
+                Text(
+                  '•  паспорт (1 страница)\n'
+                  '•  фото машины\n'
+                  '•  документы на машину\n'
+                  '•  удостоверение на право управления техникой\n'
+                  '•  водительское удостоверение',
+                  style: AppTextStyles.body.copyWith(
+                    color: AppColors.textSecondary,
+                    height: 1.55,
+                  ),
                 ),
                 SizedBox(height: 16.h),
                 Text(

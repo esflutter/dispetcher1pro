@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:dispatcher_1/core/schedule/schedule_prompt_prefs.dart';
+import 'package:dispatcher_1/features/executor_card/executor_card_screen.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_spacing.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
@@ -97,17 +100,30 @@ class ScheduleAlerts {
 
   /// Разовый попап «Заполните график работы» после первой активации
   /// подписки (привязки карты). Вызывается после первого кадра корневого
-  /// экрана и карточки исполнителя: если сигнал [SchedulePromptPrefs.pending]
-  /// поднят и попап ещё ни разу не показывали — показывает его и по
+  /// экрана и карточки исполнителя и после возврата из формы карточки:
+  /// если сигнал [SchedulePromptPrefs.pending] поднят, карточка исполнителя
+  /// уже создана и попап ещё ни разу не показывали — показывает его и по
   /// «Указать график» уводит в «Мой график». Показ фиксируется навсегда
   /// (persisted), поэтому больше одного раза попап не появится.
   static Future<void> maybeShowFillSchedulePrompt(BuildContext context) async {
-    if (!SchedulePromptPrefs.pending) return;
+    // Ждём карточку исполнителя: «Мой график» до её создания закрыт, и
+    // попап сразу после оплаты уводил в раздел, куда обычным путём ещё не
+    // попасть (жалоба теста). Сигнал НЕ гасим — попап покажется, когда
+    // пользователь сохранит карточку.
+    if (!ExecutorCardState.cardCreated) return;
+    if (!SchedulePromptPrefs.pending &&
+        !await SchedulePromptPrefs.pendingStored()) {
+      return;
+    }
     // Сбрасываем сигнал сразу — чтобы второй экран (shell + карточка
     // исполнителя) не попытался показать попап параллельно.
     SchedulePromptPrefs.pending = false;
-    if (await SchedulePromptPrefs.seen()) return;
+    if (await SchedulePromptPrefs.seen()) {
+      unawaited(SchedulePromptPrefs.clearPendingStored());
+      return;
+    }
     await SchedulePromptPrefs.markSeen();
+    unawaited(SchedulePromptPrefs.clearPendingStored());
     if (!context.mounted) return;
     final bool? go = await _showFillSchedulePrompt(context);
     if (go == true && context.mounted) {

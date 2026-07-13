@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
@@ -254,6 +256,12 @@ class _ExecutorCardScreenState extends State<ExecutorCardScreen> {
       if (mounted) {
         await context.push('/executor-card/edit');
         if (mounted) setState(() {});
+        // Пользователь мог только что впервые сохранить карточку — самое
+        // время для отложенного попапа «Заполните график работы» (он ждёт
+        // создания карточки, сигнал поднят при активации триала).
+        if (mounted) {
+          unawaited(ScheduleAlerts.maybeShowFillSchedulePrompt(context));
+        }
       }
       return;
     }
