@@ -503,6 +503,90 @@ Future<bool?> showExecutorCardRequiredDialog(BuildContext context) {
   );
 }
 
+/// Попап «Заполните карточку исполнителя»: карточка создана, но без
+/// адреса/радиуса она не опубликована, и сервер отклонит отклик
+/// (card_not_published). Объясняем заранее и ведём в форму карточки.
+/// Возвращает `true`, если нажали кнопку перехода.
+Future<bool?> showExecutorCardIncompleteDialog(BuildContext context) {
+  return showDialog<bool>(
+    context: context,
+    barrierColor: Colors.black.withValues(alpha: 0.35),
+    builder: (BuildContext ctx) => Dialog(
+      insetPadding: EdgeInsets.symmetric(horizontal: 16.w),
+      backgroundColor: Colors.transparent,
+      child: Container(
+        padding: EdgeInsets.fromLTRB(16.r, 14.r, 16.r, 22.r),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(20.r),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Align(
+              alignment: Alignment.centerRight,
+              child: DialogCloseButton(
+                onTap: () => Navigator.of(ctx).pop(),
+                color: AppColors.textTertiary,
+                iconSize: 22.r,
+              ),
+            ),
+            SizedBox(height: 12.h),
+            Text(
+              'Заполните карточку исполнителя',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontFamily: 'Roboto',
+                fontSize: 20.sp,
+                fontWeight: FontWeight.w600,
+                height: 1.3,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            SizedBox(height: 10.h),
+            Text(
+              'Чтобы откликаться на заказы, укажите в карточке адрес '
+              'и радиус работы — по ним заказчики находят вас.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontFamily: 'Roboto',
+                fontSize: 16.sp,
+                fontWeight: FontWeight.w400,
+                height: 1.3,
+                color: AppColors.textSecondary,
+              ),
+            ),
+            SizedBox(height: 20.h),
+            PrimaryButton(
+              label: 'Заполнить карточку',
+              onPressed: () => Navigator.of(ctx).pop(true),
+            ),
+            SizedBox(height: 20.h),
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => Navigator.of(ctx).pop(),
+              child: Center(
+                child: Text(
+                  'Вернуться',
+                  style: TextStyle(
+                    fontFamily: 'Roboto',
+                    fontSize: 16.sp,
+                    fontWeight: FontWeight.w500,
+                    height: 1.3,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ),
+            ),
+            SizedBox(height: 8.h),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
 /// Попап «У вас нет услуги с техникой [equipment]».
 /// Показывается при попытке выбрать технику в шторке отклика,
 /// если у исполнителя нет соответствующей услуги.

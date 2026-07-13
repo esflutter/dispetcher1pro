@@ -184,6 +184,20 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
       return;
     }
 
+    // 5б. Карточка есть, но без адреса/радиуса она не опубликована — сервер
+    // отклонит отклик (card_not_published). Кэш заполняется тем же кодом,
+    // что и cardCreated (bootstrap/экран карточки/форма), поэтому если
+    // карточка создана — кэш адреса и радиуса актуален.
+    if (ExecutorCardData.radius == null ||
+        (ExecutorCardData.location ?? '').trim().isEmpty) {
+      final bool? go = await showExecutorCardIncompleteDialog(context);
+      if (go == true && mounted) {
+        await context.push('/executor-card/edit');
+        if (mounted) setState(() {});
+      }
+      return;
+    }
+
     setState(() => _responding = true);
     try {
       final CatalogService svc = CatalogService.instance;
