@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import 'package:dispatcher_1/core/theme/app_colors.dart';
@@ -53,11 +54,21 @@ Future<bool?> showConfirmWithdrawDialog(BuildContext context) {
   );
 }
 
-/// Алерт «Заказ выполнен?» — подтверждение ручного завершения заказа
-/// кнопкой «Отметить выполненным». Возвращает `true`, если пользователь
-/// нажал «Да, выполнен»; сам RPC вызывает экран уже ПОСЛЕ закрытия
-/// диалога (тот же контракт, что у [showConfirmRefuseDialog]).
-Future<bool?> showConfirmCompleteDialog(BuildContext context) {
+/// Алерт-подтверждение ручного завершения заказа. Возвращает `true`,
+/// если пользователь нажал главную кнопку; сам RPC вызывает экран уже
+/// ПОСЛЕ закрытия диалога (тот же контракт, что у [showConfirmRefuseDialog]).
+/// С двухшаговым завершением (миграция 116) диалог используется в двух
+/// сценариях с разными текстами: «Отметить выполненным» (уйдёт запрос
+/// заказчику) и «Подтвердить завершение» (заказ завершится сразу) —
+/// поэтому заголовок/текст/кнопка передаются параметрами.
+Future<bool?> showConfirmCompleteDialog(
+  BuildContext context, {
+  String title = 'Заказ выполнен?',
+  String body =
+      'Заказчик получит запрос на подтверждение. После его ответа заказ '
+      'будет завершён, и можно будет оставить отзыв.',
+  String primaryLabel = 'Да, выполнен',
+}) {
   return showDialog<bool>(
     context: context,
     barrierColor: Colors.black.withValues(alpha: 0.35),
@@ -84,7 +95,7 @@ Future<bool?> showConfirmCompleteDialog(BuildContext context) {
             ),
             SizedBox(height: 12.h),
             Text(
-              'Заказ выполнен?',
+              title,
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontFamily: 'Roboto',
@@ -96,7 +107,7 @@ Future<bool?> showConfirmCompleteDialog(BuildContext context) {
             ),
             SizedBox(height: 10.h),
             Text(
-              'Заказ будет завершён у вас и у заказчика. После этого можно оставить отзыв.',
+              body,
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontFamily: 'Roboto',
@@ -108,7 +119,7 @@ Future<bool?> showConfirmCompleteDialog(BuildContext context) {
             ),
             SizedBox(height: 20.h),
             PrimaryButton(
-              label: 'Да, выполнен',
+              label: primaryLabel,
               onPressed: () => Navigator.of(ctx).pop(true),
             ),
             SizedBox(height: 20.h),
@@ -134,6 +145,169 @@ Future<bool?> showConfirmCompleteDialog(BuildContext context) {
       ),
     ),
   );
+}
+
+/// Диалог «Работа не завершена»: заказчик отметил работу выполненной, но
+/// исполнитель не согласен. Обязательное поле причины (до 300 символов),
+/// причина уйдёт модератору вместе со спором. Возвращает введённый текст,
+/// если нажали «Отправить»; `null` — если закрыли не отправив. Сам RPC
+/// (`decline_match_completion`) вызывает экран уже ПОСЛЕ закрытия диалога
+/// (тот же контракт, что у [showConfirmRefuseDialog]).
+Future<String?> showDeclineCompletionDialog(BuildContext context) {
+  return showDialog<String>(
+    context: context,
+    barrierColor: Colors.black.withValues(alpha: 0.35),
+    builder: (BuildContext ctx) => const _DeclineCompletionDialog(),
+  );
+}
+
+class _DeclineCompletionDialog extends StatefulWidget {
+  const _DeclineCompletionDialog();
+
+  @override
+  State<_DeclineCompletionDialog> createState() =>
+      _DeclineCompletionDialogState();
+}
+
+class _DeclineCompletionDialogState extends State<_DeclineCompletionDialog> {
+  final TextEditingController _reason = TextEditingController();
+
+  @override
+  void dispose() {
+    _reason.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      insetPadding: EdgeInsets.symmetric(horizontal: 16.w),
+      backgroundColor: Colors.transparent,
+      child: Container(
+        padding: EdgeInsets.fromLTRB(16.r, 14.r, 16.r, 22.r),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(20.r),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Align(
+              alignment: Alignment.centerRight,
+              child: DialogCloseButton(
+                onTap: () => Navigator.of(context).pop(),
+                color: AppColors.textTertiary,
+                iconSize: 22.r,
+              ),
+            ),
+            SizedBox(height: 12.h),
+            Text(
+              'Работа не завершена?',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontFamily: 'Roboto',
+                fontSize: 20.sp,
+                fontWeight: FontWeight.w600,
+                height: 1.3,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            SizedBox(height: 10.h),
+            Text(
+              'Опишите, что не так. Причина уйдёт модератору — '
+              'он разберётся и примет решение.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontFamily: 'Roboto',
+                fontSize: 16.sp,
+                fontWeight: FontWeight.w400,
+                height: 1.3,
+                color: AppColors.textSecondary,
+              ),
+            ),
+            SizedBox(height: 16.h),
+            Container(
+              constraints: BoxConstraints(minHeight: 56.h),
+              decoration: BoxDecoration(
+                color: AppColors.fieldFill,
+                borderRadius: BorderRadius.circular(12.r),
+              ),
+              padding: EdgeInsets.symmetric(
+                horizontal: 16.w,
+                vertical: 16.h,
+              ),
+              child: TextField(
+                controller: _reason,
+                // null — поле растёт вниз по мере добавления строк.
+                maxLines: null,
+                minLines: 1,
+                maxLength: 300,
+                inputFormatters: <TextInputFormatter>[
+                  LengthLimitingTextInputFormatter(300),
+                ],
+                // Кнопка «Отправить» активна только при непустой причине —
+                // перерисовываем диалог на каждый ввод.
+                onChanged: (_) => setState(() {}),
+                style: TextStyle(
+                  fontFamily: 'Roboto',
+                  fontSize: 16.sp,
+                  fontWeight: FontWeight.w400,
+                  height: 1.3,
+                  color: AppColors.textPrimary,
+                ),
+                decoration: InputDecoration(
+                  isCollapsed: true,
+                  border: InputBorder.none,
+                  // Скрываем счётчик «0/300» снизу — ограничение нужно
+                  // только как валидация ввода, показывать не надо.
+                  counterText: '',
+                  hintText: 'Что не так?',
+                  hintStyle: TextStyle(
+                    fontFamily: 'Roboto',
+                    fontSize: 16.sp,
+                    fontWeight: FontWeight.w400,
+                    height: 1.3,
+                    color: AppColors.textTertiary,
+                  ),
+                ),
+              ),
+            ),
+            SizedBox(height: 20.h),
+            PrimaryButton(
+              label: 'Отправить',
+              // Сервер отобьёт пустую причину кодом reason_required —
+              // не даём отправить её ещё на клиенте.
+              enabled: _reason.text.trim().isNotEmpty,
+              onPressed: () {
+                final String text = _reason.text.trim();
+                if (text.isEmpty) return;
+                Navigator.of(context).pop(text);
+              },
+            ),
+            SizedBox(height: 20.h),
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => Navigator.of(context).pop(),
+              child: Center(
+                child: Text(
+                  'Вернуться',
+                  style: TextStyle(
+                    fontFamily: 'Roboto',
+                    fontSize: 16.sp,
+                    fontWeight: FontWeight.w500,
+                    height: 1.3,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ),
+            ),
+            SizedBox(height: 8.h),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 /// Алерт «Заказ принят. Свяжитесь с заказчиком по указанным на странице

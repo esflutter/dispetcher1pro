@@ -179,11 +179,18 @@ class MyOrdersService {
     return null;
   }
 
-  /// Ручное завершение принятого заказа (RPC `complete_match_manually`,
-  /// миграция 109). Возвращает `'completed'` либо `'already_completed'`
-  /// (крон или вторая сторона успели раньше — тоже успех). Переход в
-  /// `completed` на сервере сам архивирует заказ и шлёт пуши «Оставьте
-  /// отзыв» обеим сторонам — клиенту достаточно обновить своё состояние.
+  /// Ручное завершение принятого заказа (RPC `complete_match_manually`).
+  /// С миграции 116 завершение двухшаговое — сервер ведёт состояние
+  /// подтверждения на мэтче (`completion_state`) и возвращает:
+  /// - `'confirmation_requested'` — создан запрос, вторая сторона получила
+  ///   пуш «Подтвердите завершение»; мэтч ещё НЕ завершён;
+  /// - `'already_requested'` — автор запроса нажал повторно (не ошибка);
+  /// - `'completed'` — это было подтверждение живого запроса второй
+  ///   стороной, мэтч завершён. Сервер сам архивирует заказ и шлёт пуши
+  ///   «Оставьте отзыв» обеим сторонам — клиенту достаточно обновить
+  ///   своё состояние;
+  /// - `'already_completed'` — уже завершён (крон успел раньше — тоже успех);
+  /// - `'disputed'` — по мэтчу открыт спор, решает модератор.
   /// Серверные отказы приходят техническими кодами в message —
   /// конвертируем в [CompleteMatchException] с готовым русским текстом.
   Future<String> completeMatchManually(String matchId) async {
@@ -196,6 +203,41 @@ class MyOrdersService {
     } on PostgrestException catch (e) {
       throw CompleteMatchException(_completeErrorMessage(e.message));
     }
+  }
+
+  /// «Работа не завершена» (RPC `decline_match_completion`, миграция 116):
+  /// вторая сторона не согласна с запросом завершения и отправляет спор
+  /// модератору с обязательной причиной. Возвращает `'disputed'` (успех —
+  /// заказ ушёл на модерацию, автор запроса получил пуш) либо
+  /// `'already_completed'` (мэтч успел завершиться — спорить не о чем).
+  /// Серверные отказы конвертируем в [CompleteMatchException] по тому же
+  /// принципу, что и в [completeMatchManually].
+  Future<String> declineMatchCompletion(String matchId, String reason) async {
+    try {
+      final dynamic res = await _client.rpc<dynamic>(
+        'decline_match_completion',
+        params: <String, dynamic>{'p_match_id': matchId, 'p_reason': reason},
+      );
+      return res as String;
+    } on PostgrestException catch (e) {
+      throw CompleteMatchException(_declineErrorMessage(e.message));
+    }
+  }
+
+  /// Технический код отказа `decline_match_completion` → русский текст.
+  static String _declineErrorMessage(String serverMessage) {
+    if (serverMessage.contains('reason_required')) {
+      return 'Опишите причину — она уйдёт модератору';
+    }
+    if (serverMessage.contains('no_completion_request')) {
+      return 'Запрос завершения уже неактуален — обновите экран';
+    }
+    if (serverMessage.contains('match_not_found') ||
+        serverMessage.contains('forbidden') ||
+        serverMessage.contains('unauthorized')) {
+      return 'Не удалось отправить — обновите список заказов';
+    }
+    return 'Не удалось отправить. Попробуйте ещё раз';
   }
 
   /// Технический код отказа `complete_match_manually` → русский текст.
@@ -237,6 +279,38 @@ class MyOrdersService {
         dateTo: order['date_to'] == null
             ? null
             : DateTime.parse(order['date_to'] as String).toLocal(),
+      );
+    } on PostgrestException {
+      return null;
+    }
+  }
+
+  /// Состояние двухшагового подтверждения завершения по мэтчу
+  /// (`order_matches.completion_state`, миграция 116) — нужно экрану
+  /// деталей, чтобы вместо кнопки «Отметить выполненным» показать
+  /// ожидание подтверждения / кнопки ответа на запрос заказчика / плашку
+  /// модерации. `requestedByMe` — автор живого запроса именно текущий
+  /// пользователь (тогда экран ждёт заказчика, а не предлагает подтвердить).
+  /// Возвращает `null`, если мэтч не найден / RLS не пропустил — экран
+  /// остаётся в обычном режиме (правило «не показывать, пока не уверены»).
+  Future<({String state, bool requestedByMe, String? declineReason})?>
+      getMatchCompletion(String matchId) async {
+    final User? user = _client.auth.currentUser;
+    try {
+      final Map<String, dynamic>? r = await _client
+          .from('order_matches')
+          .select(
+            'completion_state, completion_requested_by, '
+            'completion_decline_reason',
+          )
+          .eq('id', matchId)
+          .maybeSingle();
+      if (r == null) return null;
+      return (
+        state: (r['completion_state'] as String?) ?? 'none',
+        requestedByMe: r['completion_requested_by'] != null &&
+            r['completion_requested_by'] == user?.id,
+        declineReason: r['completion_decline_reason'] as String?,
       );
     } on PostgrestException {
       return null;

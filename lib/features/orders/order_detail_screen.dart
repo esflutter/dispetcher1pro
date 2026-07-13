@@ -195,6 +195,22 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
   DateTime? _orderDateFrom;
   DateTime? _orderDateTo;
 
+  /// Состояние двухшагового подтверждения завершения (миграция 116):
+  /// `'none'` — обычный режим, `'awaiting_confirm'` — одна из сторон
+  /// отметила работу выполненной и ждёт подтверждения второй,
+  /// `'disputed'` — открыт спор, решает модератор. От него зависит
+  /// нижняя панель: кнопка «Отметить выполненным» / плашка ожидания /
+  /// кнопки ответа на запрос заказчика / плашка модерации.
+  String _completionState = 'none';
+
+  /// Автор живого запроса завершения — я (тогда ждём заказчика), либо
+  /// заказчик (тогда предлагаем «Подтвердить» / «Работа не завершена»).
+  bool _completionRequestedByMe = false;
+
+  /// Причина спора («что не так»), если по мэтчу открыт спор —
+  /// показывается в плашке модерации.
+  String? _completionDeclineReason;
+
   /// Локальный снапшот рейтинга/количества отзывов заказчика. Изначально
   /// = widget.customerRating/customerReviews; после возврата с экрана
   /// отзыва обновляется через [getCustomerRatingSnapshot], чтобы шапка
@@ -222,6 +238,7 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
     }
     if (_state == MyOrderDetailState.confirmed) {
       _loadOrderDates();
+      _loadCompletionState();
     }
     if (_state == MyOrderDetailState.completed) {
       _checkExistingReview();
@@ -259,6 +276,13 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
       if (found == null || !mounted) return;
       final MyOrderMatch m = found;
       final MyOrderDetailState next = _detailStateForStatus(m.status);
+      // Статус мэтча мог не поменяться (accepted → accepted), а состояние
+      // двухшагового завершения — да: заказчик отметил работу выполненной
+      // прямо пока экран открыт. Перетягиваем его отдельно, чтобы кнопки
+      // «Подтвердить завершение» появились без перезахода на экран.
+      if (next == MyOrderDetailState.confirmed) {
+        _loadCompletionState();
+      }
       if (next == _state) return;
       setState(() {
         _state = next;
@@ -294,6 +318,23 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
     });
   }
 
+  /// Тянем состояние двухшагового подтверждения завершения. Ошибка сети —
+  /// экран остаётся в обычном режиме (кнопка «Отметить выполненным»), а
+  /// сервер всё равно не даст завершить дважды: повторный запрос вернёт
+  /// `already_requested`, подтверждение чужого — `completed`.
+  Future<void> _loadCompletionState() async {
+    final String? matchId = widget.matchId;
+    if (matchId == null) return;
+    final ({String state, bool requestedByMe, String? declineReason})? c =
+        await MyOrdersService.instance.getMatchCompletion(matchId);
+    if (c == null || !mounted) return;
+    setState(() {
+      _completionState = c.state;
+      _completionRequestedByMe = c.requestedByMe;
+      _completionDeclineReason = c.declineReason;
+    });
+  }
+
   /// Правило видимости «Отметить выполненным»: мэтч принят (state ==
   /// confirmed гарантирует accepted) И по локальному времени устройства
   /// уже наступил последний день заказа (date_to, без него date_from).
@@ -310,25 +351,61 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
     return !DateTime.now().isBefore(finalDayStart);
   }
 
-  /// «Отметить выполненным»: подтверждение → RPC → перевод экрана в
-  /// completed (появится существующая кнопка «Оставить отзыв»).
-  /// `already_completed` — тоже успех (крон или заказчик успели раньше).
-  Future<void> _completeManually() async {
+  /// «Отметить выполненным» / «Подтвердить завершение»: подтверждение →
+  /// RPC `complete_match_manually`. С миграции 116 завершение двухшаговое:
+  /// первый вызов лишь создаёт запрос второй стороне
+  /// (`confirmation_requested`) — экран уходит в режим ожидания, а НЕ в
+  /// completed. В completed переводит только ответ `completed` /
+  /// `already_completed` — это подтверждение живого запроса либо «уже
+  /// завершён» (крон или заказчик успели раньше — тоже успех).
+  /// [confirming] = тап по «Подтвердить завершение» на запрос заказчика —
+  /// меняет тексты диалога: здесь заказ завершится сразу.
+  Future<void> _completeManually({bool confirming = false}) async {
     if (_busy) return;
-    final bool? confirmed = await showConfirmCompleteDialog(context);
+    final bool? confirmed;
+    if (confirming) {
+      confirmed = await showConfirmCompleteDialog(
+        context,
+        title: 'Подтвердить завершение?',
+        body: 'Заказ будет завершён у вас и у заказчика. '
+            'После этого можно оставить отзыв.',
+        primaryLabel: 'Подтвердить',
+      );
+    } else {
+      confirmed = await showConfirmCompleteDialog(context);
+    }
     if (confirmed != true || !mounted) return;
     setState(() => _busy = true);
     try {
-      await MyOrdersService.instance
+      final String res = await MyOrdersService.instance
           .completeMatchManually(widget.matchId!);
       if (!mounted) return;
-      setState(() => _state = MyOrderDetailState.completed);
-      // Список «Мои заказы» под этим экраном ещё держит старый статус —
-      // будим его, чтобы при возврате заказ уже был в «Завершённых».
-      MyOrdersService.bumpChangeBeacon();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Заказ завершён')),
-      );
+      if (res == 'confirmation_requested' || res == 'already_requested') {
+        // Запрос создан (или уже висел) — ждём подтверждения заказчика.
+        setState(() {
+          _completionState = 'awaiting_confirm';
+          _completionRequestedByMe = true;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Отправлено заказчику на подтверждение'),
+          ),
+        );
+      } else if (res == 'disputed') {
+        // По мэтчу уже открыт спор — показываем плашку модерации и
+        // дотягиваем причину спора для её текста.
+        setState(() => _completionState = 'disputed');
+        _loadCompletionState();
+      } else {
+        // 'completed' / 'already_completed' — мэтч завершён.
+        setState(() => _state = MyOrderDetailState.completed);
+        // Список «Мои заказы» под этим экраном ещё держит старый статус —
+        // будим его, чтобы при возврате заказ уже был в «Завершённых».
+        MyOrdersService.bumpChangeBeacon();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Заказ завершён')),
+        );
+      }
     } on CompleteMatchException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -339,6 +416,56 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Не удалось завершить заказ. Попробуйте ещё раз.'),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// «Работа не завершена»: диалог с обязательной причиной → RPC
+  /// `decline_match_completion` → заказ уходит на модерацию (плашка
+  /// `disputed`). `already_completed` — мэтч успел завершиться, спорить
+  /// не о чем: переводим экран в completed, как при обычном завершении.
+  Future<void> _declineCompletion() async {
+    if (_busy) return;
+    final String? reason = await showDeclineCompletionDialog(context);
+    if (reason == null || reason.trim().isEmpty || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      final String res = await MyOrdersService.instance
+          .declineMatchCompletion(widget.matchId!, reason.trim());
+      if (!mounted) return;
+      if (res == 'already_completed') {
+        setState(() => _state = MyOrderDetailState.completed);
+        MyOrdersService.bumpChangeBeacon();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Заказ уже завершён')),
+        );
+      } else {
+        // 'disputed' — спор открыт, автор запроса получил пуш.
+        setState(() {
+          _completionState = 'disputed';
+          _completionDeclineReason = reason.trim();
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Отправлено модератору')),
+        );
+      }
+    } on CompleteMatchException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message)),
+      );
+      // Запрос мог устареть (заказчик отозвал / крон завершил) —
+      // ресинхронизируем состояние подтверждения, чтобы кнопки
+      // не предлагали ответить на уже несуществующий запрос.
+      _loadCompletionState();
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Не удалось отправить. Попробуйте ещё раз.'),
         ),
       );
     } finally {
@@ -488,16 +615,7 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
         ),
       ),
       floatingActionButton: Padding(
-        // 148.h — когда в нижней панели ДВЕ кнопки (waitingConfirm, а также
-        // confirmed с доступной «Отметить выполненным»), 88.h — одна.
-        padding: EdgeInsets.only(
-          bottom: _state == MyOrderDetailState.waitingConfirm ||
-                  (_state == MyOrderDetailState.confirmed && _canCompleteNow)
-              ? 148.h
-              : _hasBottomBar
-                  ? 88.h
-                  : 24.h,
-        ),
+        padding: EdgeInsets.only(bottom: _fabBottomPadding),
         child: AiAssistantFab(onTap: () => openAssistantChat(context)),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
@@ -717,6 +835,23 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
       _state != MyOrderDetailState.rejected &&
       !(_state == MyOrderDetailState.completed && _reviewLeft);
 
+  /// Отступ FAB-ассистента снизу — под фактическую высоту нижней панели,
+  /// чтобы кнопка ассистента не перекрывала действия. 148.h — две кнопки,
+  /// 88.h — одна, 24.h — панели нет; режимы двухшагового завершения выше
+  /// за счёт плашки (232.h — плашка + две кнопки, 168.h — плашка + кнопка,
+  /// 128.h — только плашка модерации).
+  double get _fabBottomPadding {
+    if (_state == MyOrderDetailState.waitingConfirm) return 148.h;
+    if (_state == MyOrderDetailState.confirmed) {
+      if (_completionState == 'awaiting_confirm') {
+        return _completionRequestedByMe ? 168.h : 232.h;
+      }
+      if (_completionState == 'disputed') return 128.h;
+      if (_canCompleteNow) return 148.h;
+    }
+    return _hasBottomBar ? 88.h : 24.h;
+  }
+
   Widget _buildBottomBar() {
     return Container(
       decoration: BoxDecoration(
@@ -885,6 +1020,65 @@ class _MyOrderDetailScreenState extends State<MyOrderDetailScreen> {
           ],
         );
       case MyOrderDetailState.confirmed:
+        // Спор по завершению — заказ на проверке у модератора. Кнопки
+        // завершения и отказа прячем: судьбу заказа теперь решает
+        // модератор, о решении придёт пуш.
+        if (_completionState == 'disputed') {
+          final String? reason = _completionDeclineReason?.trim();
+          return _CompletionPlaque(
+            text: reason == null || reason.isEmpty
+                ? 'Заказ на проверке у модератора. '
+                    'Мы пришлём уведомление о решении.'
+                : 'Заказ на проверке у модератора. Причина: $reason. '
+                    'Мы пришлём уведомление о решении.',
+          );
+        }
+        // Живой запрос завершения. Мой — ждём заказчика (плашка вместо
+        // кнопки «Отметить выполненным», «Отказаться» остаётся). Запрос
+        // заказчика — предлагаем подтвердить либо оспорить.
+        if (_completionState == 'awaiting_confirm') {
+          if (_completionRequestedByMe) {
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                const _CompletionPlaque(
+                  text: 'Вы отметили работу выполненной. '
+                      'Ждём подтверждения заказчика.',
+                ),
+                SizedBox(height: 8.h),
+                SecondaryButton(
+                  label: 'Отказаться от заказа',
+                  onPressed: _busy
+                      ? null
+                      : () => _runRemove(
+                            showDialog: () =>
+                                showConfirmRefuseDialog(context),
+                            action: widget.onRefuse,
+                          ),
+                ),
+              ],
+            );
+          }
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              const _CompletionPlaque(
+                text: 'Заказчик отметил работу выполненной',
+              ),
+              SizedBox(height: 8.h),
+              PrimaryButton(
+                label: 'Подтвердить завершение',
+                enabled: !_busy,
+                onPressed: () => _completeManually(confirming: true),
+              ),
+              SizedBox(height: 8.h),
+              SecondaryButton(
+                label: 'Работа не завершена',
+                onPressed: _busy ? null : _declineCompletion,
+              ),
+            ],
+          );
+        }
         // Деструктивное действие на уже принятом заказе — выводим
         // outline-стилем (SecondaryButton), чтобы визуально отличить
         // от основных оранжевых CTA («Подтвердить», «Оставить отзыв»)
@@ -982,6 +1176,37 @@ class _PhotosGrid extends StatelessWidget {
             ),
           ),
       ],
+    );
+  }
+}
+
+/// Информационная плашка нижней панели для режимов двухшагового
+/// завершения: мягкая кремовая заливка (primaryTint — как инфоблоки
+/// ассистента), скругление и обычный текст. Занимает место кнопки,
+/// когда действие сейчас не за исполнителем (ждём заказчика/модератора).
+class _CompletionPlaque extends StatelessWidget {
+  const _CompletionPlaque({required this.text});
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 12.h),
+      decoration: BoxDecoration(
+        color: AppColors.primaryTint,
+        borderRadius: BorderRadius.circular(12.r),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontFamily: 'Roboto',
+          fontSize: 14.sp,
+          fontWeight: FontWeight.w400,
+          height: 1.35,
+          color: AppColors.textPrimary,
+        ),
+      ),
     );
   }
 }
