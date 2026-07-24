@@ -38,37 +38,49 @@ class _SubscriptionPaywallState extends State<SubscriptionPaywall>
   /// и теперь привязывает новую, или подписка истекла). На webhook'е
   /// второй триал не выдаётся; здесь меняем тексты, чтобы не врать
   /// пользователю про «30 дней бесплатно».
-  bool _trialUsed = false;
+  bool? _trialUsed;
+  bool _loadingSetup = true;
 
   @override
   void initState() {
     super.initState();
     _anim = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 350));
-    _slideUp = Tween<double>(begin: 1.0, end: 0.0)
-        .animate(CurvedAnimation(parent: _anim, curve: Curves.easeOut));
-    _fadeOut = Tween<double>(begin: 1.0, end: 0.0).animate(
-      CurvedAnimation(parent: _anim, curve: const Interval(0.9, 1.0)),
+      vsync: this,
+      duration: const Duration(milliseconds: 350),
     );
-    _loadPrice();
-    _loadTrialState();
+    _slideUp = Tween<double>(
+      begin: 1.0,
+      end: 0.0,
+    ).animate(CurvedAnimation(parent: _anim, curve: Curves.easeOut));
+    _fadeOut = Tween<double>(
+      begin: 1.0,
+      end: 0.0,
+    ).animate(CurvedAnimation(parent: _anim, curve: const Interval(0.9, 1.0)));
+    _loadSetup();
   }
 
-  Future<void> _loadPrice() async {
+  Future<void> _loadSetup({bool forceSettingsReload = false}) async {
+    if (mounted) setState(() => _loadingSetup = true);
+    int? price;
+    bool? trialUsed;
     try {
-      final int p =
-          await SettingsService.instance.subscriptionMonthlyPriceRub();
-      if (!mounted) return;
-      setState(() => _priceRub = p);
-    } catch (_) {/* fallback в build */}
-  }
-
-  Future<void> _loadTrialState() async {
+      if (forceSettingsReload) await SettingsService.instance.reload();
+      price = await SettingsService.instance.subscriptionMonthlyPriceRub();
+    } catch (_) {
+      /* цена остаётся неизвестной */
+    }
     try {
       final MyPrivate? priv = await ProfileService.instance.loadMyPrivate();
-      if (!mounted || priv == null) return;
-      setState(() => _trialUsed = priv.subscriptionTrialUsed);
-    } catch (_) {/* по умолчанию trial_used=false (новый юзер) */}
+      trialUsed = priv?.subscriptionTrialUsed;
+    } catch (_) {
+      /* право на триал остаётся неизвестным */
+    }
+    if (!mounted) return;
+    setState(() {
+      _priceRub = price;
+      _trialUsed = trialUsed;
+      _loadingSetup = false;
+    });
   }
 
   @override
@@ -78,6 +90,7 @@ class _SubscriptionPaywallState extends State<SubscriptionPaywall>
   }
 
   void _onContinue() {
+    if (_priceRub == null || _trialUsed == null) return;
     setState(() => _showPayment = true);
     _anim.forward();
   }
@@ -85,6 +98,7 @@ class _SubscriptionPaywallState extends State<SubscriptionPaywall>
   @override
   Widget build(BuildContext context) {
     final double cardHeight = MediaQuery.of(context).size.height * 0.47;
+    final bool trialUsed = _trialUsed ?? false;
     return Scaffold(
       // Явный фон, чтобы edge-to-edge на Android 15+ не показывал чёрную
       // полосу под нав-баром. Сам контент рисуется поверх через Stack.
@@ -133,7 +147,9 @@ class _SubscriptionPaywallState extends State<SubscriptionPaywall>
             bottom: 0,
             child: _showPayment
                 ? FadeTransition(
-                    opacity: _fadeOut, child: _buildPaywall(context))
+                    opacity: _fadeOut,
+                    child: _buildPaywall(context),
+                  )
                 : _buildPaywall(context),
           ),
           if (_showPayment)
@@ -157,7 +173,7 @@ class _SubscriptionPaywallState extends State<SubscriptionPaywall>
                   // бы подписку (activate_trial вернёт false), поэтому берём
                   // ПРЯМУЮ оплату подписки — триггер apply_payment_success
                   // продлит paid_until и привяжет карту для автопродления.
-                  kind: _trialUsed
+                  kind: trialUsed
                       ? PaymentKind.subscription
                       : PaymentKind.cardBinding,
                   // Сумма — только подпись на кнопке; реально списывает сервер
@@ -165,8 +181,9 @@ class _SubscriptionPaywallState extends State<SubscriptionPaywall>
                   // (_priceRub == null), НЕ подставляем выдуманное число — карта
                   // оплаты покажет просто «Оплатить». Раньше тут стоял фолбэк
                   // 1000, а серверный фолбэк — 490: подпись и списание расходились.
-                  amount: _trialUsed ? _priceRub : 1,
-                  activateTrial: !_trialUsed,
+                  amount: trialUsed ? _priceRub : 1,
+                  renewalAmount: _priceRub,
+                  activateTrial: !trialUsed,
                   // Пейволл вызван из каталога/«Откликнуться». После активации
                   // триала (он идёт через card_binding) возвращаем юзера на
                   // главный экран, а не в «Способы оплаты». Без returnPath
@@ -181,6 +198,8 @@ class _SubscriptionPaywallState extends State<SubscriptionPaywall>
   }
 
   Widget _buildPaywall(BuildContext context) {
+    final bool ready = _priceRub != null && _trialUsed != null;
+    final bool trialUsed = _trialUsed ?? false;
     return Container(
       key: const ValueKey('paywall'),
       height: MediaQuery.of(context).size.height * 0.47,
@@ -189,11 +208,17 @@ class _SubscriptionPaywallState extends State<SubscriptionPaywall>
         borderRadius: BorderRadius.vertical(top: Radius.circular(24.r)),
       ),
       padding: EdgeInsets.fromLTRB(
-          16.w, 24.h, 16.w, 12.h + MediaQuery.of(context).padding.bottom),
+        16.w,
+        24.h,
+        16.w,
+        12.h + MediaQuery.of(context).padding.bottom,
+      ),
       child: Column(
         children: <Widget>[
           Text(
-            _trialUsed
+            _trialUsed == null
+                ? 'Подписка для доступа\nк заказам'
+                : trialUsed
                 ? 'Привяжите карту, чтобы\nпродолжить подписку'
                 : 'Получите доступ к\nзаказам',
             textAlign: TextAlign.center,
@@ -210,11 +235,13 @@ class _SubscriptionPaywallState extends State<SubscriptionPaywall>
           const _BulletItem(text: 'Получайте новые заявки'),
           SizedBox(height: 20.h),
           Text(
-            _priceRub == null
+            _trialUsed == null
+                ? 'Условия подписки уточняются'
+                : _priceRub == null
                 ? 'Стоимость подписки уточняется'
-                : _trialUsed
-                    ? '${_fmtPrice(_priceRub!)} ₽/месяц с авто-продлением'
-                    : '30 дней бесплатно, затем ${_fmtPrice(_priceRub!)} ₽/месяц',
+                : trialUsed
+                ? '${_fmtPrice(_priceRub!)} ₽/месяц с авто-продлением'
+                : '30 дней бесплатно, затем ${_fmtPrice(_priceRub!)} ₽/месяц',
             style: TextStyle(
               fontFamily: 'Roboto',
               fontSize: 14.sp,
@@ -223,7 +250,17 @@ class _SubscriptionPaywallState extends State<SubscriptionPaywall>
             ),
           ),
           SizedBox(height: 12.h),
-          PrimaryButton(label: 'Продолжить', onPressed: _onContinue),
+          PrimaryButton(
+            label: ready
+                ? 'Продолжить'
+                : _loadingSetup
+                ? 'Данные загружаются…'
+                : 'Повторить загрузку',
+            enabled: ready || !_loadingSetup,
+            onPressed: ready
+                ? _onContinue
+                : () => _loadSetup(forceSettingsReload: true),
+          ),
           SizedBox(height: 12.h),
           Wrap(
             alignment: WrapAlignment.center,

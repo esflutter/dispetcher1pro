@@ -11,7 +11,8 @@ import 'package:dispatcher_1/core/widgets/dark_sub_app_bar.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
 import 'package:dispatcher_1/features/catalog/widgets/subscription_paywall.dart';
 import 'package:dispatcher_1/core/widgets/dialog_close_button.dart';
-import 'package:dispatcher_1/features/schedule/schedule_screen.dart' show ScheduleToggle;
+import 'package:dispatcher_1/features/schedule/schedule_screen.dart'
+    show ScheduleToggle;
 
 /// Экран «Подписка и оплата».
 ///
@@ -52,15 +53,14 @@ class _SubscriptionManageScreenState extends State<SubscriptionManageScreen> {
 
   Future<void> _loadPaymentMethodsAccess() async {
     try {
-      final List<dynamic> cards =
-          await PaymentService.instance.listCards();
+      final List<dynamic> cards = await PaymentService.instance.listCards();
       if (!mounted) return;
       if (cards.isNotEmpty) {
         setState(() => _showCardsButton = true);
         return;
       }
-      final bool hadPayment =
-          await PaymentService.instance.hasAnySucceededPayment();
+      final bool hadPayment = await PaymentService.instance
+          .hasAnySucceededPayment();
       if (!mounted) return;
       setState(() => _showCardsButton = hadPayment);
     } catch (_) {
@@ -82,7 +82,7 @@ class _SubscriptionManageScreenState extends State<SubscriptionManageScreen> {
     if (mounted) await _loadPaymentMethodsAccess();
   }
 
-  Future<void> _onToggle(BuildContext context, MyPrivate? priv, bool value) async {
+  Future<void> _onToggle(MyPrivate? priv, bool value) async {
     if (_busy) return;
     final _State state = _resolveState(priv);
     if (state == _State.active && !value) {
@@ -93,6 +93,16 @@ class _SubscriptionManageScreenState extends State<SubscriptionManageScreen> {
       setState(() => _busy = true);
       try {
         await ProfileService.instance.updateSubscriptionAutoRenew(false);
+      } catch (_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Не удалось отключить автопродление. Попробуйте ещё раз.',
+              ),
+            ),
+          );
+        }
       } finally {
         if (mounted) setState(() => _busy = false);
       }
@@ -102,11 +112,45 @@ class _SubscriptionManageScreenState extends State<SubscriptionManageScreen> {
     if (state == _State.paused && value) {
       // Paused → ON: возвращаем авто-продление. Карта всё ещё привязана
       // (paid_until > now()), доплачивать не нужно.
+      bool needsActiveCard = false;
       setState(() => _busy = true);
       try {
-        await ProfileService.instance.updateSubscriptionAutoRenew(true);
+        final String? paymentMethodId = priv?.subscriptionPaymentMethodId;
+        if (paymentMethodId == null) {
+          needsActiveCard = true;
+        } else {
+          final cards = await PaymentService.instance.listCards();
+          final bool cardIsActive = cards.any(
+            (card) => card.id == paymentMethodId,
+          );
+          if (!cardIsActive) {
+            needsActiveCard = true;
+          } else {
+            await ProfileService.instance.updateSubscriptionAutoRenew(true);
+          }
+        }
+      } catch (_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Не удалось включить автопродление. Попробуйте ещё раз.',
+              ),
+            ),
+          );
+        }
       } finally {
         if (mounted) setState(() => _busy = false);
+      }
+      if (needsActiveCard && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Для автопродления сначала привяжите действующую карту.',
+            ),
+          ),
+        );
+        await _openCards();
       }
       _refresh();
       return;
@@ -117,9 +161,7 @@ class _SubscriptionManageScreenState extends State<SubscriptionManageScreen> {
       // После успешной оплаты Webhook поднимет paid_until + auto_renew,
       // вернёмся сюда — refresh подтянет состояние.
       await Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => const SubscriptionPaywall(),
-        ),
+        MaterialPageRoute<void>(builder: (_) => const SubscriptionPaywall()),
       );
       _refresh();
       return;
@@ -160,7 +202,7 @@ class _SubscriptionManageScreenState extends State<SubscriptionManageScreen> {
                           ignoring: _busy,
                           child: ScheduleToggle(
                             value: state == _State.active,
-                            onChanged: (bool v) => _onToggle(context, priv, v),
+                            onChanged: (bool v) => _onToggle(priv, v),
                           ),
                         ),
                       ),
@@ -244,7 +286,8 @@ class _StatusBlock extends StatelessWidget {
         break;
       case _State.inactive:
         title = 'Подписка неактивна';
-        subtitle = 'Оплатите подписку, чтобы откликаться на заказы '
+        subtitle =
+            'Оплатите подписку, чтобы откликаться на заказы '
             'и заказчики видели ваш профиль';
         break;
     }
@@ -263,8 +306,18 @@ class _StatusBlock extends StatelessWidget {
   }
 
   static const List<String> _months = <String>[
-    'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
-    'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря',
+    'января',
+    'февраля',
+    'марта',
+    'апреля',
+    'мая',
+    'июня',
+    'июля',
+    'августа',
+    'сентября',
+    'октября',
+    'ноября',
+    'декабря',
   ];
 
   String _fmt(DateTime d) {
@@ -316,8 +369,9 @@ Future<bool?> _showDisableDialog(BuildContext context) {
               'Автопродление отключится, повторных списаний не будет. '
               'Доступ к заказам и показ ваших услуг в каталоге сохранятся '
               'до конца оплаченного периода.',
-              style: AppTextStyles.body
-                  .copyWith(color: AppColors.textSecondary),
+              style: AppTextStyles.body.copyWith(
+                color: AppColors.textSecondary,
+              ),
               textAlign: TextAlign.center,
             ),
             SizedBox(height: AppSpacing.lg),
@@ -330,8 +384,9 @@ Future<bool?> _showDisableDialog(BuildContext context) {
               onPressed: () => Navigator.of(ctx).pop(false),
               child: Text(
                 'Отмена',
-                style: AppTextStyles.bodyMedium
-                    .copyWith(color: AppColors.textPrimary),
+                style: AppTextStyles.bodyMedium.copyWith(
+                  color: AppColors.textPrimary,
+                ),
               ),
             ),
           ],

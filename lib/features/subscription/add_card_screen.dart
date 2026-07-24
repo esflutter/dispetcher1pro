@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:dispatcher_1/core/config/env.dart';
 import 'package:dispatcher_1/core/payments/models.dart';
 import 'package:dispatcher_1/core/payments/payment_service.dart';
+import 'package:dispatcher_1/core/payments/receipt_email_prompt.dart';
 import 'package:dispatcher_1/core/profile/profile_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_spacing.dart';
@@ -15,6 +16,7 @@ import 'package:dispatcher_1/core/widgets/primary_button.dart';
 import 'package:dispatcher_1/features/subscription/widgets/brand_badge.dart';
 
 import 'package:dispatcher_1/core/widgets/dialog_close_button.dart';
+
 /// Экран «Способы оплаты» — список сохранённых карт + удаление + кнопка
 /// добавления новой карты.
 ///
@@ -48,8 +50,7 @@ class _CardsScreenState extends State<CardsScreen> {
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
-      final List<SavedCard> cards =
-          await PaymentService.instance.listCards();
+      final List<SavedCard> cards = await PaymentService.instance.listCards();
       if (!mounted) return;
       setState(() {
         _cards = cards;
@@ -70,8 +71,12 @@ class _CardsScreenState extends State<CardsScreen> {
     // (БД-триггер `clear_subscription_card_on_deactivate`), и подписка
     // не продлится. Вычисляем «является ли карта подписочной» через
     // профиль — если это так, показываем дополнительное предупреждение.
+    // Если профиль временно не прочитался, показываем более строгое
+    // предупреждение: сервер всё равно безопасно отключит автопродление,
+    // если удаляется подписочная карта.
     final MyPrivate? priv = await ProfileService.instance.loadMyPrivate();
-    final bool isSubCard = priv?.subscriptionPaymentMethodId == c.id;
+    final bool isSubCard =
+        priv == null || priv.subscriptionPaymentMethodId == c.id;
     if (!mounted) return;
     final bool? ok = await _confirmDelete(c, isSubscriptionCard: isSubCard);
     if (ok != true || !mounted) return;
@@ -88,16 +93,13 @@ class _CardsScreenState extends State<CardsScreen> {
     } catch (_) {
       if (!mounted) return;
       setState(() => _deleting.remove(c.id));
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Не удалось удалить карту')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Не удалось удалить карту')));
     }
   }
 
-  Future<bool?> _confirmDelete(
-    SavedCard c, {
-    bool isSubscriptionCard = false,
-  }) {
+  Future<bool?> _confirmDelete(SavedCard c, {bool isSubscriptionCard = false}) {
     // Стандартный модал приложения: крестик справа, центрированный
     // заголовок, описание под ним, основная оранжевая кнопка действия и
     // текстовая «Вернуться» снизу. Тот же шаблон диалога используется и при
@@ -139,13 +141,14 @@ class _CardsScreenState extends State<CardsScreen> {
               Text(
                 isSubscriptionCard
                     ? 'Эта карта используется для авто-продления подписки. '
-                        'После удаления авто-продление отключится — '
-                        'подписка не продлится по окончании срока.'
+                          'После удаления авто-продление отключится — '
+                          'подписка не продлится по окончании срока.'
                     : '${c.isYooMoney ? "YooMoney" : _brandLabel(c.brand)} '
-                        '•• ${c.displayLast4} больше не будет использоваться '
-                        'для оплаты.',
-                style: AppTextStyles.body
-                    .copyWith(color: AppColors.textSecondary),
+                          '•• ${c.displayLast4} больше не будет использоваться '
+                          'для оплаты.',
+                style: AppTextStyles.body.copyWith(
+                  color: AppColors.textSecondary,
+                ),
                 textAlign: TextAlign.center,
               ),
               SizedBox(height: AppSpacing.lg),
@@ -158,8 +161,9 @@ class _CardsScreenState extends State<CardsScreen> {
                 onPressed: () => Navigator.of(ctx).pop(false),
                 child: Text(
                   'Вернуться',
-                  style: AppTextStyles.bodyMedium
-                      .copyWith(color: AppColors.textPrimary),
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    color: AppColors.textPrimary,
+                  ),
                 ),
               ),
             ],
@@ -185,6 +189,8 @@ class _CardsScreenState extends State<CardsScreen> {
     if (_binding) return;
     setState(() => _binding = true);
     try {
+      final String? receiptEmail = await ensureReceiptEmail(context);
+      if (!mounted || receiptEmail == null) return;
       // YooKassa должен вернуть юзера обратно в приложение — но Chrome
       // (Android) НЕ открывает кастомные схемы (`dispatcher1pro://`)
       // через прямой 302-редирект с чужого сайта (yoomoney.ru). Поэтому
@@ -197,46 +203,71 @@ class _CardsScreenState extends State<CardsScreen> {
       // `&payment_id=<uuid>`, и когда YooKassa в конце редиректит юзера,
       // мы получим оба параметра и поймём, что это привязка карты, а не
       // обычный платёж. База берётся из Env.supabaseUrl, а не хардкодом.
-      final String supabaseBase =
-          Env.supabaseUrl.replaceAll(RegExp(r'/+$'), '');
+      final String supabaseBase = Env.supabaseUrl.replaceAll(
+        RegExp(r'/+$'),
+        '',
+      );
       final String returnDeeplink =
           '$supabaseBase/functions/v1/payment-return?binding=1';
-      final PaymentCreateResult result =
-          await PaymentService.instance.createPayment(
-        kind: PaymentKind.cardBinding,
-        saveCard: true,
-        returnUrl: returnDeeplink,
-      );
+      final PaymentCreateResult result = await PaymentService.instance
+          .createPayment(
+            kind: PaymentKind.cardBinding,
+            receiptEmail: receiptEmail,
+            saveCard: true,
+            returnUrl: returnDeeplink,
+          );
       if (!mounted) return;
       // Уезжаем на экран результата (поллит статус) и параллельно
       // открываем форму YooKassa в браузере. Push не await'им
       // напрямую — фьючер `resultClosed` нужен только чтобы перезагрузить
       // список карт после возврата.
+      final String? confirmationUrl = result.confirmationUrl;
+      if (confirmationUrl != null) {
+        bool opened = false;
+        try {
+          opened = await launchUrl(
+            Uri.parse(confirmationUrl),
+            mode: LaunchMode.externalApplication,
+          );
+        } catch (_) {
+          opened = false;
+        }
+        if (!mounted) return;
+        if (!opened) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Не удалось открыть страницу оплаты. Попробуйте ещё раз.',
+              ),
+            ),
+          );
+          return;
+        }
+      }
+      final String confirmationQuery = confirmationUrl == null
+          ? ''
+          : '&conf=${Uri.encodeComponent(confirmationUrl)}';
       final Future<Object?> resultClosed = context.push<void>(
         '/subscription/payment/result'
-        '?id=${Uri.encodeComponent(result.paymentId)}&binding=1',
+        '?id=${Uri.encodeComponent(result.paymentId)}'
+        '&binding=1$confirmationQuery',
       );
-      if (result.confirmationUrl != null) {
-        // ignore: discarded_futures
-        launchUrl(
-          Uri.parse(result.confirmationUrl!),
-          mode: LaunchMode.externalApplication,
-        );
-      }
       // Когда юзер закрыл экран результата — перечитываем список карт:
       // в случае успеха новая карта уже лежит в saved_payment_methods.
       await resultClosed;
       if (mounted) await _load();
     } on PaymentError catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.message)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.message)));
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Не удалось начать привязку карты. Попробуйте ещё раз.'),
+          content: Text(
+            'Не удалось начать привязку карты. Попробуйте ещё раз.',
+          ),
         ),
       );
     } finally {
@@ -275,8 +306,9 @@ class _CardsScreenState extends State<CardsScreen> {
                       padding: EdgeInsets.fromLTRB(4.w, 0, 4.w, 16.h),
                       child: Text(
                         'Сохранённых карт пока нет.',
-                        style: AppTextStyles.bodyMRegular
-                            .copyWith(color: AppColors.textSecondary),
+                        style: AppTextStyles.bodyMRegular.copyWith(
+                          color: AppColors.textSecondary,
+                        ),
                       ),
                     ),
                   _AddCardTile(onTap: _onAddCard),
@@ -357,8 +389,11 @@ class _CardTile extends StatelessWidget {
               child: IconButton(
                 padding: EdgeInsets.zero,
                 splashRadius: 20.r,
-                icon: Icon(Icons.delete_outline_rounded,
-                    color: AppColors.textTertiary, size: 22.r),
+                icon: Icon(
+                  Icons.delete_outline_rounded,
+                  color: AppColors.textTertiary,
+                  size: 22.r,
+                ),
                 onPressed: onDelete,
               ),
             ),
@@ -397,10 +432,12 @@ class _AddCardTile extends StatelessWidget {
             ),
             SizedBox(width: 12.w),
             Flexible(
-              child: Text('Добавить карту',
-                  style: AppTextStyles.bodyMedium,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis),
+              child: Text(
+                'Добавить карту',
+                style: AppTextStyles.bodyMedium,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
           ],
         ),
@@ -420,4 +457,3 @@ String _brandLabel(String? raw) {
   if (s.contains('UNION')) return 'UPI';
   return 'CARD';
 }
-

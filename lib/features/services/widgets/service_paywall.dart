@@ -31,26 +31,40 @@ class _ServicePaywallState extends State<ServicePaywall>
   late final Animation<double> _slideUp;
   late final Animation<double> _fadeOut;
   int? _priceRub;
+  bool _loadingPrice = true;
 
   @override
   void initState() {
     super.initState();
     _anim = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 350));
-    _slideUp = Tween<double>(begin: 1.0, end: 0.0)
-        .animate(CurvedAnimation(parent: _anim, curve: Curves.easeOut));
-    _fadeOut = Tween<double>(begin: 1.0, end: 0.0).animate(
-      CurvedAnimation(parent: _anim, curve: const Interval(0.9, 1.0)),
+      vsync: this,
+      duration: const Duration(milliseconds: 350),
     );
+    _slideUp = Tween<double>(
+      begin: 1.0,
+      end: 0.0,
+    ).animate(CurvedAnimation(parent: _anim, curve: Curves.easeOut));
+    _fadeOut = Tween<double>(
+      begin: 1.0,
+      end: 0.0,
+    ).animate(CurvedAnimation(parent: _anim, curve: const Interval(0.9, 1.0)));
     _loadPrice();
   }
 
-  Future<void> _loadPrice() async {
+  Future<void> _loadPrice({bool forceSettingsReload = false}) async {
+    if (mounted) setState(() => _loadingPrice = true);
+    int? price;
     try {
-      final int p = await SettingsService.instance.serviceSlotPriceRub();
-      if (!mounted) return;
-      setState(() => _priceRub = p);
-    } catch (_) {/* fallback в build */}
+      if (forceSettingsReload) await SettingsService.instance.reload();
+      price = await SettingsService.instance.serviceSlotPriceRub();
+    } catch (_) {
+      /* цена остаётся неизвестной */
+    }
+    if (!mounted) return;
+    setState(() {
+      _priceRub = price;
+      _loadingPrice = false;
+    });
   }
 
   @override
@@ -60,6 +74,7 @@ class _ServicePaywallState extends State<ServicePaywall>
   }
 
   void _onContinue() {
+    if (_priceRub == null) return;
     setState(() => _showPayment = true);
     _anim.forward();
   }
@@ -116,7 +131,9 @@ class _ServicePaywallState extends State<ServicePaywall>
             bottom: 0,
             child: _showPayment
                 ? FadeTransition(
-                    opacity: _fadeOut, child: _buildPaywall(context))
+                    opacity: _fadeOut,
+                    child: _buildPaywall(context),
+                  )
                 : _buildPaywall(context),
           ),
           if (_showPayment)
@@ -157,7 +174,11 @@ class _ServicePaywallState extends State<ServicePaywall>
         borderRadius: BorderRadius.vertical(top: Radius.circular(24.r)),
       ),
       padding: EdgeInsets.fromLTRB(
-          16.w, 24.h, 16.w, 12.h + MediaQuery.of(context).padding.bottom),
+        16.w,
+        24.h,
+        16.w,
+        12.h + MediaQuery.of(context).padding.bottom,
+      ),
       child: Column(
         children: <Widget>[
           Text(
@@ -194,7 +215,17 @@ class _ServicePaywallState extends State<ServicePaywall>
             ),
           ),
           SizedBox(height: 12.h),
-          PrimaryButton(label: 'Продолжить', onPressed: _onContinue),
+          PrimaryButton(
+            label: _priceRub != null
+                ? 'Продолжить'
+                : _loadingPrice
+                ? 'Стоимость загружается…'
+                : 'Повторить загрузку',
+            enabled: _priceRub != null || !_loadingPrice,
+            onPressed: _priceRub != null
+                ? _onContinue
+                : () => _loadPrice(forceSettingsReload: true),
+          ),
           SizedBox(height: 12.h),
           Wrap(
             alignment: WrapAlignment.center,
@@ -236,7 +267,6 @@ class _ServicePaywallState extends State<ServicePaywall>
               ),
             ],
           ),
-
         ],
       ),
     );

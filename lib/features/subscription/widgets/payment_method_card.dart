@@ -5,7 +5,9 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'package:dispatcher_1/core/config/env.dart';
 import 'package:dispatcher_1/core/payments/models.dart';
+import 'package:dispatcher_1/core/payments/payment_rules.dart';
 import 'package:dispatcher_1/core/payments/payment_service.dart';
+import 'package:dispatcher_1/core/payments/receipt_email_prompt.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/widgets/dialog_close_button.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
@@ -17,9 +19,8 @@ import 'package:dispatcher_1/features/subscription/widgets/brand_badge.dart';
 ///   - ServicePaywall       (kind = serviceSlot, передаёт serviceId)
 ///
 /// Интеграция YooKassa:
-///   - «Новая карта» — `createPayment(saveCard: true)`. Карта
-///     сохраняется автоматически после успешной оплаты (по
-///     требованию пользователя — без отдельного чекбокса согласия).
+///   - «Новая карта» сохраняется только при явном согласии пользователя
+///     либо в отдельном сценарии «Привязать карту».
 ///   - Сохранённая карта (по тапу radio) — `createPayment(paymentMethodId)`,
 ///     повторное списание без редиректа в браузер (если у карты не
 ///     требуется 3DS).
@@ -35,6 +36,7 @@ class PaymentMethodCard extends StatefulWidget {
     this.serviceId,
     this.returnPath,
     this.activateTrial = false,
+    this.renewalAmount,
   });
 
   /// `subscription`, `serviceSlot` или `cardBinding`. Для cardBinding
@@ -48,6 +50,9 @@ class PaymentMethodCard extends StatefulWidget {
   /// `null` — пока цена грузится из `settings`, кнопка показывает
   /// просто «Оплатить».
   final int? amount;
+
+  /// Сумма будущего автопродления после пробного периода.
+  final int? renewalAmount;
 
   /// id услуги — обязателен для `serviceSlot`. Прокидывается в
   /// Edge Function, попадает в `payments.service_id`. После
@@ -65,7 +70,8 @@ class PaymentMethodCard extends StatefulWidget {
 
   /// При `kind = cardBinding && activateTrial = true` после успешной
   /// привязки карты webhook сразу активирует подписочный триал
-  /// (paid_until = now()+30d, trial_used=true, auto_renew=true).
+  /// (paid_until = now()+30d, trial_used=true). Автопродление включается
+  /// только после отдельного явного согласия ниже.
   /// Игнорируется для других kind.
   final bool activateTrial;
 
@@ -80,6 +86,35 @@ class _PaymentMethodCardState extends State<PaymentMethodCard> {
   List<SavedCard>? _cards;
   bool _loadingCards = true;
   bool _saving = false;
+  bool _recurringConsent = false;
+  bool _saveServiceCard = false;
+
+  bool get _requiresRecurringConsent =>
+      widget.kind == PaymentKind.subscription || widget.activateTrial;
+
+  bool get _priceReady {
+    return isPaymentPriceReady(
+      kind: widget.kind,
+      amount: widget.amount,
+      activateTrial: widget.activateTrial,
+      renewalAmount: widget.renewalAmount,
+    );
+  }
+
+  bool get _shouldSaveCard {
+    return shouldSaveNewCard(
+      kind: widget.kind,
+      hasSelectedSavedCard: _selectedPmId != null,
+      activateTrial: widget.activateTrial,
+      saveServiceCard: _saveServiceCard,
+    );
+  }
+
+  bool get _canPay =>
+      !_loadingCards &&
+      !_saving &&
+      _priceReady &&
+      (!_requiresRecurringConsent || _recurringConsent);
 
   @override
   void initState() {
@@ -122,9 +157,15 @@ class _PaymentMethodCardState extends State<PaymentMethodCard> {
   }
 
   Future<void> _onPay() async {
-    if (_saving) return;
+    if (!_canPay) return;
     setState(() => _saving = true);
     try {
+      final String? receiptEmail = await ensureReceiptEmail(context);
+      if (!mounted) return;
+      if (receiptEmail == null) {
+        setState(() => _saving = false);
+        return;
+      }
       // returnPath доезжает до PaymentResultScreen двумя путями:
       //   1) Если оплата сохранённой картой прошла без редиректа —
       //      `context.go(...)` ниже сразу прокидывает её в URL экрана.
@@ -168,13 +209,11 @@ class _PaymentMethodCardState extends State<PaymentMethodCard> {
         kind: widget.kind,
         serviceId: widget.serviceId,
         paymentMethodId: _selectedPmId,
-        // Если выбрана «Новая карта» — просим YooKassa сохранить её
-        // автоматически. Без отдельного чекбокса согласия (по UX-просьбе
-        // пользователя). Сохранённая карта (paymentMethodId != null) —
-        // флаг saveCard серверной логикой игнорируется.
-        saveCard: _selectedPmId == null,
+        receiptEmail: receiptEmail,
+        saveCard: _shouldSaveCard,
         returnUrl: returnDeeplink,
         activateTrial: widget.activateTrial,
+        recurringConsent: _recurringConsent,
       );
       if (!mounted) return;
       final String? confUrl = result.confirmationUrl;
@@ -311,6 +350,34 @@ class _PaymentMethodCardState extends State<PaymentMethodCard> {
                           onTap: () =>
                               setState(() => _selectedPmId = c.id),
                         ),
+                      if (_requiresRecurringConsent)
+                        _ConsentCheckbox(
+                          value: _recurringConsent,
+                          onChanged: (bool value) =>
+                              setState(() => _recurringConsent = value),
+                          text: _recurringConsentText(),
+                        )
+                      else if (widget.kind == PaymentKind.serviceSlot &&
+                          _selectedPmId == null)
+                        _ConsentCheckbox(
+                          value: _saveServiceCard,
+                          onChanged: (bool value) =>
+                              setState(() => _saveServiceCard = value),
+                          text: 'Сохранить карту для следующих оплат',
+                        ),
+                      if (!_priceReady)
+                        Padding(
+                          padding: EdgeInsets.only(top: 8.h),
+                          child: Text(
+                            'Стоимость не загрузилась. Проверьте интернет '
+                            'и откройте экран оплаты ещё раз.',
+                            style: TextStyle(
+                              fontFamily: 'Roboto',
+                              fontSize: 13.sp,
+                              color: AppColors.error,
+                            ),
+                          ),
+                        ),
                     ],
                   ),
           ),
@@ -327,13 +394,79 @@ class _PaymentMethodCardState extends State<PaymentMethodCard> {
                   : widget.kind == PaymentKind.cardBinding
                       ? 'Привязать карту'
                       : widget.amount == null
-                          ? 'Оплатить'
+                          ? 'Стоимость загружается…'
                           : 'Оплатить ${_fmtPrice(widget.amount!)} ₽',
-              enabled: !_loadingCards && !_saving,
+              enabled: _canPay,
               onPressed: _onPay,
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  String _recurringConsentText() {
+    final int? recurringAmount =
+        widget.activateTrial ? widget.renewalAmount : widget.amount;
+    final String amountText = recurringAmount == null
+        ? 'по показанной стоимости'
+        : '${_fmtPrice(recurringAmount)} ₽';
+    if (widget.activateTrial) {
+      return 'Согласен на сохранение карты и автопродление: через 30 дней '
+          '$amountText, далее каждые 30 дней. Отключить можно в разделе '
+          '«Подписка».';
+    }
+    return 'Согласен на автопродление: $amountText каждые 30 дней. '
+        'Отключить можно в разделе «Подписка».';
+  }
+}
+
+class _ConsentCheckbox extends StatelessWidget {
+  const _ConsentCheckbox({
+    required this.value,
+    required this.onChanged,
+    required this.text,
+  });
+
+  final bool value;
+  final ValueChanged<bool> onChanged;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: () => onChanged(!value),
+      borderRadius: BorderRadius.circular(12.r),
+      child: Padding(
+        padding: EdgeInsets.symmetric(vertical: 8.h),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            SizedBox(
+              width: 32.r,
+              height: 32.r,
+              child: Checkbox(
+                value: value,
+                onChanged: (bool? next) => onChanged(next ?? false),
+              ),
+            ),
+            SizedBox(width: 8.w),
+            Expanded(
+              child: Padding(
+                padding: EdgeInsets.only(top: 5.h),
+                child: Text(
+                  text,
+                  style: TextStyle(
+                    fontFamily: 'Roboto',
+                    fontSize: 13.sp,
+                    height: 1.35,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

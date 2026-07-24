@@ -37,14 +37,18 @@ class PaymentService {
     required PaymentKind kind,
     String? serviceId,
     String? paymentMethodId,
+    String? receiptEmail,
     bool saveCard = false,
     String? returnUrl,
     bool activateTrial = false,
+    bool recurringConsent = false,
   }) async {
     final Map<String, dynamic> body = <String, dynamic>{
       'kind': kind.code,
       'service_id': ?serviceId,
       'payment_method_id': ?paymentMethodId,
+      if (receiptEmail != null && receiptEmail.trim().isNotEmpty)
+        'receipt_email': receiptEmail.trim().toLowerCase(),
       if (saveCard) 'save_card': true,
       'return_url': ?returnUrl,
       // Edge Function активирует подписку (paid_until=now+30d, trial_used,
@@ -53,6 +57,7 @@ class PaymentService {
       // игнорируется на сервере. См. supabase/functions/yookassa-webhook
       // (activateTrial).
       if (activateTrial) 'activate_trial': true,
+      if (recurringConsent) 'recurring_consent': true,
     };
 
     final FunctionResponse resp = await _client.functions
@@ -72,7 +77,11 @@ class PaymentService {
           'Не удалось разобрать ответ сервера оплаты');
     }
     if (data['error'] != null) {
-      throw PaymentError('server', (data['error'] as Object?).toString());
+      throw PaymentError(
+        (data['code'] as Object?)?.toString() ?? 'server',
+        (data['message'] as Object?)?.toString() ??
+            (data['error'] as Object?).toString(),
+      );
     }
     // Defensive cast: при 5xx Edge Function может вернуть Map без ключей
     // payment_id/yookassa_payment_id/amount (например, ответ от прокси
@@ -93,6 +102,33 @@ class PaymentService {
       confirmationUrl: data['confirmation_url'] as String?,
       amount: amount.toInt(),
     );
+  }
+
+  /// Email, на который нужно отправлять фискальные чеки.
+  ///
+  /// Email из профиля имеет приоритет. Если профильный email не заполнен,
+  /// используется отдельный `receipt_email`, который не показывается в
+  /// профиле и хранится только для последующих чеков.
+  Future<String?> getReceiptEmail() async {
+    final User? user = _client.auth.currentUser;
+    if (user == null) return null;
+    try {
+      final Map<String, dynamic>? row = await _client
+          .from('profiles_private')
+          .select('email, receipt_email')
+          .eq('id', user.id)
+          .maybeSingle();
+      if (row == null) return null;
+      for (final String field in const <String>['email', 'receipt_email']) {
+        final String value = (row[field] as String? ?? '').trim().toLowerCase();
+        if (value.isNotEmpty) return value;
+      }
+      return null;
+    } on PostgrestException {
+      return null;
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Список активных сохранённых карт текущего юзера.

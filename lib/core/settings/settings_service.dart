@@ -1,5 +1,17 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+int? parsePaymentPriceRub(Object? raw) {
+  final num? parsed = raw is num ? raw : num.tryParse(raw?.toString() ?? '');
+  if (parsed == null ||
+      !parsed.isFinite ||
+      parsed <= 0 ||
+      parsed != parsed.roundToDouble()) {
+    return null;
+  }
+  final int value = parsed.toInt();
+  return value > 0 ? value : null;
+}
+
 /// Глобальные настройки из таблицы `public.settings`. Загружаются один
 /// раз при первом обращении и держатся в памяти. RLS: анониму доступны
 /// только до-логиновые ключи (цены, ссылки), операционные ключи и токен
@@ -25,10 +37,12 @@ class SettingsService {
 
   Future<void> _doLoad() async {
     try {
-      final List<Map<String, dynamic>> rows =
-          await _client.from('settings').select('key, value');
+      final List<Map<String, dynamic>> rows = await _client
+          .from('settings')
+          .select('key, value');
       _cache = <String, dynamic>{
-        for (final Map<String, dynamic> r in rows) r['key'] as String: r['value'],
+        for (final Map<String, dynamic> r in rows)
+          r['key'] as String: r['value'],
       };
     } catch (_) {
       // Кэш НЕ фиксируем пустым: офлайн-старт раньше навсегда (до перезапуска)
@@ -47,8 +61,8 @@ class SettingsService {
   /// значения как строки и как числа.
   Future<({String min, String latest, bool recommend})> appVersions() async {
     await _load();
-    final String min =
-        (_values['app.pro_min_version']?.toString() ?? '0.0.0').trim();
+    final String min = (_values['app.pro_min_version']?.toString() ?? '0.0.0')
+        .trim();
     final String latest =
         (_values['app.pro_latest_version']?.toString() ?? '0.0.0').trim();
     final bool recommend =
@@ -71,7 +85,9 @@ class SettingsService {
     if (inflight != null) {
       try {
         await inflight;
-      } catch (_) {/* неудача старой загрузки не мешает новой */}
+      } catch (_) {
+        /* неудача старой загрузки не мешает новой */
+      }
     }
     _cache = null;
     await _load();
@@ -82,14 +98,21 @@ class SettingsService {
   /// попробует сеть.
   Map<String, dynamic> get _values => _cache ?? const <String, dynamic>{};
 
-  Future<int> subscriptionMonthlyPriceRub() async {
+  Future<int?> subscriptionMonthlyPriceRub() async {
     await _load();
-    return (_values['subscription.monthly_price_rub'] as num?)?.toInt() ?? 490;
+    return _positiveIntSetting('subscription.monthly_price_rub');
   }
 
-  Future<int> serviceSlotPriceRub() async {
+  Future<int?> serviceSlotPriceRub() async {
     await _load();
-    return (_values['service_slot.price_rub'] as num?)?.toInt() ?? 99;
+    return _positiveIntSetting('service_slot.price_rub');
+  }
+
+  /// Для денежных настроек нет локальных фолбэков: UI обязан показать ровно
+  /// ту же цену, которую сервер возьмёт из БД. При недоступной/битой настройке
+  /// возвращаем null и блокируем кнопку оплаты до повторной загрузки.
+  int? _positiveIntSetting(String key) {
+    return parsePaymentPriceRub(_values[key]);
   }
 
   Future<int> orderDailyLimit() async {
@@ -115,7 +138,8 @@ class SettingsService {
   /// не показываем.
   Future<String> legalTermsUrl() async {
     await _load();
-    final String pro = ((_values['legal.terms_url_pro'] as String?) ?? '').trim();
+    final String pro = ((_values['legal.terms_url_pro'] as String?) ?? '')
+        .trim();
     if (pro.isNotEmpty) return pro;
     return ((_values['legal.terms_url'] as String?) ?? '').trim();
   }
@@ -123,7 +147,8 @@ class SettingsService {
   /// Ссылка на политику конфиденциальности (PRO-документ, см. legalTermsUrl).
   Future<String> legalPrivacyUrl() async {
     await _load();
-    final String pro = ((_values['legal.privacy_url_pro'] as String?) ?? '').trim();
+    final String pro = ((_values['legal.privacy_url_pro'] as String?) ?? '')
+        .trim();
     if (pro.isNotEmpty) return pro;
     return ((_values['legal.privacy_url'] as String?) ?? '').trim();
   }
@@ -168,7 +193,9 @@ class SettingsService {
   /// приложения. Всё, что не 'openfreemap', трактуется как mapbox.
   Future<String> mapProvider() async {
     await _load();
-    return ((_values['map.provider'] as String?) ?? 'mapbox').trim().toLowerCase();
+    return ((_values['map.provider'] as String?) ?? 'mapbox')
+        .trim()
+        .toLowerCase();
   }
 
   /// Mapbox-токен С СЕРВЕРА. Приоритетнее токена из сборки: при

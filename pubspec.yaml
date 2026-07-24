@@ -1,7 +1,7 @@
 name: dispatcher_1
 description: "Диспетчер №1 — Биржа услуг спецтехники"
 publish_to: 'none'
-version: 1.0.1+4
+version: 1.0.1+96
 
 environment:
   sdk: ^3.10.4
@@ -86,13 +86,13 @@ dependencies:
   # но он внутри использует permission_handler. Явная зависимость нужна
   # для проверки rationale + открытия настроек при denied-permanent.
   permission_handler: ^11.3.1
+  flutter_native_splash: ^2.4.7
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
   flutter_launcher_icons: ^0.14.3
-  flutter_native_splash: ^2.4.7
 
 # record 5.1.2/5.2.1 объявляет `record_linux: ^0.7.0`, а 0.7.2 не успевает
 # за новыми сигнатурами record_platform_interface (hasPermission +

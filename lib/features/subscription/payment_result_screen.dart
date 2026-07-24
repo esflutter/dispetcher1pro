@@ -106,11 +106,11 @@ class _PaymentResultScreenState extends State<PaymentResultScreen> {
       return;
     }
     // Short-circuit, если статус уже терминальный — без рендера спиннера.
-    final PaymentStatus first =
-        await PaymentService.instance.getPaymentStatus(widget.paymentId);
+    final PaymentStatus first = await PaymentService.instance.getPaymentStatus(
+      widget.paymentId,
+    );
     if (!mounted || myAttempt != _attempt) return;
-    if (first == PaymentStatus.succeeded ||
-        first == PaymentStatus.refunded) {
+    if (first == PaymentStatus.succeeded || first == PaymentStatus.refunded) {
       // Платёж уже подтверждён — гасим режим ожидания, чтобы убрать кнопку
       // «Открыть форму оплаты» (открывать уже нечего) ещё до авто-закрытия.
       if (mounted && myAttempt == _attempt) {
@@ -176,12 +176,24 @@ class _PaymentResultScreenState extends State<PaymentResultScreen> {
         VerificationStatus.subscriptionPaidUntilText = _fmtDateRu(until);
         VerificationStatus.subscriptionPaidUntil = until;
       }
-    } catch (_) {/* silent */}
+    } catch (_) {
+      /* silent */
+    }
   }
 
   static const List<String> _monthsRu = <String>[
-    'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
-    'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря',
+    'января',
+    'февраля',
+    'марта',
+    'апреля',
+    'мая',
+    'июня',
+    'июля',
+    'августа',
+    'сентября',
+    'октября',
+    'ноября',
+    'декабря',
   ];
 
   String _fmtDateRu(DateTime d) {
@@ -233,8 +245,9 @@ class _PaymentResultScreenState extends State<PaymentResultScreen> {
       '/subscription/cards',
     };
     final String? rp = widget.returnPath;
-    final String? safeRp =
-        (rp != null && allowedReturnPaths.contains(rp)) ? rp : null;
+    final String? safeRp = (rp != null && allowedReturnPaths.contains(rp))
+        ? rp
+        : null;
 
     // Уводит по returnPath, если он задан; возвращает false, если returnPath
     // нет (тогда вызывающий применяет дефолт). Для не-корневых путей строим
@@ -261,8 +274,7 @@ class _PaymentResultScreenState extends State<PaymentResultScreen> {
       //    чистим root Navigator (как в ветке ниже), иначе под go_router
       //    остаётся невидимый слой и back срабатывает не сразу.
       if (safeRp != null) {
-        final NavigatorState root =
-            Navigator.of(context, rootNavigator: true);
+        final NavigatorState root = Navigator.of(context, rootNavigator: true);
         while (root.canPop()) {
           root.pop();
         }
@@ -279,8 +291,7 @@ class _PaymentResultScreenState extends State<PaymentResultScreen> {
       // страницу, но MaterialPageRoute из root Navigator не выпадает —
       // остаётся невидимый «слой», и back-кнопка сперва закрывает его.
       // Чистим root Navigator до go_router'а.
-      final NavigatorState root =
-          Navigator.of(context, rootNavigator: true);
+      final NavigatorState root = Navigator.of(context, rootNavigator: true);
       while (root.canPop()) {
         root.pop();
       }
@@ -351,28 +362,32 @@ class _PaymentResultScreenState extends State<PaymentResultScreen> {
             ),
           ),
           SizedBox(height: AppSpacing.xl),
-          Text('Ждём подтверждение оплаты',
-              style: AppTextStyles.h3, textAlign: TextAlign.center),
+          Text(
+            'Ждём подтверждение оплаты',
+            style: AppTextStyles.h3,
+            textAlign: TextAlign.center,
+          ),
           SizedBox(height: AppSpacing.sm),
           Text(
             _slow
                 ? 'Платёж обрабатывается дольше обычного. Можно закрыть экран — всё активируется автоматически, как только банк подтвердит оплату.'
                 : widget.confirmationUrl != null
-                    ? 'Завершите оплату в открывшемся браузере и вернитесь — статус обновится автоматически. Если браузер не открылся, нажмите кнопку ниже.'
-                    : 'Если вы только что оплатили в браузере — статус обновится через несколько секунд.',
+                ? 'Завершите оплату в открывшемся браузере и вернитесь — статус обновится автоматически. Если браузер не открылся, нажмите кнопку ниже.'
+                : 'Если вы только что оплатили в браузере — статус обновится через несколько секунд.',
             textAlign: TextAlign.center,
-            style: AppTextStyles.bodyMRegular
-                .copyWith(color: AppColors.textSecondary),
+            style: AppTextStyles.bodyMRegular.copyWith(
+              color: AppColors.textSecondary,
+            ),
           ),
         ],
       );
     }
 
-    // Для привязки карты «succeeded» от YooKassa — это уже факт того,
-    // что карта сохранена и инициирован рефанд. Webhook позже переведёт
-    // запись в `refunded`, поллинг может зацепить как `succeeded`, так
-    // и `refunded` — оба считаются успешным результатом.
-    final bool ok = _status == PaymentStatus.succeeded ||
+    // Для привязки карты succeeded означает: карта сохранена, а YooKassa
+    // приняла запрос возврата. refunded означает, что возврат уже завершён.
+    // Оба состояния позволяют пользоваться картой, но текст о деньгах разный.
+    final bool ok =
+        _status == PaymentStatus.succeeded ||
         (widget.binding && _status == PaymentStatus.refunded);
     final bool failed = _status == PaymentStatus.failed;
     final bool unknown = _status == PaymentStatus.unknown;
@@ -384,39 +399,40 @@ class _PaymentResultScreenState extends State<PaymentResultScreen> {
     final IconData icon = ok
         ? Icons.check_circle_rounded
         : (failed || unknown)
-            ? Icons.cancel_rounded
-            : Icons.access_time_rounded;
+        ? Icons.cancel_rounded
+        : Icons.access_time_rounded;
     final Color iconColor = ok
         ? AppColors.primary
         : (failed || unknown)
-            ? AppColors.error
-            : AppColors.textTertiary;
+        ? AppColors.error
+        : AppColors.textTertiary;
     final String title = ok
         ? (widget.binding ? 'Карта привязана' : 'Оплата прошла успешно')
         : failed
-            ? (widget.binding ? 'Привязка не удалась' : 'Платёж не прошёл')
-            : unknown
-                ? 'Платёж не найден'
-                : (widget.binding
-                    ? 'Привязка в обработке'
-                    : 'Платёж в обработке');
+        ? (widget.binding ? 'Привязка не удалась' : 'Платёж не прошёл')
+        : unknown
+        ? 'Платёж не найден'
+        : (widget.binding ? 'Привязка в обработке' : 'Платёж в обработке');
     // Для не-binding-успеха не показываем подпись вовсе — заголовка
     // «Оплата прошла успешно» юзеру достаточно. Раньше тут был
     // дублирующий «Платёж успешно прошёл», который ничего не добавлял.
     final String? subtitle = ok
         ? (widget.binding
-            ? 'Списали 1 ₽ и сразу вернули. Карта сохранена и доступна '
-                'для оплат подписки и услуг.'
-            : null)
+              ? (_status == PaymentStatus.refunded
+                    ? 'Проверочный 1 ₽ возвращён. Карта сохранена и доступна '
+                          'для оплат подписки и услуг.'
+                    : 'Карта сохранена. Возврат проверочного 1 ₽ оформлен и '
+                          'может отобразиться у банка чуть позже.')
+              : null)
         : failed
-            ? 'Списание не прошло. Можно попробовать ещё раз.'
-            : unknown
-                ? (widget.binding
-                    ? 'Не удалось получить данные. Проверьте список карт чуть позже.'
-                    : 'Не удалось получить данные о платеже. Проверьте статус в профиле.')
-                : (widget.binding
-                    ? 'Статус ещё не пришёл от банка. Карта появится в списке через минуту.'
-                    : 'Статус ещё не пришёл от банка. Загляните в профиль через минуту.');
+        ? 'Списание не прошло. Можно попробовать ещё раз.'
+        : unknown
+        ? (widget.binding
+              ? 'Не удалось получить данные. Проверьте список карт чуть позже.'
+              : 'Не удалось получить данные о платеже. Проверьте статус в профиле.')
+        : (widget.binding
+              ? 'Статус ещё не пришёл от банка. Карта появится в списке через минуту.'
+              : 'Статус ещё не пришёл от банка. Загляните в профиль через минуту.');
 
     return Column(
       children: <Widget>[
@@ -428,8 +444,9 @@ class _PaymentResultScreenState extends State<PaymentResultScreen> {
           Text(
             subtitle,
             textAlign: TextAlign.center,
-            style: AppTextStyles.bodyMRegular
-                .copyWith(color: AppColors.textSecondary),
+            style: AppTextStyles.bodyMRegular.copyWith(
+              color: AppColors.textSecondary,
+            ),
           ),
         ],
       ],
@@ -457,7 +474,9 @@ class _PaymentResultScreenState extends State<PaymentResultScreen> {
     }
     try {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } catch (_) {/* кнопка остаётся — можно повторить */}
+    } catch (_) {
+      /* кнопка остаётся — можно повторить */
+    }
   }
 
   Widget _buildButton() {
@@ -474,7 +493,8 @@ class _PaymentResultScreenState extends State<PaymentResultScreen> {
       }
       return const SizedBox.shrink();
     }
-    final bool ok = _status == PaymentStatus.succeeded ||
+    final bool ok =
+        _status == PaymentStatus.succeeded ||
         (widget.binding && _status == PaymentStatus.refunded);
     final String label = ok ? 'Готово' : 'Закрыть';
     return PrimaryButton(label: label, onPressed: _onClose);

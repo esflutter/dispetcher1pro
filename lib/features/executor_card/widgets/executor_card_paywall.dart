@@ -39,37 +39,49 @@ class _ExecutorCardPaywallState extends State<ExecutorCardPaywall>
 
   /// Триал уже использован — берём прямую оплату подписки, без «30 дней
   /// бесплатно». По умолчанию false (новый юзер).
-  bool _trialUsed = false;
+  bool? _trialUsed;
+  bool _loadingSetup = true;
 
   @override
   void initState() {
     super.initState();
     _anim = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 350));
-    _slideUp = Tween<double>(begin: 1.0, end: 0.0)
-        .animate(CurvedAnimation(parent: _anim, curve: Curves.easeOut));
-    _fadeOut = Tween<double>(begin: 1.0, end: 0.0).animate(
-      CurvedAnimation(parent: _anim, curve: const Interval(0.9, 1.0)),
+      vsync: this,
+      duration: const Duration(milliseconds: 350),
     );
-    _loadPrice();
-    _loadTrialState();
+    _slideUp = Tween<double>(
+      begin: 1.0,
+      end: 0.0,
+    ).animate(CurvedAnimation(parent: _anim, curve: Curves.easeOut));
+    _fadeOut = Tween<double>(
+      begin: 1.0,
+      end: 0.0,
+    ).animate(CurvedAnimation(parent: _anim, curve: const Interval(0.9, 1.0)));
+    _loadSetup();
   }
 
-  Future<void> _loadPrice() async {
+  Future<void> _loadSetup({bool forceSettingsReload = false}) async {
+    if (mounted) setState(() => _loadingSetup = true);
+    int? price;
+    bool? trialUsed;
     try {
-      final int p =
-          await SettingsService.instance.subscriptionMonthlyPriceRub();
-      if (!mounted) return;
-      setState(() => _priceRub = p);
-    } catch (_) {/* fallback в build */}
-  }
-
-  Future<void> _loadTrialState() async {
+      if (forceSettingsReload) await SettingsService.instance.reload();
+      price = await SettingsService.instance.subscriptionMonthlyPriceRub();
+    } catch (_) {
+      /* цена остаётся неизвестной */
+    }
     try {
       final MyPrivate? priv = await ProfileService.instance.loadMyPrivate();
-      if (!mounted || priv == null) return;
-      setState(() => _trialUsed = priv.subscriptionTrialUsed);
-    } catch (_) {/* по умолчанию trial_used=false (новый юзер) */}
+      trialUsed = priv?.subscriptionTrialUsed;
+    } catch (_) {
+      /* право на триал остаётся неизвестным */
+    }
+    if (!mounted) return;
+    setState(() {
+      _priceRub = price;
+      _trialUsed = trialUsed;
+      _loadingSetup = false;
+    });
   }
 
   @override
@@ -79,6 +91,7 @@ class _ExecutorCardPaywallState extends State<ExecutorCardPaywall>
   }
 
   void _onContinue() {
+    if (_priceRub == null || _trialUsed == null) return;
     setState(() => _showPayment = true);
     _anim.forward();
   }
@@ -96,6 +109,7 @@ class _ExecutorCardPaywallState extends State<ExecutorCardPaywall>
   @override
   Widget build(BuildContext context) {
     final double cardHeight = MediaQuery.of(context).size.height * 0.47;
+    final bool trialUsed = _trialUsed ?? false;
     return Scaffold(
       backgroundColor: AppColors.background,
       body: Stack(
@@ -135,7 +149,9 @@ class _ExecutorCardPaywallState extends State<ExecutorCardPaywall>
             bottom: 0,
             child: _showPayment
                 ? FadeTransition(
-                    opacity: _fadeOut, child: _buildPaywall(context))
+                    opacity: _fadeOut,
+                    child: _buildPaywall(context),
+                  )
                 : _buildPaywall(context),
           ),
           if (_showPayment)
@@ -155,11 +171,12 @@ class _ExecutorCardPaywallState extends State<ExecutorCardPaywall>
                   // Новичок (триал не использован): card_binding 1 ₽ +
                   // активация 30-дневного триала — как в каталожном
                   // пейволле. Вернувшийся: прямая оплата подписки.
-                  kind: _trialUsed
+                  kind: trialUsed
                       ? PaymentKind.subscription
                       : PaymentKind.cardBinding,
-                  amount: _trialUsed ? _priceRub : 1,
-                  activateTrial: !_trialUsed,
+                  amount: trialUsed ? _priceRub : 1,
+                  renewalAmount: _priceRub,
+                  activateTrial: !trialUsed,
                   // После оплаты из контекста «Открыть карточку исполнителя»
                   // возвращаем именно туда, а не на /shell — юзер только что
                   // хотел отредактировать карточку, подписка теперь активна.
@@ -173,6 +190,8 @@ class _ExecutorCardPaywallState extends State<ExecutorCardPaywall>
   }
 
   Widget _buildPaywall(BuildContext context) {
+    final bool ready = _priceRub != null && _trialUsed != null;
+    final bool trialUsed = _trialUsed ?? false;
     return Container(
       key: const ValueKey('paywall'),
       height: MediaQuery.of(context).size.height * 0.47,
@@ -181,7 +200,11 @@ class _ExecutorCardPaywallState extends State<ExecutorCardPaywall>
         borderRadius: BorderRadius.vertical(top: Radius.circular(24.r)),
       ),
       padding: EdgeInsets.fromLTRB(
-          16.w, 24.h, 16.w, 12.h + MediaQuery.of(context).padding.bottom),
+        16.w,
+        24.h,
+        16.w,
+        12.h + MediaQuery.of(context).padding.bottom,
+      ),
       child: Column(
         children: <Widget>[
           Text(
@@ -207,11 +230,13 @@ class _ExecutorCardPaywallState extends State<ExecutorCardPaywall>
           ),
           SizedBox(height: 20.h),
           Text(
-            _priceRub == null
+            _trialUsed == null
+                ? 'Условия подписки уточняются'
+                : _priceRub == null
                 ? 'Стоимость подписки уточняется'
-                : _trialUsed
-                    ? '${_fmtPrice(_priceRub!)} ₽/месяц с авто-продлением'
-                    : '30 дней бесплатно, затем ${_fmtPrice(_priceRub!)} ₽/месяц',
+                : trialUsed
+                ? '${_fmtPrice(_priceRub!)} ₽/месяц с авто-продлением'
+                : '30 дней бесплатно, затем ${_fmtPrice(_priceRub!)} ₽/месяц',
             style: TextStyle(
               fontFamily: 'Roboto',
               fontSize: 14.sp,
@@ -220,7 +245,17 @@ class _ExecutorCardPaywallState extends State<ExecutorCardPaywall>
             ),
           ),
           SizedBox(height: 12.h),
-          PrimaryButton(label: 'Продолжить', onPressed: _onContinue),
+          PrimaryButton(
+            label: ready
+                ? 'Продолжить'
+                : _loadingSetup
+                ? 'Данные загружаются…'
+                : 'Повторить загрузку',
+            enabled: ready || !_loadingSetup,
+            onPressed: ready
+                ? _onContinue
+                : () => _loadSetup(forceSettingsReload: true),
+          ),
           SizedBox(height: 12.h),
           Wrap(
             alignment: WrapAlignment.center,
@@ -262,7 +297,6 @@ class _ExecutorCardPaywallState extends State<ExecutorCardPaywall>
               ),
             ],
           ),
-
         ],
       ),
     );
