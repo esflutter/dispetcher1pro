@@ -61,7 +61,15 @@ Future<bool?> showDeleteServiceDialog(BuildContext context) {
 }
 
 /// Диалог «Ваша услуга размещена!» после успешной оплаты.
-Future<void> showServicePublishedDialog(BuildContext context) {
+///
+/// [needsDocs] — услуга создана, но документы по ней ещё не одобрены, поэтому
+/// заказчикам она пока не видна. Обещать «теперь вас видят» в этом случае
+/// нельзя: в режиме документов-по-услугам сервер пускает в каталог только
+/// одобренные услуги, и человек не понимал бы, почему заказов нет.
+Future<void> showServicePublishedDialog(
+  BuildContext context, {
+  bool needsDocs = false,
+}) {
   return showDialog<void>(
     context: context,
     barrierColor: Colors.black.withValues(alpha: 0.35),
@@ -88,13 +96,15 @@ Future<void> showServicePublishedDialog(BuildContext context) {
             ),
             SizedBox(height: 22.h),
             Text(
-              'Ваша услуга размещена!',
+              needsDocs ? 'Услуга создана' : 'Ваша услуга размещена!',
               textAlign: TextAlign.center,
               style: AppTextStyles.titleL.copyWith(fontWeight: FontWeight.w700),
             ),
             SizedBox(height: 8.h),
             Text(
-              'Теперь услуга видна другим\nпользователям, и заказчики смогут\nсвязаться с вами',
+              needsDocs
+                  ? 'Чтобы заказчики её увидели,\nотправьте документы по услуге —\nих проверит администратор'
+                  : 'Теперь услуга видна другим\nпользователям, и заказчики смогут\nсвязаться с вами',
               textAlign: TextAlign.center,
               style: AppTextStyles.bodyMRegular
                   .copyWith(color: AppColors.textSecondary),

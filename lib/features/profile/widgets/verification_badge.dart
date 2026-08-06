@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
+import 'package:dispatcher_1/core/settings/settings_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_spacing.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
@@ -30,7 +31,15 @@ enum VerificationStatus {
   /// обратную совместимость со старым кодом.
   static final ValueNotifier<bool> hasSubscriptionNotifier =
       ValueNotifier<bool>(false);
-  static bool get hasSubscription => hasSubscriptionNotifier.value;
+
+  /// ЕДИНСТВЕННАЯ точка, где решается «есть ли у исполнителя доступ».
+  /// В бесплатном режиме доступ есть всегда — этого достаточно, чтобы
+  /// отвалились сразу все платные гейты (отклик на заказ, подтверждение
+  /// приглашения, карточка исполнителя), не трогая каждый по отдельности.
+  /// Правка «по месту присвоения» тут не годится: значение проставляется
+  /// внутри условия «дата оплаты не пустая», а у большинства она пустая.
+  static bool get hasSubscription =>
+      SettingsService.instance.freeModeCached || hasSubscriptionNotifier.value;
   static set hasSubscription(bool v) => hasSubscriptionNotifier.value = v;
 
   /// Дата, до которой оплачен текущий платёжный период подписки

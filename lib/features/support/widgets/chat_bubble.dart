@@ -8,6 +8,7 @@ import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
 import 'package:dispatcher_1/core/ai/ai_navigation.dart';
 import 'package:dispatcher_1/core/catalog/format.dart';
+import 'package:dispatcher_1/core/settings/settings_service.dart';
 import 'package:dispatcher_1/core/utils/photo_source.dart';
 import 'package:dispatcher_1/features/services/create_service_screen.dart';
 import 'package:dispatcher_1/features/executor_card/edit_executor_card_screen.dart';
@@ -464,7 +465,11 @@ class _DraftReadyHandoffState extends State<_DraftReadyHandoff> {
         : isService
             ? 'Откройте форму услуги — проверьте поля и опубликуйте.'
             : isCard
-                ? 'Откройте карточку — проверьте поля и сохраните. Чтобы вас находили, нужны пройденная проверка и активная подписка.'
+                ? (SettingsService.instance.freeModeCached
+                    // В бесплатном режиме подписки нет; проверка документов
+                    // остаётся — она не про деньги.
+                    ? 'Откройте карточку — проверьте поля и сохраните. Чтобы вас находили, нужна пройденная проверка документов.'
+                    : 'Откройте карточку — проверьте поля и сохраните. Чтобы вас находили, нужны пройденная проверка и активная подписка.')
                 : 'Откройте форму заказа — проверьте поля и опубликуйте.';
     final String buttonLabel = published
         ? 'Услуга опубликована'

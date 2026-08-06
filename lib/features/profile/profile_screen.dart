@@ -327,11 +327,17 @@ class _ProfileScreenState extends State<ProfileScreen>
               label: 'Мой график',
               onTap: () => _openCardGated('/schedule'),
             ),
-            SizedBox(height: 16.h),
-            _ProfileMenuItem(
-              label: 'Подписка и оплата',
-              onTap: () => context.push('/subscription/manage'),
-            ),
+            // Раздел оплаты прячем в бесплатном режиме: платить не за что,
+            // а сохранённых карт быть не может — сервер не даёт их привязать.
+            // Экран и маршрут остаются на месте, чтобы возврат платного
+            // режима был переключением флага, а не новой сборкой.
+            if (!SettingsService.instance.freeModeCached) ...<Widget>[
+              SizedBox(height: 16.h),
+              _ProfileMenuItem(
+                label: 'Подписка и оплата',
+                onTap: () => context.push('/subscription/manage'),
+              ),
+            ],
             SizedBox(height: 20.h),
             const _SupportFooter(),
             SizedBox(height: 24.h),

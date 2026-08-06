@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import 'package:dispatcher_1/core/payments/payment_service.dart';
 import 'package:dispatcher_1/core/profile/profile_service.dart';
+import 'package:dispatcher_1/core/settings/settings_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_spacing.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
@@ -57,6 +58,13 @@ class _SubscriptionManageScreenState extends State<SubscriptionManageScreen> {
       if (!mounted) return;
       if (cards.isNotEmpty) {
         setState(() => _showCardsButton = true);
+        return;
+      }
+      // В бесплатном режиме кнопка нужна ТОЛЬКО тем, у кого реально осталась
+      // привязанная карта — чтобы было где её отвязать. Всем остальным вести
+      // в «Способы оплаты» незачем: платить не за что.
+      if (SettingsService.instance.freeModeCached) {
+        setState(() => _showCardsButton = false);
         return;
       }
       final bool hadPayment = await PaymentService.instance
@@ -196,16 +204,20 @@ class _SubscriptionManageScreenState extends State<SubscriptionManageScreen> {
                       Expanded(
                         child: Text('Подписка', style: AppTextStyles.button),
                       ),
-                      Opacity(
-                        opacity: _busy ? 0.5 : 1.0,
-                        child: IgnorePointer(
-                          ignoring: _busy,
-                          child: ScheduleToggle(
-                            value: state == _State.active,
-                            onChanged: (bool v) => _onToggle(priv, v),
+                      // Переключатель автопродления в бесплатном режиме не
+                      // показываем: продлевать нечего, а его нажатие увело бы
+                      // на привязку карты, где сервер откажет.
+                      if (state != _State.free)
+                        Opacity(
+                          opacity: _busy ? 0.5 : 1.0,
+                          child: IgnorePointer(
+                            ignoring: _busy,
+                            child: ScheduleToggle(
+                              value: state == _State.active,
+                              onChanged: (bool v) => _onToggle(priv, v),
+                            ),
                           ),
                         ),
-                      ),
                     ],
                   ),
                 ),
@@ -242,9 +254,13 @@ class _SubscriptionManageScreenState extends State<SubscriptionManageScreen> {
   }
 }
 
-enum _State { active, paused, inactive }
+enum _State { active, paused, inactive, free }
 
 _State _resolveState(MyPrivate? priv) {
+  // Бесплатный режим — отдельное состояние: подписки нет ни у кого, поэтому
+  // ни «активна», ни «приостановлена», ни «неактивна» тут не подходят.
+  // Показываем информационный экран без переключателя и без оплаты.
+  if (SettingsService.instance.freeModeCached) return _State.free;
   final bool active = priv?.subscriptionActive ?? false;
   final bool autoRenew = priv?.subscriptionAutoRenew ?? false;
   if (!active) return _State.inactive;
@@ -289,6 +305,12 @@ class _StatusBlock extends StatelessWidget {
         subtitle =
             'Оплатите подписку, чтобы откликаться на заказы '
             'и заказчики видели ваш профиль';
+        break;
+      case _State.free:
+        title = 'Приложение работает бесплатно';
+        subtitle =
+            'Подписка не нужна: отклики на заказы и размещение услуг '
+            'доступны без оплаты. Платить и привязывать карту не требуется.';
         break;
     }
 

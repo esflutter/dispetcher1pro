@@ -95,6 +95,34 @@ class PushService {
       return;
     }
 
+    // iOS: СНАЧАЛА дождаться APNs-токена. Если запросить FCM-токен раньше,
+    // firebase_messaging бросает `apns-token-not-set`, исключение гасится
+    // ниже — и токен не сохраняется НИКОГДА. Симптом ровно такой, какой был
+    // на проде: в базе десятки android-токенов и ни одного ios.
+    // APNs-токен выдаётся системой асинхронно после разрешения, поэтому
+    // опрашиваем его несколько раз с короткой паузой; если так и не пришёл
+    // (нет сети, симулятор, отозванный профиль) — выходим молча, попытка
+    // повторится при следующем запуске и на onTokenRefresh.
+    if (Platform.isIOS) {
+      String? apns;
+      for (int attempt = 0; attempt < 5 && apns == null; attempt++) {
+        if (attempt > 0) {
+          await Future<void>.delayed(const Duration(seconds: 2));
+        }
+        try {
+          apns = await FirebaseMessaging.instance
+              .getAPNSToken()
+              .timeout(const Duration(seconds: 5));
+        } catch (e) {
+          if (kDebugMode) debugPrint('[push] getAPNSToken failed: $e');
+        }
+      }
+      if (apns == null) {
+        if (kDebugMode) debugPrint('[push] APNs-токен не выдан — регистрацию отложили');
+        return;
+      }
+    }
+
     // Получаем FCM-токен. Может зависнуть на устройствах без GMS —
     // ограничиваем 15 секундами.
     String? token;

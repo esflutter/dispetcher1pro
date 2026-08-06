@@ -1,4 +1,26 @@
+import 'package:flutter/widgets.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+/// Разбор булева флага из таблицы настроек.
+///
+/// Одно и то же значение приходит в трёх видах, и все три реальны:
+/// админ-панель пишет переключатели числом `1`/`0`, миграции — настоящим
+/// булевым `true`/`false`, а через REST значение может прийти строкой.
+/// Ошибка здесь стоит дорого: неверно понятый флаг бесплатного режима
+/// покажет людям заслонку оплаты там, где платить не надо, — или наоборот.
+///
+/// Всё неизвестное трактуем как «выключено»: безопаснее лишний раз показать
+/// оплату, чем открыть платное после возврата подписки.
+bool parseFreeModeFlag(Object? raw) {
+  if (raw is bool) return raw;
+  if (raw is num) return raw != 0;
+  if (raw is String) {
+    final String s = raw.trim().toLowerCase();
+    return s == 'true' || s == '1';
+  }
+  return false;
+}
 
 int? parsePaymentPriceRub(Object? raw) {
   final num? parsed = raw is num ? raw : num.tryParse(raw?.toString() ?? '');
@@ -16,9 +38,33 @@ int? parsePaymentPriceRub(Object? raw) {
 /// раз при первом обращении и держатся в памяти. RLS: анониму доступны
 /// только до-логиновые ключи (цены, ссылки), операционные ключи и токен
 /// карт — только authenticated (миграция 078).
-class SettingsService {
+class SettingsService with WidgetsBindingObserver {
   SettingsService._();
   static final SettingsService instance = SettingsService._();
+
+  bool _observing = false;
+  DateTime? _lastResumeReload;
+
+  /// Перечитывать настройки при возврате приложения из фона.
+  ///
+  /// Без этого переключение бесплатного режима доезжало до уже открытого
+  /// приложения только после полного перезапуска. Хуже всего это выглядело
+  /// при ВОЗВРАТЕ платного режима: доступ снова требует подписки, а раздел
+  /// «Подписка и оплата» в интерфейсе ещё спрятан флагом — человек упирался
+  /// в текст «оплатите» и не мог никуда перейти.
+  ///
+  /// Чаще раза в минуту не дёргаем: возврат из фона бывает частым.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) return;
+    final DateTime now = DateTime.now();
+    if (_lastResumeReload != null &&
+        now.difference(_lastResumeReload!) < const Duration(minutes: 1)) {
+      return;
+    }
+    _lastResumeReload = now;
+    reload().catchError((Object _) {/* офлайн — останемся на прежних значениях */});
+  }
 
   SupabaseClient get _client => Supabase.instance.client;
 
@@ -44,6 +90,7 @@ class SettingsService {
         for (final Map<String, dynamic> r in rows)
           r['key'] as String: r['value'],
       };
+      _rememberFreeMode(_parseBool(_cache!['billing.free_mode']));
     } catch (_) {
       // Кэш НЕ фиксируем пустым: офлайн-старт раньше навсегда (до перезапуска)
       // оставлял приложение на зашитых фолбэках. Оставляем null — следующий
@@ -73,7 +120,73 @@ class SettingsService {
   /// Прогревает кэш настроек на старте приложения. Вызывается из `main()`
   /// fire-and-forget вместе с CatalogService.warmup() — после этого все
   /// геттеры возвращают значения мгновенно, без сетевого запроса.
-  Future<void> warmup() => _load();
+  ///
+  /// Перед сетью поднимаем с устройства последнее известное значение
+  /// бесплатного режима: иначе на холодном старте без сети приложение
+  /// на секунду считало бы себя платным и могло показать заслонку оплаты
+  /// там, где платить уже не нужно.
+  Future<void> warmup() async {
+    if (!_observing) {
+      _observing = true;
+      WidgetsFlutterBinding.ensureInitialized();
+      WidgetsBinding.instance.addObserver(this);
+    }
+    await _restoreFreeMode();
+    await _load();
+  }
+
+  // ---------------------------------------------------------------
+  // Бесплатный режим (`billing.free_mode` в таблице настроек).
+  //
+  // Один серверный переключатель на всё приложение: пока он включён,
+  // подписка не нужна, размещение услуг бесплатно, оплата не принимается.
+  // Выключение возвращает прежнее платное поведение — экраны оплаты никуда
+  // не удалены, они просто спрятаны за этим флагом.
+  // ---------------------------------------------------------------
+
+  /// Последнее известное значение, поднятое с устройства. `null` — ещё не
+  /// читали. Нужно только для первых мгновений холодного старта и для
+  /// работы без сети.
+  static bool? _stickyFreeMode;
+
+  static const String _kFreeModePrefsKey = 'billing_free_mode_v1';
+
+  static bool _parseBool(Object? v) => parseFreeModeFlag(v);
+
+  Future<void> _restoreFreeMode() async {
+    if (_stickyFreeMode != null) return;
+    try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      _stickyFreeMode = prefs.getBool(_kFreeModePrefsKey);
+    } catch (_) {
+      /* нет доступа к хранилищу — останемся на серверном значении */
+    }
+  }
+
+  void _rememberFreeMode(bool value) {
+    if (_stickyFreeMode == value) return;
+    _stickyFreeMode = value;
+    SharedPreferences.getInstance()
+        .then((SharedPreferences p) => p.setBool(_kFreeModePrefsKey, value))
+        .catchError((Object _) => false);
+  }
+
+  /// Включён ли бесплатный режим. Ждёт загрузку настроек.
+  Future<bool> freeMode() async {
+    await _load();
+    return freeModeCached;
+  }
+
+  /// Синхронная версия по уже прогретому кэшу — нужна там, где решение
+  /// принимается прямо во время отрисовки (заслонки оплаты, гейты).
+  /// Приоритет: свежие настройки с сервера → последнее известное значение
+  /// с устройства → «платный режим» как безопасный дефолт (лучше лишний
+  /// раз показать оплату, чем открыть платное после возврата подписки).
+  bool get freeModeCached {
+    final Object? v = _values['billing.free_mode'];
+    if (v != null) return _parseBool(v);
+    return _stickyFreeMode ?? false;
+  }
 
   /// Сбросить кэш и перечитать настройки. Зовётся ПОСЛЕ входа: прогрев в
   /// main() может идти под анонимной ролью и не получает ключи, видимые

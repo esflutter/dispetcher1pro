@@ -10,6 +10,7 @@ import 'package:dispatcher_1/core/catalog/models.dart' as cat;
 import 'package:dispatcher_1/core/dadata/dadata_service.dart';
 import 'package:dispatcher_1/core/my_services/models.dart';
 import 'package:dispatcher_1/core/my_services/my_services_service.dart';
+import 'package:dispatcher_1/core/settings/settings_service.dart';
 import 'package:dispatcher_1/core/storage/storage_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
@@ -400,12 +401,23 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
     try {
       final String? id = await _save();
       if (id == null || !mounted) return;
-      if (_isEdit) {
+      // Бесплатный режим: сервер публикует услугу сразу при создании, платить
+      // не за что. Показываем то же подтверждение, что и при редактировании,
+      // вместо экрана оплаты. Сам экран оплаты не удаляем — он вернётся
+      // вместе с платным режимом.
+      if (_isEdit || SettingsService.instance.freeModeCached) {
         // Редактирование — услуга уже была оплачена ранее, просто
         // показываем подтверждение и закрываем экран.
-        await showServicePublishedDialog(context);
+        // Новая услуга в бесплатном режиме публикуется сразу, но пока по ней
+        // не одобрены документы, заказчики её не увидят — говорим об этом
+        // прямо, иначе человек будет ждать заказов, которых не будет.
+        await showServicePublishedDialog(
+          context,
+          needsDocs:
+              !_isEdit && SettingsService.instance.perServiceDocsCached,
+        );
         if (!mounted) return;
-        Navigator.of(context).pop();
+        Navigator.of(context).pop(_isEdit ? null : true);
         return;
       }
       // Только что созданная услуга по умолчанию `is_paid=false` — она не

@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:dispatcher_1/core/config/env.dart';
 import 'package:dispatcher_1/core/payments/models.dart';
 import 'package:dispatcher_1/core/payments/payment_service.dart';
+import 'package:dispatcher_1/core/settings/settings_service.dart';
 import 'package:dispatcher_1/core/payments/receipt_email_prompt.dart';
 import 'package:dispatcher_1/core/profile/profile_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
@@ -311,7 +312,12 @@ class _CardsScreenState extends State<CardsScreen> {
                         ),
                       ),
                     ),
-                  _AddCardTile(onTap: _onAddCard),
+                  // В бесплатном режиме привязывать карту не за чем — сервер
+                  // всё равно откажет в создании платежа. Список уже
+                  // сохранённых карт и их удаление оставляем: иначе человеку
+                  // некуда пойти отвязать карту, привязанную раньше.
+                  if (!SettingsService.instance.freeModeCached)
+                    _AddCardTile(onTap: _onAddCard),
                 ],
               ),
       ),

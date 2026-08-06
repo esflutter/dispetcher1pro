@@ -11,6 +11,7 @@ import 'app.dart';
 import 'core/analytics/app_analytics.dart';
 import 'core/catalog/catalog_service.dart';
 import 'core/config/env.dart';
+import 'core/config/firebase_options_ios.dart';
 import 'core/push/push_handler.dart';
 import 'core/push/push_service.dart';
 import 'core/auth/auth_reset.dart';
@@ -32,13 +33,20 @@ import 'core/theme/system_bar_style.dart';
 /// автоматически (notification-payload), нам остаётся только запустить
 /// Firebase в этом изоляте — handler выполняется не в основном изоляте
 /// приложения, контекст пуст.
+/// На iOS запускаем Firebase с ЯВНЫМИ параметрами: файл настроек не попадает
+/// внутрь iOS-сборки (не подключён к Xcode-проекту), и без этого запуск падал,
+/// а приложение молча оставалось без пушей. На Android — `null`, то есть
+/// прежнее поведение: настройки берутся из своего файла в проекте.
+FirebaseOptions? get _firebaseOptions =>
+    defaultTargetPlatform == TargetPlatform.iOS ? kFirebaseOptionsIos : null;
+
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   // try/catch обязателен: на Huawei/устройствах без GMS Firebase.initializeApp
   // падает с PlatformException, изолят молча умирает и пуш не доходит.
   // Тяжёлую работу не нужно — FCM SDK сам показывает системный баннер.
   try {
-    await Firebase.initializeApp();
+    await Firebase.initializeApp(options: _firebaseOptions);
   } catch (e) {
     if (kDebugMode) debugPrint('[bg-push] Firebase init failed: $e');
   }
@@ -72,7 +80,7 @@ Future<void> main() async {
   // остальная часть приложения должна продолжать работать.
   bool firebaseReady = false;
   try {
-    await Firebase.initializeApp();
+    await Firebase.initializeApp(options: _firebaseOptions);
     FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
     await PushHandler.instance.initialize();
     PushService.instance.initTokenRefreshListener();

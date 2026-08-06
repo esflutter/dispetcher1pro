@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -9,6 +10,8 @@ import 'package:dispatcher_1/core/ai/ai_navigation.dart';
 import 'package:dispatcher_1/core/dadata/dadata_service.dart';
 import 'package:dispatcher_1/core/executor_card/executor_card_service.dart';
 import 'package:dispatcher_1/core/profile/profile_service.dart';
+import 'package:dispatcher_1/core/schedule/schedule_prompt_prefs.dart';
+import 'package:dispatcher_1/core/settings/settings_service.dart';
 import 'package:dispatcher_1/core/storage/storage_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_spacing.dart';
@@ -570,6 +573,16 @@ class _EditExecutorCardScreenState extends State<EditExecutorCardScreen> {
                   ExecutorCardData.experience = _experience.text;
                   ExecutorCardData.status = _selectedStatus;
                   ExecutorCardScreen.cardCreated = true;
+
+                  // Подсказка «Заполните график» раньше поднималась после
+                  // успешной привязки карты. В бесплатном режиме оплаты нет —
+                  // и новички переставали бы про график узнавать, а без него
+                  // их хуже находят. Вешаем сигнал на сохранение карточки:
+                  // это ближайший момент, когда человек только-только стал
+                  // виден заказчикам.
+                  if (SettingsService.instance.freeModeCached) {
+                    unawaited(SchedulePromptPrefs.setPending());
+                  }
 
                   if (!context.mounted) return;
                   Navigator.of(context).pop();
