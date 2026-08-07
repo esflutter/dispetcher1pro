@@ -66,9 +66,13 @@ Future<bool?> showDeleteServiceDialog(BuildContext context) {
 /// заказчикам она пока не видна. Обещать «теперь вас видят» в этом случае
 /// нельзя: в режиме документов-по-услугам сервер пускает в каталог только
 /// одобренные услуги, и человек не понимал бы, почему заказов нет.
+/// [needsCard] — у человека нет карточки исполнителя. Тогда услуга вообще ни
+/// на что не влияет: заказчики такого исполнителя не видят. Это самый важный
+/// случай, поэтому он перебивает сообщение про документы.
 Future<void> showServicePublishedDialog(
   BuildContext context, {
   bool needsDocs = false,
+  bool needsCard = false,
 }) {
   return showDialog<void>(
     context: context,
@@ -96,15 +100,17 @@ Future<void> showServicePublishedDialog(
             ),
             SizedBox(height: 22.h),
             Text(
-              needsDocs ? 'Услуга создана' : 'Ваша услуга размещена!',
+              (needsCard || needsDocs) ? 'Услуга создана' : 'Ваша услуга размещена!',
               textAlign: TextAlign.center,
               style: AppTextStyles.titleL.copyWith(fontWeight: FontWeight.w700),
             ),
             SizedBox(height: 8.h),
             Text(
-              needsDocs
-                  ? 'Чтобы заказчики её увидели,\nотправьте документы по услуге —\nих проверит администратор'
-                  : 'Теперь услуга видна другим\nпользователям, и заказчики смогут\nсвязаться с вами',
+              needsCard
+                  ? 'Но заказчики вас пока не найдут:\nзаполните карточку исполнителя\nв разделе «Профиль»'
+                  : needsDocs
+                      ? 'Чтобы заказчики её увидели,\nотправьте документы по услуге —\nих проверит администратор'
+                      : 'Теперь услуга видна другим\nпользователям, и заказчики смогут\nсвязаться с вами',
               textAlign: TextAlign.center,
               style: AppTextStyles.bodyMRegular
                   .copyWith(color: AppColors.textSecondary),

@@ -4,6 +4,9 @@ import 'package:go_router/go_router.dart';
 
 import 'package:dispatcher_1/core/ai/ai_navigation.dart';
 import 'package:dispatcher_1/core/my_services/models.dart';
+import 'package:dispatcher_1/core/executor_card/executor_card_service.dart';
+import 'package:dispatcher_1/features/executor_card/executor_card_screen.dart';
+import 'package:dispatcher_1/features/executor_card/widgets/executor_card_alerts.dart';
 import 'package:dispatcher_1/core/my_services/my_services_service.dart';
 import 'package:dispatcher_1/core/settings/settings_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
@@ -199,6 +202,43 @@ class _MyServicesScreenState extends State<MyServicesScreen> {
     // список, чтобы статус услуги («на проверке» → «одобрено»/«отклонено»)
     // обновился на открытом экране без перезахода.
     ServiceData.changeBeacon.addListener(_onDocsBeacon);
+    _requireExecutorCard();
+  }
+
+  /// Без карточки исполнителя услуги бессмысленны: заказчики такого человека
+  /// не видят вообще, сколько бы услуг он ни разместил и одобрят ли документы.
+  ///
+  /// Проверка раньше стояла в МЕНЮ профиля — то есть на одной кнопке. Мимо
+  /// неё вели ещё два пути: кнопка помощника «Открыть» и его же карточка
+  /// «Открыть форму услуги». Через них люди и проходили: на 06.08.2026 пятеро
+  /// исполнителей завели услуги, прошли проверку документов и остались
+  /// невидимыми, ни разу не открыв карточку. Поэтому проверка теперь стоит на
+  /// ВХОДЕ в экран — её проходит любой путь, включая прямую ссылку.
+  Future<void> _requireExecutorCard() async {
+    if (ExecutorCardScreen.cardCreated) return;
+    // Флаг мог не успеть подняться (например, зашли сразу после входа) —
+    // спрашиваем сервер, чтобы не выгнать человека с уже готовой карточкой.
+    try {
+      final MyExecutorCard? card =
+          await ExecutorCardService.instance.loadMine();
+      if (card?.savedAt != null) {
+        ExecutorCardScreen.cardCreated = true;
+        return;
+      }
+    } catch (_) {
+      // Не смогли проверить — не мешаем работать, чтобы сбой сети не
+      // выкидывал человека с экрана.
+      return;
+    }
+    if (!mounted) return;
+    final bool? create = await showExecutorCardRequiredAlert(context);
+    if (!mounted) return;
+    if (create == true) {
+      await context.push('/executor-card');
+    } else {
+      // Отказался — возвращаем назад: оставаться тут нет смысла.
+      if (mounted && context.canPop()) context.pop();
+    }
   }
 
   @override

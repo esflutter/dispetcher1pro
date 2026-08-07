@@ -11,6 +11,7 @@ import 'package:dispatcher_1/core/dadata/dadata_service.dart';
 import 'package:dispatcher_1/core/my_services/models.dart';
 import 'package:dispatcher_1/core/my_services/my_services_service.dart';
 import 'package:dispatcher_1/core/settings/settings_service.dart';
+import 'package:dispatcher_1/features/executor_card/executor_card_screen.dart';
 import 'package:dispatcher_1/core/storage/storage_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
@@ -415,6 +416,11 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
           context,
           needsDocs:
               !_isEdit && SettingsService.instance.perServiceDocsCached,
+          // Сюда можно попасть в обход экрана «Мои услуги» — карточкой
+          // помощника «Открыть форму услуги». Если карточки исполнителя нет,
+          // услуга ни на что не влияет, и человек должен узнать об этом сразу,
+          // а не через неделю ожидания заказов.
+          needsCard: !_isEdit && !ExecutorCardScreen.cardCreated,
         );
         if (!mounted) return;
         Navigator.of(context).pop(_isEdit ? null : true);

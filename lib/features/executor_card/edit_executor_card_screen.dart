@@ -527,13 +527,22 @@ class _EditExecutorCardScreenState extends State<EditExecutorCardScreen> {
 
                   // Реальный UPSERT в БД. Радиус — 10/20/50 км в int
                   // (колонка `executor_cards.radius_km`).
-                  final int? radiusKm = _radiusIndex == 0
+                  //
+                  // Если человек радиус не выбрал — ставим 20 км сами.
+                  // Раньше в этом случае радиус оставался пустым, а база не
+                  // даёт опубликовать карточку без него: она молча сохранялась
+                  // неопубликованной, выглядела заполненной, и заказчики
+                  // человека не видели. Никакого предупреждения при этом не
+                  // было. 20 км — середина из трёх вариантов; человек в любой
+                  // момент меняет его в этой же форме.
+                  const int kDefaultRadiusKm = 20;
+                  final int radiusKm = _radiusIndex == 0
                       ? 10
                       : _radiusIndex == 1
                           ? 20
                           : _radiusIndex == 2
                               ? 50
-                              : null;
+                              : kDefaultRadiusKm;
                   final String? legalStatus = switch (_selectedStatus) {
                     'Физ. лицо' => 'individual',
                     'Самозанятый' => 'self_employed',
@@ -551,7 +560,7 @@ class _EditExecutorCardScreenState extends State<EditExecutorCardScreen> {
                       locationLat: _locationLat,
                       locationLng: _locationLng,
                       radiusKm: radiusKm,
-                      isPublished: radiusKm != null,
+                      isPublished: true,
                       legalStatus: legalStatus,
                       experienceYears: experienceYears,
                     );
