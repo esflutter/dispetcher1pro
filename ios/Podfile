@@ -1,6 +1,10 @@
 # Минимальная версия iOS. Должна совпадать с IPHONEOS_DEPLOYMENT_TARGET
-# в Runner.xcodeproj (13.0) — этого требуют свежие поды Firebase.
-platform :ios, '13.0'
+# в Runner.xcodeproj (15.0) — этого требуют свежие поды Firebase, а с весны
+# 2027 Apple вообще перестанет принимать сборки ниже 15.0 (ITMS-90068).
+# iOS 15 работает на тех же устройствах, что и 13 (iPhone 6s и новее),
+# поэтому поднятие планки не отрезает телефоны — только тех, кто не обновил
+# систему.
+platform :ios, '15.0'
 
 # Firebase Analytics без сбора рекламного идентификатора (IDFA): приложение
 # не показывает рекламу и не трекает пользователей. Это iOS-аналог убранного
@@ -47,11 +51,11 @@ end
 post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
-    # Принудительно держим минимум iOS 13 для всех подов — иначе отдельные
+    # Принудительно держим минимум iOS 15 для всех подов — иначе отдельные
     # зависимости (в т.ч. из стека Firebase) роняют сборку требованием
     # более высокой минимальной версии, чем стоит по умолчанию.
     target.build_configurations.each do |config|
-      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
     end
   end
 end
