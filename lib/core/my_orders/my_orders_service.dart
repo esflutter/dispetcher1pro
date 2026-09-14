@@ -164,6 +164,9 @@ class MyOrdersService {
   /// ошибка не про эти проверки (тогда вызывающий пробрасывает её дальше).
   static String? _engageBlockMessage(String serverMessage) {
     if (serverMessage.contains('subscription_inactive')) {
+      if (SettingsService.instance.freeModeCached) {
+        return 'Доступ к заказам обновляется. Обновите список и попробуйте ещё раз.';
+      }
       return 'Подписка неактивна. Продлите её, чтобы принимать заказы.';
     }
     if (serverMessage.contains('executor_not_verified')) {

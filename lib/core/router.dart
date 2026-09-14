@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import 'auth/guest_gate.dart';
+
+import 'settings/settings_service.dart';
 import '../features/auth/otp_verification_screen.dart';
 import '../features/auth/phone_input_screen.dart';
 import '../features/auth/registration_screen.dart';
@@ -50,25 +53,43 @@ final GoRouter appRouter = GoRouter(
   // переписываем такие URI в нормальные внутренние пути.
   redirect: (BuildContext context, GoRouterState state) {
     final String uriStr = state.uri.toString();
-    if (!uriStr.startsWith('dispatcher1pro://')) return null;
-    final Uri uri = Uri.parse(uriStr);
-    if (uri.host == 'payment' && uri.pathSegments.contains('result')) {
-      final String? paymentId =
-          uri.queryParameters['id'] ?? uri.queryParameters['payment_id'];
-      final String bindingTail =
-          uri.queryParameters['binding'] == '1' ? '&binding=1' : '';
-      // `return` — куда увести юзера после «Готово»/«Закрыть» на
-      // экране результата (см. PaymentResultScreen.returnPath).
-      // Прокидывается paywall'ом в return_url ЮКассы, а оттуда —
-      // обратно в deep-link при возврате из браузера.
-      final String? rp = uri.queryParameters['return'];
-      final String returnTail =
-          rp != null && rp.isNotEmpty ? '&return=${Uri.encodeComponent(rp)}' : '';
-      if (paymentId == null || paymentId.isEmpty) {
-        return '/subscription/payment/result';
+    if (isGuest &&
+        (state.uri.path.startsWith('/catalog') ||
+            state.uri.path.startsWith('/welcome'))) {
+      return '/shell';
+    }
+    if (uriStr.startsWith('dispatcher1pro://')) {
+      final Uri uri = Uri.parse(uriStr);
+      if (uri.host == 'payment' && uri.pathSegments.contains('result')) {
+        if (SettingsService.instance.freeModeCached) return '/shell';
+        final String? paymentId =
+            uri.queryParameters['id'] ?? uri.queryParameters['payment_id'];
+        final String bindingTail = uri.queryParameters['binding'] == '1'
+            ? '&binding=1'
+            : '';
+        // `return` — куда увести юзера после «Готово»/«Закрыть» на
+        // экране результата (см. PaymentResultScreen.returnPath).
+        // Прокидывается paywall'ом в return_url ЮКассы, а оттуда —
+        // обратно в deep-link при возврате из браузера.
+        final String? rp = uri.queryParameters['return'];
+        final String returnTail = rp != null && rp.isNotEmpty
+            ? '&return=${Uri.encodeComponent(rp)}'
+            : '';
+        if (paymentId == null || paymentId.isEmpty) {
+          return '/subscription/payment/result';
+        }
+        return '/subscription/payment/result'
+            '?id=${Uri.encodeComponent(paymentId)}$bindingTail$returnTail';
       }
-      return '/subscription/payment/result'
-          '?id=${Uri.encodeComponent(paymentId)}$bindingTail$returnTail';
+    }
+
+    // В бесплатном режиме ни один старый маршрут оплаты не должен быть
+    // доступен: его могут попытаться открыть из сохранённой ссылки, пуша
+    // или старого deep-link. Уводим на главный экран до построения виджета,
+    // чтобы не мелькали ни название «Подписка», ни данные карт.
+    if (state.uri.path.startsWith('/subscription') &&
+        SettingsService.instance.freeModeCached) {
+      return '/shell';
     }
     return null;
   },
@@ -78,14 +99,23 @@ final GoRouter appRouter = GoRouter(
 
     // Авторизация
     GoRoute(path: '/auth/phone', builder: (_, _) => const PhoneInputScreen()),
-    GoRoute(path: '/auth/otp', builder: (_, _) => const OtpVerificationScreen()),
-    GoRoute(path: '/auth/registration', builder: (_, _) => const RegistrationScreen()),
+    GoRoute(
+      path: '/auth/otp',
+      builder: (_, _) => const OtpVerificationScreen(),
+    ),
+    GoRoute(
+      path: '/auth/registration',
+      builder: (_, _) => const RegistrationScreen(),
+    ),
 
     // Главный shell с нижней навигацией
     GoRoute(path: '/shell', builder: (_, _) => const MainShell()),
 
     // Каталог
-    GoRoute(path: '/catalog', builder: (_, _) => const CatalogCategoriesScreen()),
+    GoRoute(
+      path: '/catalog',
+      builder: (_, _) => const CatalogCategoriesScreen(),
+    ),
     GoRoute(
       path: '/catalog/feed/:categoryId',
       builder: (_, state) => OrderFeedScreen(
@@ -99,12 +129,14 @@ final GoRouter appRouter = GoRouter(
         orderId: state.pathParameters['id'] ?? '',
       ),
     ),
-    GoRoute(path: '/catalog/filter', builder: (_, _) => const CatalogFilterScreen()),
+    GoRoute(
+      path: '/catalog/filter',
+      builder: (_, _) => const CatalogFilterScreen(),
+    ),
     GoRoute(
       path: '/catalog/customer/:id',
-      builder: (_, state) => CustomerCardScreen(
-        customerId: state.pathParameters['id'] ?? '',
-      ),
+      builder: (_, state) =>
+          CustomerCardScreen(customerId: state.pathParameters['id'] ?? ''),
     ),
     GoRoute(
       path: '/catalog/orders-map',
@@ -112,11 +144,13 @@ final GoRouter appRouter = GoRouter(
     ),
     GoRoute(
       path: '/catalog/order/:id/map',
-      builder: (_, state) => OrderOnMapScreen(
-        orderId: state.pathParameters['id'] ?? '',
-      ),
+      builder: (_, state) =>
+          OrderOnMapScreen(orderId: state.pathParameters['id'] ?? ''),
     ),
-    GoRoute(path: '/catalog/no-internet', builder: (_, _) => const NoInternetScreen()),
+    GoRoute(
+      path: '/catalog/no-internet',
+      builder: (_, _) => const NoInternetScreen(),
+    ),
 
     // Заказы исполнителя
     GoRoute(path: '/orders', builder: (_, _) => const MyOrdersScreen()),
@@ -125,14 +159,16 @@ final GoRouter appRouter = GoRouter(
     // сам открывает детали через свою привычную логику.
     GoRoute(
       path: '/orders/:id',
-      builder: (_, GoRouterState state) => OrderDetailRouteScreen(
-        orderId: state.pathParameters['id'] ?? '',
-      ),
+      builder: (_, GoRouterState state) =>
+          OrderDetailRouteScreen(orderId: state.pathParameters['id'] ?? ''),
     ),
 
     // Профиль
     GoRoute(path: '/profile', builder: (_, _) => const ProfileScreen()),
-    GoRoute(path: '/profile/edit', builder: (_, _) => const EditProfileScreen()),
+    GoRoute(
+      path: '/profile/edit',
+      builder: (_, _) => const EditProfileScreen(),
+    ),
     GoRoute(path: '/profile/reviews', builder: (_, _) => const ReviewsScreen()),
     GoRoute(
       path: '/profile/notifications-settings',
@@ -140,8 +176,18 @@ final GoRouter appRouter = GoRouter(
     ),
 
     // Карточка исполнителя
-    GoRoute(path: '/executor-card', builder: (_, _) => const ExecutorCardScreen()),
-    GoRoute(path: '/executor-card/edit', builder: (_, _) => const EditExecutorCardScreen()),
+    GoRoute(
+      path: '/executor-card',
+      builder: (_, _) => const ExecutorCardScreen(),
+    ),
+    GoRoute(
+      path: '/executor-card/edit',
+      builder: (_, _) => const EditExecutorCardScreen(),
+    ),
+    GoRoute(
+      path: '/welcome/profile',
+      builder: (_, _) => const _PostAuthProfileRoute(),
+    ),
 
     // Мои услуги
     GoRoute(path: '/services', builder: (_, _) => const MyServicesScreen()),
@@ -151,7 +197,8 @@ final GoRouter appRouter = GoRouter(
         // Из чата ассистента в extra может прилететь готовый черновик —
         // тогда форма открывается уже заполненной (см. handoff в chat_bubble).
         final extra = state.extra;
-        final draft = (extra is Map && extra['ai_draft'] is Map<String, dynamic>)
+        final draft =
+            (extra is Map && extra['ai_draft'] is Map<String, dynamic>)
             ? extra['ai_draft'] as Map<String, dynamic>
             : null;
         return CreateServiceScreen(aiDraft: draft);
@@ -184,8 +231,7 @@ final GoRouter appRouter = GoRouter(
           dayLabel: (extra?['dayLabel'] as String?) ?? 'Сегодня',
           initialState:
               (extra?['initialState'] as DayState?) ?? DayState.noOrders,
-          initial:
-              (extra?['initial'] as DaySettings?) ?? const DaySettings(),
+          initial: (extra?['initial'] as DaySettings?) ?? const DaySettings(),
         );
       },
     ),
@@ -195,7 +241,10 @@ final GoRouter appRouter = GoRouter(
       path: '/subscription/manage',
       builder: (_, _) => const SubscriptionManageScreen(),
     ),
-    GoRoute(path: '/subscription/cards', builder: (_, _) => const CardsScreen()),
+    GoRoute(
+      path: '/subscription/cards',
+      builder: (_, _) => const CardsScreen(),
+    ),
     // Роут `/subscription/payment` удалён: выбор способа оплаты теперь
     // живёт внутри paywall'ов (Subscription/ExecutorCard/Service) как
     // шторка, которая едет поверх маркетинговой карточки. Сами paywall'ы
@@ -204,8 +253,7 @@ final GoRouter appRouter = GoRouter(
       path: '/subscription/payment/result',
       builder: (_, GoRouterState state) {
         final String paymentId = state.uri.queryParameters['id'] ?? '';
-        final bool binding =
-            state.uri.queryParameters['binding'] == '1';
+        final bool binding = state.uri.queryParameters['binding'] == '1';
         final String? returnPath = state.uri.queryParameters['return'];
         final String? conf = state.uri.queryParameters['conf'];
         return PaymentResultScreen(
@@ -246,11 +294,13 @@ final GoRouter appRouter = GoRouter(
         uri.pathSegments.contains('result')) {
       final String? paymentId =
           uri.queryParameters['id'] ?? uri.queryParameters['payment_id'];
-      final String bindingTail =
-          uri.queryParameters['binding'] == '1' ? '&binding=1' : '';
+      final String bindingTail = uri.queryParameters['binding'] == '1'
+          ? '&binding=1'
+          : '';
       final String? rp = uri.queryParameters['return'];
-      final String returnTail =
-          rp != null && rp.isNotEmpty ? '&return=${Uri.encodeComponent(rp)}' : '';
+      final String returnTail = rp != null && rp.isNotEmpty
+          ? '&return=${Uri.encodeComponent(rp)}'
+          : '';
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (paymentId != null && paymentId.isNotEmpty) {
           appRouter.go(
@@ -261,9 +311,7 @@ final GoRouter appRouter = GoRouter(
           appRouter.go('/subscription/payment/result');
         }
       });
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
     // Фолбэк для любого другого неизвестного route (например, тап по
     // старому пушу с устаревшей структурой `/orders/<id>` на APK, где
@@ -272,6 +320,34 @@ final GoRouter appRouter = GoRouter(
     return _RouteNotFoundScreen(uri: state.uri);
   },
 );
+
+class _PostAuthProfileRoute extends StatefulWidget {
+  const _PostAuthProfileRoute();
+
+  @override
+  State<_PostAuthProfileRoute> createState() => _PostAuthProfileRouteState();
+}
+
+class _PostAuthProfileRouteState extends State<_PostAuthProfileRoute> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _open());
+  }
+
+  Future<void> _open() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(builder: (_) => const EditExecutorCardScreen()),
+    );
+    if (!mounted) return;
+    MainShell.selectedTab.value = 0;
+    context.go('/shell');
+  }
+
+  @override
+  Widget build(BuildContext context) =>
+      const Scaffold(body: Center(child: CircularProgressIndicator()));
+}
 
 class _RouteNotFoundScreen extends StatelessWidget {
   const _RouteNotFoundScreen({required this.uri});
@@ -309,7 +385,9 @@ class _RouteNotFoundScreen extends StatelessWidget {
                 backgroundColor: const Color(0xFFFF9900),
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(
-                    horizontal: 32, vertical: 14),
+                  horizontal: 32,
+                  vertical: 14,
+                ),
               ),
               onPressed: () => appRouter.go('/shell'),
               child: const Text('На главный'),

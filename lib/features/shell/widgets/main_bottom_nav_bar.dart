@@ -19,6 +19,12 @@ const List<MainNavItem> kMainNavItems = <MainNavItem>[
   MainNavItem('Профиль', 'assets/icons/nav/profile.svg'),
 ];
 
+const List<MainNavItem> kGuestMainNavItems = <MainNavItem>[
+  MainNavItem('Каталог', 'assets/icons/nav/catalog.svg'),
+  MainNavItem('Заказы', 'assets/icons/nav/orders.svg'),
+  MainNavItem('Профиль', 'assets/icons/nav/profile.svg'),
+];
+
 /// Тёмный нижний навбар из `MainShell`. Вынесен в отдельный виджет,
 /// чтобы вложенные экраны (например, «Лента заказов») могли показать
 /// точно такой же навбар поверх собственного Scaffold.
@@ -44,16 +50,15 @@ class MainBottomNavBar extends StatelessWidget {
     final double bottomInset = MediaQuery.viewPaddingOf(context).bottom;
     return Container(
       height: 64.h + bottomInset,
-      decoration: const BoxDecoration(
-        color: AppColors.navBarDark,
-      ),
+      decoration: const BoxDecoration(color: AppColors.navBarDark),
       padding: EdgeInsets.only(top: 6.h, bottom: bottomInset),
       child: Row(
         children: List<Widget>.generate(items.length, (int i) {
           final MainNavItem it = items[i];
           final bool active = i == currentIndex;
-          final Color color =
-              active ? AppColors.primary : AppColors.textTertiary;
+          final Color color = active
+              ? AppColors.primary
+              : AppColors.textTertiary;
           return Expanded(
             child: InkWell(
               onTap: () => onTap(i),

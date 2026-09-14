@@ -8,10 +8,26 @@ import 'package:dispatcher_1/core/theme/app_text_styles.dart';
 import 'package:dispatcher_1/core/widgets/dialog_close_button.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
 
-/// Гость — пользователь без активной Supabase-сессии. Лента заказов ему открыта
-/// (см. миграцию 101 — anon читает опубликованные заказы), но «аккаунтные»
-/// разделы и действия (отклик, мои заказы, профиль, услуги, график) требуют входа.
+/// Гость — пользователь без активной Supabase-сессии. Ему доступен стартовый
+/// экран и общая помощь; профиль, живые заказы и действия требуют входа.
 bool get isGuest => Supabase.instance.client.auth.currentSession == null;
+
+enum GuestAuthIntent { signIn, createProfile, browseCatalog }
+
+GuestAuthIntent? _pendingGuestAuthIntent;
+
+void startGuestAuth(BuildContext context, {required GuestAuthIntent intent}) {
+  _pendingGuestAuthIntent = intent;
+  context.go('/auth/phone');
+}
+
+void cancelGuestAuthIntent() => _pendingGuestAuthIntent = null;
+
+GuestAuthIntent? takeGuestAuthIntent() {
+  final GuestAuthIntent? value = _pendingGuestAuthIntent;
+  _pendingGuestAuthIntent = null;
+  return value;
+}
 
 /// Полноэкранная заглушка для вкладок, доступных только вошедшим
 /// («Заказы», «Профиль»): иконка + текст + кнопка «Войти». В стиле приложения.
@@ -21,11 +37,13 @@ class GuestLockedView extends StatelessWidget {
     required this.title,
     required this.subtitle,
     this.icon = Icons.lock_outline,
+    this.intent = GuestAuthIntent.signIn,
   });
 
   final String title;
   final String subtitle;
   final IconData icon;
+  final GuestAuthIntent intent;
 
   @override
   Widget build(BuildContext context) {
@@ -46,15 +64,14 @@ class GuestLockedView extends StatelessWidget {
             Text(
               subtitle,
               textAlign: TextAlign.center,
-              style: AppTextStyles.body
-                  .copyWith(color: AppColors.textTertiary),
+              style: AppTextStyles.body.copyWith(color: AppColors.textTertiary),
             ),
             SizedBox(height: 24.h),
             SizedBox(
               width: double.infinity,
               child: PrimaryButton(
-                label: 'Войти',
-                onPressed: () => context.go('/auth/phone'),
+                label: 'Войти или зарегистрироваться',
+                onPressed: () => startGuestAuth(context, intent: intent),
               ),
             ),
           ],
@@ -70,6 +87,7 @@ class GuestLockedView extends StatelessWidget {
 Future<bool> showGuestAuthPrompt(
   BuildContext context, {
   required String message,
+  GuestAuthIntent intent = GuestAuthIntent.signIn,
 }) async {
   final bool? wentToLogin = await showDialog<bool>(
     context: context,
@@ -97,7 +115,7 @@ Future<bool> showGuestAuthPrompt(
             ),
             SizedBox(height: 12.h),
             Text(
-              'Требуется авторизация',
+              'Продолжите после входа',
               textAlign: TextAlign.center,
               style: AppTextStyles.h3.copyWith(fontWeight: FontWeight.w700),
             ),
@@ -105,12 +123,13 @@ Future<bool> showGuestAuthPrompt(
             Text(
               message,
               textAlign: TextAlign.center,
-              style: AppTextStyles.body
-                  .copyWith(color: AppColors.textSecondary),
+              style: AppTextStyles.body.copyWith(
+                color: AppColors.textSecondary,
+              ),
             ),
             SizedBox(height: 20.h),
             PrimaryButton(
-              label: 'Войти',
+              label: 'Зарегистрироваться',
               onPressed: () => Navigator.of(ctx).pop(true),
             ),
             SizedBox(height: 20.h),
@@ -137,7 +156,7 @@ Future<bool> showGuestAuthPrompt(
     ),
   );
   if (wentToLogin == true && context.mounted) {
-    context.go('/auth/phone');
+    startGuestAuth(context, intent: intent);
     return true;
   }
   return false;

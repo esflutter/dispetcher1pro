@@ -281,6 +281,7 @@ class _MyServicesScreenState extends State<MyServicesScreen> {
                     _initial = ServiceData.refresh();
                   }));
             }
+            final bool freeMode = SettingsService.instance.freeModeCached;
             return Column(
               children: <Widget>[
                 Expanded(
@@ -290,6 +291,7 @@ class _MyServicesScreenState extends State<MyServicesScreen> {
                           items: ServiceData.services,
                           onRefresh: _reload,
                           docsMode: _docsMode,
+                          freeMode: freeMode,
                         ),
                 ),
                 Container(
@@ -307,11 +309,13 @@ class _MyServicesScreenState extends State<MyServicesScreen> {
                   child: PrimaryButton(
                     label: 'Создать услугу',
                     onPressed: () async {
-                      // Лимит считаем только по оплаченным услугам:
-                      // неоплаченные занимают строку в БД, но не активны
-                      // в каталоге и не должны съедать слот.
+                      // В бесплатном режиме услуга считается активной сразу.
+                      // Это важно и для старых записей: они могли быть
+                      // созданы до включения режима и ещё хранить is_paid=0.
                       final int paidCount = ServiceData.services
-                          .where((ServiceMock s) => s.isPaid)
+                          .where(
+                            (ServiceMock s) => freeMode || s.isPaid,
+                          )
                           .length;
                       if (paidCount >= ServiceData.maxServices) {
                         ScaffoldMessenger.of(context).showSnackBar(
@@ -373,10 +377,12 @@ class _ServicesList extends StatelessWidget {
   const _ServicesList({
     required this.items,
     required this.onRefresh,
+    required this.freeMode,
     this.docsMode = false,
   });
   final List<ServiceMock> items;
   final VoidCallback onRefresh;
+  final bool freeMode;
 
   /// Режим «документы при каждой публикации»: оплаченная услуга без
   /// одобренных документов не активна в каталоге — карточка ведёт на
@@ -391,14 +397,17 @@ class _ServicesList extends StatelessWidget {
       separatorBuilder: (_, _) => SizedBox(height: 8.h),
       itemBuilder: (context, index) {
         final item = items[index];
-        // Нужен ли услуге шаг с документами (только в режиме docsMode,
-        // только после оплаты — до оплаты приоритетнее бейдж «Не оплачена»).
+        // В бесплатном режиме все услуги доступны сразу. Это также защищает
+        // интерфейс от старых is_paid=0, пока серверная фоновая задача
+        // выравнивает исторические данные.
+        final bool serviceActive = freeMode || item.isPaid;
+        // Нужен ли услуге шаг с документами (только в режиме docsMode).
         final bool needsDocs = docsMode &&
-            item.isPaid &&
+            serviceActive &&
             (item.verificationStatus == 'none' ||
                 item.verificationStatus == 'rejected');
         final bool onReview =
-            docsMode && item.isPaid && item.verificationStatus == 'pending';
+            docsMode && serviceActive && item.verificationStatus == 'pending';
         // Каждая карточка — контейнер с мягкой оранжевой заливкой
         // (`AppColors.fieldFill`). Визуально делит список на «плитки»
         // — так же, как в приложении заказчика (`_ServiceTile` в
@@ -416,7 +425,7 @@ class _ServicesList extends StatelessWidget {
             pricePerDay: item.pricePerDay,
             minOrder: item.minOrder,
             onTap: () async {
-              if (!item.isPaid) {
+              if (!serviceActive) {
                 // Неоплаченная услуга — paywall «Оплатите размещение
                 // услуги» с фоном-картинкой и шторкой выбора способа
                 // оплаты. Раньше уводили сразу на голую шторку
@@ -476,7 +485,7 @@ class _ServicesList extends StatelessWidget {
           );
         }
 
-        if (!item.isPaid) {
+        if (!serviceActive) {
           // Бренд-цвет вместо красного: «Не оплачена» — это CTA
           // «оплатите», а не ошибка/опасность.
           return badged(

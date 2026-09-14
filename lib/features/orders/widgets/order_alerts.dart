@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
+import 'package:dispatcher_1/core/settings/settings_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/widgets/primary_button.dart';
 
@@ -371,6 +372,12 @@ Future<void> showOrderAcceptedDialog(BuildContext context) {
 /// или принять заказ, когда подписка приостановлена. Кнопка ведёт на экран
 /// управления подпиской. Возвращает `true`, если пользователь нажал кнопку.
 Future<bool?> showSubscriptionPausedDialog(BuildContext context) {
+  // Защита последнего рубежа: даже если экран вызовет этот диалог из-за
+  // устаревшего локального состояния, в бесплатном режиме не показываем
+  // пользователю ни одного текста о подписке.
+  if (SettingsService.instance.freeModeCached) {
+    return Future<bool?>.value(false);
+  }
   return showDialog<bool>(
     context: context,
     barrierColor: Colors.black.withValues(alpha: 0.35),

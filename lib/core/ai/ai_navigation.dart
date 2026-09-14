@@ -24,10 +24,7 @@ const String _kAssistantChat = '/assistant/chat';
 
 /// Открыть чат с ассистентом без дубликатов.
 /// [extra] — необязательный объект, передаётся как state.extra.
-Future<void> openAssistantChat(
-  BuildContext context, {
-  Object? extra,
-}) async {
+Future<void> openAssistantChat(BuildContext context, {Object? extra}) async {
   final router = GoRouter.maybeOf(context);
   if (router == null) return;
 
@@ -58,8 +55,12 @@ void navigateAssistantAction(BuildContext context, String action) {
   // мои заказы/способы оплаты) доступны только после входа. Вместо «тупого»
   // перехода в экран для вошедших показываем приглашение войти. Каталог
   // (просмотр заказов) и поддержка (внешний мессенджер) — без входа.
-  if (isGuest && action != 'open_catalog' && action != 'contact_support') {
-    showGuestAuthPrompt(context, message: 'Этот раздел доступен после входа.');
+  if (isGuest && action != 'contact_support') {
+    showGuestAuthPrompt(
+      context,
+      message: 'Войдите и создайте профиль, чтобы открыть этот раздел.',
+      intent: GuestAuthIntent.createProfile,
+    );
     return;
   }
   switch (action) {

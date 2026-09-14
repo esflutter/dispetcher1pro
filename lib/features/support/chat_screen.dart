@@ -55,8 +55,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   static final List<ChatMessage> _messages = <ChatMessage>[
     const ChatMessage(
       id: 'm1',
-      text: 'Здравствуйте! Я помогу найти заказы, создать услугу, заполнить '
-            'карточку или ответить на вопрос по приложению. С чего начнём?',
+      text:
+          'Здравствуйте! Я помогу найти заказы, создать услугу, заполнить '
+          'карточку или ответить на вопрос по приложению. С чего начнём?',
       fromUser: false,
     ),
   ];
@@ -67,12 +68,15 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   static void resetHistory() {
     _messages
       ..clear()
-      ..add(const ChatMessage(
-        id: 'm1',
-        text: 'Здравствуйте! Я помогу найти заказы, создать услугу, заполнить '
+      ..add(
+        const ChatMessage(
+          id: 'm1',
+          text:
+              'Здравствуйте! Я помогу найти заказы, создать услугу, заполнить '
               'карточку или ответить на вопрос по приложению. С чего начнём?',
-        fromUser: false,
-      ));
+          fromUser: false,
+        ),
+      );
     _mode = AiChatKind.chat;
     _idCounter = 0;
     _awaitingDocuments = false;
@@ -93,6 +97,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   // приглашение оставалось в истории, а флаг сбрасывался, и приложенные фото
   // молча терялись (не загружались). Сбрасывается после отправки и в logout.
   static bool _awaitingDocuments = false;
+
   /// Защёлка от двойного тапа по микрофону / автостопа + ручной отправки
   /// одновременно. Сбрасывается после завершения операции.
   bool _voiceBusy = false;
@@ -104,7 +109,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   static const String _kVoiceRecId = '__voice_rec__';
 
   bool get _showQuickActions =>
-      _messages.length == 1 && !_messages.first.fromUser && _pendingImages.isEmpty && !_isProcessing;
+      _messages.length == 1 &&
+      !_messages.first.fromUser &&
+      _pendingImages.isEmpty &&
+      !_isProcessing;
 
   /// Отдельное облачко «печатает» показываем только пока ждём ПЕРВОЙ реакции
   /// (последнее сообщение — от пользователя). Как только появляется
@@ -138,14 +146,18 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       if (_messages.length <= 1) {
         unawaited(_restoreHistory());
       }
-      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom(jump: true));
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _scrollToBottom(jump: true),
+      );
       return;
     }
 
     if (initial == 'verify_documents') {
       if (isGuest) {
-        showGuestAuthPrompt(context,
-            message: 'Авторизуйтесь, чтобы отправить документы на проверку.');
+        showGuestAuthPrompt(
+          context,
+          message: 'Авторизуйтесь, чтобы отправить документы на проверку.',
+        );
         return;
       }
       // Режим проверки решаем асинхронно (флаг настроек), поэтому запуск
@@ -156,22 +168,29 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
     if (initial == 'create_service' || initial == 'Разместить услугу') {
       if (isGuest) {
-        showGuestAuthPrompt(context,
-            message: 'Авторизуйтесь, чтобы разместить услугу. '
-                'А пока можно искать заказы и задавать вопросы.');
+        showGuestAuthPrompt(
+          context,
+          message:
+              'Авторизуйтесь, чтобы разместить услугу. '
+              'А пока можно искать заказы и задавать вопросы.',
+        );
         return;
       }
       _mode = AiChatKind.slotFillService;
       // Чистим прошлую слот-сессию — «Новая услуга» должна начинаться с пустого
       // черновика, а не продолжать предыдущую услугу этого же запуска.
       AiClient.instance.startFreshSlot(AiChatKind.slotFillService);
-      _addBotMessage('Давайте оформлю услугу. С какой техникой работаете и по какой цене (₽/час или ₽/день)? Можно голосом. При желании прикрепите фото техники/работ — добавлю их к услуге.');
+      _addBotMessage(
+        'Давайте оформлю услугу. С какой техникой работаете и по какой цене (₽/час или ₽/день)? Можно голосом. При желании прикрепите фото техники/работ — добавлю их к услуге.',
+      );
       return;
     }
 
     if (initial == 'find_orders' || initial == 'Найти заказы') {
       _mode = AiChatKind.search;
-      _addBotMessage('Что ищете? Можно просто «заказы поблизости на неделю» — подберу под вашу технику рядом с вами. Или назовите технику и город. Можно голосом.');
+      _addBotMessage(
+        'Что ищете? Можно просто «заказы поблизости на неделю» — подберу под вашу технику рядом с вами. Или назовите технику и город. Можно голосом.',
+      );
       return;
     }
 
@@ -179,8 +198,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         initial == 'Заполнить карточку' ||
         initial == 'Создать карточку') {
       if (isGuest) {
-        showGuestAuthPrompt(context,
-            message: 'Авторизуйтесь, чтобы создать карточку исполнителя.');
+        showGuestAuthPrompt(
+          context,
+          message: 'Авторизуйтесь, чтобы создать карточку исполнителя.',
+        );
         return;
       }
       _mode = AiChatKind.slotFillCard;
@@ -188,7 +209,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       // с пустого черновика, иначе поля прошлой (город/радиус/статус/опыт)
       // протекали бы и ассистент сразу выдавал «готово» со старыми данными.
       AiClient.instance.startFreshSlot(AiChatKind.slotFillCard);
-      _addBotMessage('Заполню вашу карточку исполнителя. В каком городе вы работаете? Можно ответить голосом.');
+      _addBotMessage(
+        'Заполню вашу карточку исполнителя. В каком городе вы работаете? Можно ответить голосом.',
+      );
       return;
     }
 
@@ -246,7 +269,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
   }
 
-  void _addBotMessage(String text, {Map<String, dynamic>? data, ChatMessageType type = ChatMessageType.text}) {
+  void _addBotMessage(
+    String text, {
+    Map<String, dynamic>? data,
+    ChatMessageType type = ChatMessageType.text,
+  }) {
     // Защита от вечных точек: пустой текст ассистента пузырь рисует как
     // индикатор «печатает». На неstreaming-пути (поиск/slot-fill) заменить
     // его нечем, поэтому пустой текстовый ответ подменяем понятным фолбэком.
@@ -257,7 +284,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     // добавляем сообщение в статичный список, чтобы при возврате юзер его увидел.
     // setState вызываем только когда mounted, иначе будет исключение.
     final msg = ChatMessage(
-      id:   _nextId(),
+      id: _nextId(),
       text: text,
       fromUser: false,
       type: type,
@@ -278,7 +305,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   void _scrollToBottom({bool jump = false}) {
     if (!_scrollController.hasClients) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom(jump: jump));
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _scrollToBottom(jump: jump),
+      );
       return;
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -363,13 +392,15 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             }
           }
         }
-        _messages.add(ChatMessage(
-          id:   _nextId(),
-          text: '',
-          fromUser: true,
-          type: ChatMessageType.image,
-          imageAssets: List<String>.from(_pendingImages),
-        ));
+        _messages.add(
+          ChatMessage(
+            id: _nextId(),
+            text: '',
+            fromUser: true,
+            type: ChatMessageType.image,
+            imageAssets: List<String>.from(_pendingImages),
+          ),
+        );
         _pendingImages.clear();
       }
       if (text.isNotEmpty) {
@@ -400,10 +431,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               .timeout(const Duration(seconds: 40));
           paths.add(storagePath);
         }
-        await Supabase.instance.client.rpc(
-          'ai_submit_verification',
-          params: <String, dynamic>{'p_paths': paths},
-        ).timeout(const Duration(seconds: 20));
+        await Supabase.instance.client
+            .rpc(
+              'ai_submit_verification',
+              params: <String, dynamic>{'p_paths': paths},
+            )
+            .timeout(const Duration(seconds: 20));
         _awaitingDocuments = false;
         VerificationStatus.current = VerificationStatus.inProgress;
         _addBotMessage(
@@ -418,8 +451,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         // Подчищаем уже залитые в приватный бакет сканы, которые не успели
         // зарегистрироваться (RPC не прошёл): иначе осиротевшие документы
         // копятся в хранилище — ночная чистка их не достаёт. Best-effort.
-        unawaited(
-            StorageService.instance.removeVerificationDocuments(paths));
+        unawaited(StorageService.instance.removeVerificationDocuments(paths));
         // Фото документов НЕ должны оседать в накопителе фото услуги —
         // иначе паспорт мог утечь в публичную услугу при следующем создании.
         _servicePhotos.removeWhere(docImagePaths.contains);
@@ -468,19 +500,32 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         looksLikeCreateService(text)) {
       _mode = AiChatKind.slotFillService;
       AiClient.instance.startFreshSlot(AiChatKind.slotFillService);
-    } else if (_mode == AiChatKind.chat && looksLikeCatalogSearch(text, isCustomer: false)) {
+    } else if (_mode == AiChatKind.chat &&
+        looksLikeCatalogSearch(text, isCustomer: false)) {
       _mode = AiChatKind.search;
     } else if (_mode == AiChatKind.search && looksLikeFaqQuestion(text)) {
       _mode = AiChatKind.chat;
     } else if ((_mode == AiChatKind.slotFillService ||
-                _mode == AiChatKind.slotFillCard ||
-                _mode == AiChatKind.slotFillOrder) &&
-               looksLikeFaqInterruption(text)) {
+            _mode == AiChatKind.slotFillCard ||
+            _mode == AiChatKind.slotFillOrder) &&
+        looksLikeFaqInterruption(text)) {
       // Настоящий вопрос посреди пошагового сбора («как...?», «сколько стоит»)
       // — выходим из сбора в обычный чат. А притяжательные слова («моё
       // местоположение», «у меня в Москве») — это ОТВЕТЫ слот-филлу, на них из
       // режима НЕ выходим (иначе терялись черновик и геопозиция).
       _mode = AiChatKind.chat;
+    }
+
+    // Ассистент не должен становиться обходом закрытого каталога заказов.
+    if (isGuest && _mode == AiChatKind.search) {
+      _mode = AiChatKind.chat;
+      if (mounted) setState(() => _isProcessing = false);
+      await showGuestAuthPrompt(
+        context,
+        message: 'Войдите и создайте профиль, чтобы искать заказы.',
+        intent: GuestAuthIntent.browseCatalog,
+      );
+      return;
     }
 
     // Гостю создание (услуга/карточка) недоступно — slot-fill требует входа.
@@ -492,9 +537,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             _mode == AiChatKind.slotFillOrder)) {
       _mode = AiChatKind.chat;
       if (mounted) setState(() => _isProcessing = false);
-      await showGuestAuthPrompt(context,
-          message: 'Авторизуйтесь, чтобы создавать услуги и карточку. '
-              'А пока можно искать заказы и задавать вопросы.');
+      await showGuestAuthPrompt(
+        context,
+        message: 'Войдите, чтобы создать профиль и добавить услуги.',
+        intent: GuestAuthIntent.createProfile,
+      );
       return;
     }
 
@@ -524,13 +571,19 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       // НЕ должен rethrow — иначе outer-catch ниже добавит дубль-бабл с
       // тем же текстом. Поэтому await без try.
       if (_mode == AiChatKind.chat) {
-        await _streamChatReply(text).timeout(timeout, onTimeout: () {
-          // Внешний таймаут: помечаем стрим устаревшим, чтобы подвисший await
-          // for внутри больше НЕ перезаписывал этот пузырь, и мягко завершаем
-          // (сохранив накопленный текст и кнопку «Перейти»).
-          _staleStreamIds.add(_lastStreamId);
-          _finishStreamSoftly('__last_stream__', 'Не дождался ответа. Попробуйте ещё раз.');
-        });
+        await _streamChatReply(text).timeout(
+          timeout,
+          onTimeout: () {
+            // Внешний таймаут: помечаем стрим устаревшим, чтобы подвисший await
+            // for внутри больше НЕ перезаписывал этот пузырь, и мягко завершаем
+            // (сохранив накопленный текст и кнопку «Перейти»).
+            _staleStreamIds.add(_lastStreamId);
+            _finishStreamSoftly(
+              '__last_stream__',
+              'Не дождался ответа. Попробуйте ещё раз.',
+            );
+          },
+        );
         return;
       }
       Future<AiReply> call() {
@@ -548,6 +601,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             return AiClient.instance.chat(text);
         }
       }
+
       final reply = await call().timeout(timeout);
       _appendReply(reply);
     } on AiQuotaExceeded catch (e) {
@@ -585,14 +639,16 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
     try {
       await for (final chunk
-          in AiClient.instance.chatStream(text).timeout(
-        // Таймаут МЕЖДУ чанками: если сервер завис и перестал слать данные,
-        // прерываем await for → finally внутри chatStream закроет http-клиент.
-        // Раньше .timeout() стоял на внешнем Future и подписку не отменял —
-        // сокет висел до конца ответа сервера (до 45 сек). 50 сек — выше
-        // серверного потолка, чтобы не оборвать медленный, но живой ответ.
-        const Duration(seconds: 50),
-      )) {
+          in AiClient.instance
+              .chatStream(text)
+              .timeout(
+                // Таймаут МЕЖДУ чанками: если сервер завис и перестал слать данные,
+                // прерываем await for → finally внутри chatStream закроет http-клиент.
+                // Раньше .timeout() стоял на внешнем Future и подписку не отменял —
+                // сокет висел до конца ответа сервера (до 45 сек). 50 сек — выше
+                // серверного потолка, чтобы не оборвать медленный, но живой ответ.
+                const Duration(seconds: 50),
+              )) {
         // Экран закрыли посреди генерации — прекращаем читать поток.
         // Выход из await for отменяет подписку, и http-клиент закрывается
         // в finally внутри chatStream (иначе сокет висел бы до конца ответа).
@@ -680,7 +736,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   /// исполнителей из сохранённого data).
   Future<void> _restoreHistory() async {
     await AiClient.instance.restoreChatSession();
-    final List<Map<String, dynamic>> rows = await AiClient.instance.loadHistory();
+    final List<Map<String, dynamic>> rows = await AiClient.instance
+        .loadHistory();
     if (rows.isEmpty || !mounted) return;
     final List<ChatMessage> restored = <ChatMessage>[];
     for (final Map<String, dynamic> r in rows) {
@@ -695,19 +752,23 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         final dynamic items = data['items'];
         if (kind == 'order_cards' && items is List && items.isNotEmpty) {
           type = ChatMessageType.orderCards;
-        } else if (kind == 'executor_cards' && items is List && items.isNotEmpty) {
+        } else if (kind == 'executor_cards' &&
+            items is List &&
+            items.isNotEmpty) {
           type = ChatMessageType.executorCards;
         }
       }
       // Пустые служебные строки без карточек не показываем.
       if (content.trim().isEmpty && type == ChatMessageType.text) continue;
-      restored.add(ChatMessage(
-        id: _nextId(),
-        text: content,
-        fromUser: fromUser,
-        type: type,
-        data: type == ChatMessageType.text ? null : data,
-      ));
+      restored.add(
+        ChatMessage(
+          id: _nextId(),
+          text: content,
+          fromUser: fromUser,
+          type: type,
+          data: type == ChatMessageType.text ? null : data,
+        ),
+      );
     }
     if (restored.isEmpty || !mounted) return;
     // За время загрузки истории (сеть) пользователь мог уже отправить
@@ -719,28 +780,43 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         ..clear()
         ..addAll(restored);
     });
-    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom(jump: true));
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _scrollToBottom(jump: true),
+    );
   }
 
   void _appendReply(AiReply reply) {
     final kind = reply.dataKind;
     if (kind == 'order_cards' && reply.items.isNotEmpty) {
-      _addBotMessage(reply.text, type: ChatMessageType.orderCards, data: reply.data);
+      _addBotMessage(
+        reply.text,
+        type: ChatMessageType.orderCards,
+        data: reply.data,
+      );
       return;
     }
     if (kind == 'executor_cards' && reply.items.isNotEmpty) {
-      _addBotMessage(reply.text, type: ChatMessageType.executorCards, data: reply.data);
+      _addBotMessage(
+        reply.text,
+        type: ChatMessageType.executorCards,
+        data: reply.data,
+      );
       return;
     }
-    if ((kind == 'order_draft' || kind == 'service_draft' || kind == 'card_draft') &&
+    if ((kind == 'order_draft' ||
+            kind == 'service_draft' ||
+            kind == 'card_draft') &&
         reply.isDraftReady) {
       Map<String, dynamic>? data = reply.data;
       // Прикрепляем накопленные в чате фото к черновику УСЛУГИ — форма заберёт
       // их в _photos и зальёт в service-photos при публикации услуги.
-      if (kind == 'service_draft' && _servicePhotos.isNotEmpty && data != null) {
+      if (kind == 'service_draft' &&
+          _servicePhotos.isNotEmpty &&
+          data != null) {
         data = Map<String, dynamic>.from(data);
-        final draft =
-            Map<String, dynamic>.from((data['draft'] as Map?) ?? const <String, dynamic>{});
+        final draft = Map<String, dynamic>.from(
+          (data['draft'] as Map?) ?? const <String, dynamic>{},
+        );
         draft['ai_photos'] = List<String>.from(_servicePhotos);
         data['draft'] = draft;
       }
@@ -759,15 +835,22 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   Future<void> _handleAttach() async {
     final int remaining = 8 - _pendingImages.length;
     if (remaining <= 0) return;
-    final picked = await pickMultipleImagesFromGallery(limit: remaining, context: context);
+    final picked = await pickMultipleImagesFromGallery(
+      limit: remaining,
+      context: context,
+    );
     if (picked.isEmpty || !mounted) return;
-    final kept = picked.length > remaining ? picked.sublist(0, remaining) : picked;
+    final kept = picked.length > remaining
+        ? picked.sublist(0, remaining)
+        : picked;
     setState(() => _pendingImages.addAll(kept));
     if (picked.length > remaining) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(
-          'Можно добавить не более 8 фото. Добавлены первые ${kept.length}.',
-        )),
+        SnackBar(
+          content: Text(
+            'Можно добавить не более 8 фото. Добавлены первые ${kept.length}.',
+          ),
+        ),
       );
     }
   }
@@ -802,19 +885,25 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       // после отказа в доступе к микрофону просто информируем и предлагаем
       // текстовый ввод. Системный запрос показывается при первом обращении
       // (внутри ensurePermission → Permission.microphone.request()).
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text(
-          'Голосовой ввод недоступен без доступа к микрофону — напишите, '
-          'пожалуйста, сообщение текстом.',
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Голосовой ввод недоступен без доступа к микрофону — напишите, '
+            'пожалуйста, сообщение текстом.',
+          ),
         ),
-      ));
+      );
       return;
     }
     final started = await SttRecorder.instance.start();
     if (!started) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Не удалось начать запись — микрофон занят или недоступен. Напишите, пожалуйста, текстом.')),
+          const SnackBar(
+            content: Text(
+              'Не удалось начать запись — микрофон занят или недоступен. Напишите, пожалуйста, текстом.',
+            ),
+          ),
         );
       }
       return;
@@ -830,9 +919,13 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         _isRecording = true;
         // Пузырь-индикатор записи прямо в ленте чата — чтобы было видно, что
         // голос пишется, а не молчаливое поле ввода.
-        _messages.add(const ChatMessage(
-          id: _kVoiceRecId, text: '🎤 Идёт запись…', fromUser: true,
-        ));
+        _messages.add(
+          const ChatMessage(
+            id: _kVoiceRecId,
+            text: '🎤 Идёт запись…',
+            fromUser: true,
+          ),
+        );
       });
       _scrollToBottom();
     }
@@ -865,14 +958,20 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     // следующий setState бросит «setState() called after dispose()».
     if (!mounted) {
       if (audio != null) {
-        try { await audio.delete(); } catch (_) {}
+        try {
+          await audio.delete();
+        } catch (_) {}
       }
       return;
     }
     if (audio == null) {
       setState(() => _messages.removeWhere((m) => m.id == _kVoiceRecId));
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Слишком короткое сообщение — задержите кнопку микрофона')),
+        const SnackBar(
+          content: Text(
+            'Слишком короткое сообщение — задержите кнопку микрофона',
+          ),
+        ),
       );
       return;
     }
@@ -883,15 +982,19 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       final i = _messages.indexWhere((m) => m.id == _kVoiceRecId);
       if (i >= 0) {
         _messages[i] = const ChatMessage(
-          id: _kVoiceRecId, text: '🎤 Распознаю…', fromUser: true,
+          id: _kVoiceRecId,
+          text: '🎤 Распознаю…',
+          fromUser: true,
         );
       }
     });
     String? errorMsg;
     String? recognized;
     try {
-      recognized = await AiClient.instance
-          .transcribeAudio(audio, format: SttRecorder.instance.lastFormat);
+      recognized = await AiClient.instance.transcribeAudio(
+        audio,
+        format: SttRecorder.instance.lastFormat,
+      );
     } on AiQuotaExceeded catch (e) {
       errorMsg = e.message;
     } on AiAudioTooLargeError {
@@ -899,11 +1002,14 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     } on AiAudioNoSpeechError {
       errorMsg = 'Не услышал речи — попробуйте ещё раз, поближе к микрофону.';
     } on AiAudioInvalidFormatError {
-      errorMsg = 'Запись в неподдерживаемом формате. Напишите, пожалуйста, текстом.';
+      errorMsg =
+          'Запись в неподдерживаемом формате. Напишите, пожалуйста, текстом.';
     } catch (_) {
       errorMsg = 'Не удалось распознать голос. Проверьте интернет.';
     }
-    try { await audio.delete(); } catch (_) {}
+    try {
+      await audio.delete();
+    } catch (_) {}
 
     if (!mounted) return;
     if (errorMsg != null || recognized == null || recognized.isEmpty) {
@@ -920,8 +1026,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     // отправляется ассистенту — ответ приходит уже после завершения записи.
     // (Пузырь-плейсхолдер «распознаю…» заменяется реальным сообщением, которое
     // добавит _handleSend.) Длину режем под лимит.
-    final String capped =
-        recognized.length > 1000 ? recognized.substring(0, 1000) : recognized;
+    final String capped = recognized.length > 1000
+        ? recognized.substring(0, 1000)
+        : recognized;
     setState(() {
       _isProcessing = false;
       _messages.removeWhere((m) => m.id == _kVoiceRecId);
@@ -992,7 +1099,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             padding: EdgeInsets.only(right: 4.w),
             child: IconButton(
               padding: EdgeInsets.only(top: 4.h),
-              icon: Image.asset('assets/icons/support/close.webp', width: 26.r, height: 26.r),
+              icon: Image.asset(
+                'assets/icons/support/close.webp',
+                width: 26.r,
+                height: 26.r,
+              ),
               onPressed: () {
                 if (Navigator.of(context).canPop()) {
                   Navigator.of(context).pop();
@@ -1041,14 +1152,21 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                       label: 'Разместить услугу',
                       onTap: () {
                         if (isGuest) {
-                          showGuestAuthPrompt(context,
-                              message: 'Авторизуйтесь, чтобы разместить услугу. '
-                                  'А пока можно искать заказы и задавать вопросы.');
+                          showGuestAuthPrompt(
+                            context,
+                            message:
+                                'Авторизуйтесь, чтобы разместить услугу. '
+                                'А пока можно искать заказы и задавать вопросы.',
+                          );
                           return;
                         }
                         _mode = AiChatKind.slotFillService;
-                        AiClient.instance.startFreshSlot(AiChatKind.slotFillService);
-                        _addBotMessage('Давайте оформлю услугу. С какой техникой работаете и по какой цене (₽/час или ₽/день)? Можно голосом. При желании прикрепите фото техники/работ — добавлю их к услуге.');
+                        AiClient.instance.startFreshSlot(
+                          AiChatKind.slotFillService,
+                        );
+                        _addBotMessage(
+                          'Давайте оформлю услугу. С какой техникой работаете и по какой цене (₽/час или ₽/день)? Можно голосом. При желании прикрепите фото техники/работ — добавлю их к услуге.',
+                        );
                       },
                     ),
                     SizedBox(height: 8.h),
@@ -1056,7 +1174,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                       label: 'Найти заказы',
                       onTap: () {
                         _mode = AiChatKind.search;
-                        _addBotMessage('Что ищете? Можно просто «заказы поблизости на неделю» — подберу под вашу технику рядом с вами. Или назовите технику и город. Можно голосом.');
+                        _addBotMessage(
+                          'Что ищете? Можно просто «заказы поблизости на неделю» — подберу под вашу технику рядом с вами. Или назовите технику и город. Можно голосом.',
+                        );
                       },
                     ),
                     SizedBox(height: 8.h),
@@ -1064,14 +1184,20 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                       label: 'Заполнить карточку',
                       onTap: () {
                         if (isGuest) {
-                          showGuestAuthPrompt(context,
-                              message:
-                                  'Авторизуйтесь, чтобы создать карточку исполнителя.');
+                          showGuestAuthPrompt(
+                            context,
+                            message:
+                                'Авторизуйтесь, чтобы создать карточку исполнителя.',
+                          );
                           return;
                         }
                         _mode = AiChatKind.slotFillCard;
-                        AiClient.instance.startFreshSlot(AiChatKind.slotFillCard);
-                        _addBotMessage('Заполню вашу карточку исполнителя. В каком городе вы работаете? Можно ответить голосом.');
+                        AiClient.instance.startFreshSlot(
+                          AiChatKind.slotFillCard,
+                        );
+                        _addBotMessage(
+                          'Заполню вашу карточку исполнителя. В каком городе вы работаете? Можно ответить голосом.',
+                        );
                       },
                     ),
                   ],

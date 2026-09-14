@@ -7,6 +7,7 @@ import 'package:pinput/pinput.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:dispatcher_1/core/auth/auth_service.dart';
+import 'package:dispatcher_1/core/auth/guest_gate.dart';
 import 'package:dispatcher_1/core/bootstrap/post_login_bootstrap.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
@@ -120,11 +121,17 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
         // экран кода — данные всё равно перечитают сами экраны, а пуш
         // регистрируется в фоне (см. runPostLoginBootstrap).
         try {
-          await runPostLoginBootstrap()
-              .timeout(const Duration(seconds: 8));
-        } catch (_) {/* таймаут/сбой загрузки — всё равно идём в /shell */}
+          await runPostLoginBootstrap().timeout(const Duration(seconds: 8));
+        } catch (_) {
+          /* таймаут/сбой загрузки — всё равно идём в /shell */
+        }
         if (!mounted) return;
-        context.go('/shell');
+        final GuestAuthIntent? intent = takeGuestAuthIntent();
+        context.go(
+          intent == GuestAuthIntent.createProfile
+              ? '/welcome/profile'
+              : '/shell',
+        );
       }
     } on AuthException {
       if (!mounted) return;
@@ -146,7 +153,11 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
       _pinController.clear();
       setState(() => _verifying = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Сервер не отвечает. Проверьте интернет и попробуйте ещё раз.')),
+        const SnackBar(
+          content: Text(
+            'Сервер не отвечает. Проверьте интернет и попробуйте ещё раз.',
+          ),
+        ),
       );
     } catch (_) {
       if (!mounted) return;
@@ -156,7 +167,11 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
       _pinController.clear();
       setState(() => _verifying = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Не удалось проверить код. Проверьте интернет и попробуйте ещё раз.')),
+        const SnackBar(
+          content: Text(
+            'Не удалось проверить код. Проверьте интернет и попробуйте ещё раз.',
+          ),
+        ),
       );
     }
   }
@@ -208,7 +223,9 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
                       // документов исполнителя. Заголовок продолжает прошлый
                       // экран: «Введите номер телефона» → «Введите код».
                       'Введите код',
-                      style: AppTextStyles.h1Phone.copyWith(color: AppColors.textBlack),
+                      style: AppTextStyles.h1Phone.copyWith(
+                        color: AppColors.textBlack,
+                      ),
                     ),
                     SizedBox(height: 16.h),
                     Text(
@@ -280,7 +297,8 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
                               ),
                               children: [
                                 TextSpan(
-                                  text: 'Отправить повторно через ${_formatSeconds(_secondsLeft)}',
+                                  text:
+                                      'Отправить повторно через ${_formatSeconds(_secondsLeft)}',
                                   style: const TextStyle(
                                     color: AppColors.textBlack,
                                     fontWeight: FontWeight.w600,
@@ -297,8 +315,7 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
                                 _codeResent = true;
                               });
                               _startTimer();
-                              WidgetsBinding.instance
-                                  .addPostFrameCallback((_) {
+                              WidgetsBinding.instance.addPostFrameCallback((_) {
                                 if (mounted) _pinFocusNode.requestFocus();
                               });
                               final String e164 = CropResult.userPhoneE164;
@@ -375,7 +392,8 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
                 listenable: _pinController,
                 builder: (_, _) => PrimaryButton(
                   label: 'Далее',
-                  enabled: _pinController.text.length == _otpLength &&
+                  enabled:
+                      _pinController.text.length == _otpLength &&
                       !_hasError &&
                       !_verifying,
                   onPressed: _submit,

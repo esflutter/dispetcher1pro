@@ -29,6 +29,9 @@ String friendlyError(Object e, {String fallback = 'Не удалось выпо�
     return 'Профиль заблокирован — действие недоступно. Подробности в «Профиле»; если это ошибка, напишите в поддержку.';
   }
   if (raw.contains('subscription_inactive')) {
+    if (SettingsService.instance.freeModeCached) {
+      return 'Доступ к заказам обновляется. Обновите список и попробуйте ещё раз.';
+    }
     return 'Подписка исполнителя неактивна. Продлить её можно в «Профиль → Подписка и оплата».';
   }
   if (raw.contains('executor_not_verified')) {

@@ -39,18 +39,18 @@ void main() {
     test('строка "0"', () => expect(parseFreeModeFlag('0'), isFalse));
   });
 
-  group('parseFreeModeFlag — безопасный дефолт на непонятном значении', () {
+  group('parseFreeModeFlag — безопасный бесплатный дефолт', () {
     test('null — ключа нет в настройках',
-        () => expect(parseFreeModeFlag(null), isFalse));
-    test('пустая строка', () => expect(parseFreeModeFlag(''), isFalse));
+        () => expect(parseFreeModeFlag(null), isTrue));
+    test('пустая строка', () => expect(parseFreeModeFlag(''), isTrue));
     test('произвольный текст', () {
-      expect(parseFreeModeFlag('да'), isFalse);
-      expect(parseFreeModeFlag('yes'), isFalse);
-      expect(parseFreeModeFlag('вкл'), isFalse);
+      expect(parseFreeModeFlag('да'), isTrue);
+      expect(parseFreeModeFlag('yes'), isTrue);
+      expect(parseFreeModeFlag('вкл'), isTrue);
     });
     test('список и словарь', () {
-      expect(parseFreeModeFlag(<String>['true']), isFalse);
-      expect(parseFreeModeFlag(<String, Object>{'value': true}), isFalse);
+      expect(parseFreeModeFlag(<String>['true']), isTrue);
+      expect(parseFreeModeFlag(<String, Object>{'value': true}), isTrue);
     });
   });
 }

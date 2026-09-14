@@ -10,6 +10,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:dispatcher_1/core/analytics/app_analytics.dart';
 import 'package:dispatcher_1/core/auth/auth_service.dart';
+import 'package:dispatcher_1/core/auth/guest_gate.dart';
 import 'package:dispatcher_1/core/storage/storage_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
@@ -83,9 +84,9 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
           .completeRegistration(name: name, avatarUrl: avatarUrl)
           .timeout(const Duration(seconds: 15));
       if (avatarFailMsg != null && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(avatarFailMsg)),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(avatarFailMsg)));
       }
       if (!mounted) return;
       CropResult.saved = _cropResult;
@@ -95,7 +96,13 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
       // оставался без уведомлений до следующего холодного старта.
       unawaited(PushService.instance.registerForCurrentUser());
       AppAnalytics.log('registration_complete');
-      context.go('/assistant');
+      final GuestAuthIntent? intent = takeGuestAuthIntent();
+      context.go(
+        intent == GuestAuthIntent.createProfile ||
+                intent == GuestAuthIntent.browseCatalog
+            ? '/welcome/profile'
+            : '/assistant',
+      );
     } on PostgrestException catch (e) {
       if (!mounted) return;
       setState(() => _submitting = false);
@@ -105,20 +112,28 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     } on AuthException catch (e) {
       if (!mounted) return;
       setState(() => _submitting = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.message)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.message)));
     } on TimeoutException {
       if (!mounted) return;
       setState(() => _submitting = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Сервер не отвечает. Проверьте интернет и нажмите «Готово» ещё раз.')),
+        const SnackBar(
+          content: Text(
+            'Сервер не отвечает. Проверьте интернет и нажмите «Готово» ещё раз.',
+          ),
+        ),
       );
     } catch (_) {
       if (!mounted) return;
       setState(() => _submitting = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Не удалось сохранить профиль. Проверьте интернет и попробуйте ещё раз.')),
+        const SnackBar(
+          content: Text(
+            'Не удалось сохранить профиль. Проверьте интернет и попробуйте ещё раз.',
+          ),
+        ),
       );
     }
   }
@@ -127,9 +142,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     final String? imagePath = await pickImageFromGallery(context: context);
     if (imagePath == null || !mounted) return;
     final result = await Navigator.of(context).push<CropResult>(
-      MaterialPageRoute(
-        builder: (_) => PhotoCropScreen(imagePath: imagePath),
-      ),
+      MaterialPageRoute(builder: (_) => PhotoCropScreen(imagePath: imagePath)),
     );
     if (result != null && mounted) {
       setState(() {
@@ -154,7 +167,9 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                     SizedBox(height: 16.h),
                     Text(
                       'Введите данные',
-                      style: AppTextStyles.h1Phone.copyWith(color: AppColors.textBlack),
+                      style: AppTextStyles.h1Phone.copyWith(
+                        color: AppColors.textBlack,
+                      ),
                     ),
                     SizedBox(height: 40.h),
                     Center(
@@ -299,12 +314,12 @@ class _PolicyCheckboxState extends State<_PolicyCheckbox> {
   // GestureRecognizer обязан освобождаться явно. Раньше три распознавателя
   // создавались прямо в build() и текли при каждой перерисовке экрана
   // (переключение галки/выбор фото). Держим их в полях и диспозим в dispose().
-  late final TapGestureRecognizer _recRules =
-      TapGestureRecognizer()..onTap = () => openPrivacyUrl(context);
-  late final TapGestureRecognizer _recTerms =
-      TapGestureRecognizer()..onTap = () => openTermsUrl(context);
-  late final TapGestureRecognizer _recPolicy =
-      TapGestureRecognizer()..onTap = () => openPrivacyUrl(context);
+  late final TapGestureRecognizer _recRules = TapGestureRecognizer()
+    ..onTap = () => openPrivacyUrl(context);
+  late final TapGestureRecognizer _recTerms = TapGestureRecognizer()
+    ..onTap = () => openTermsUrl(context);
+  late final TapGestureRecognizer _recPolicy = TapGestureRecognizer()
+    ..onTap = () => openPrivacyUrl(context);
 
   @override
   void dispose() {
@@ -325,7 +340,9 @@ class _PolicyCheckboxState extends State<_PolicyCheckbox> {
           Padding(
             padding: EdgeInsets.only(top: 3.h),
             child: Image.asset(
-              widget.value ? 'assets/icons/ui/check_ok.png' : 'assets/icons/ui/check.webp',
+              widget.value
+                  ? 'assets/icons/ui/check_ok.png'
+                  : 'assets/icons/ui/check.webp',
               width: 24.r,
               height: 24.r,
             ),
@@ -343,19 +360,28 @@ class _PolicyCheckboxState extends State<_PolicyCheckbox> {
                   const TextSpan(text: 'Я прочитал(а) и согласен(а) с '),
                   TextSpan(
                     text: 'Правилами обработки персональных данных',
-                    style: const TextStyle(fontWeight: FontWeight.bold, decoration: TextDecoration.underline),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      decoration: TextDecoration.underline,
+                    ),
                     recognizer: _recRules,
                   ),
                   const TextSpan(text: ', '),
                   TextSpan(
                     text: 'Пользовательским соглашением',
-                    style: const TextStyle(fontWeight: FontWeight.bold, decoration: TextDecoration.underline),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      decoration: TextDecoration.underline,
+                    ),
                     recognizer: _recTerms,
                   ),
                   const TextSpan(text: ' и '),
                   TextSpan(
                     text: 'Политикой конфиденциальности',
-                    style: const TextStyle(fontWeight: FontWeight.bold, decoration: TextDecoration.underline),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      decoration: TextDecoration.underline,
+                    ),
                     recognizer: _recPolicy,
                   ),
                 ],

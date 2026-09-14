@@ -3,16 +3,20 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:go_router/go_router.dart';
 
 import 'package:dispatcher_1/core/ai/ai_navigation.dart';
 import 'package:dispatcher_1/core/auth/guest_gate.dart';
 import 'package:dispatcher_1/features/profile/account_block.dart';
 import 'package:dispatcher_1/core/network_status.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
+import 'package:dispatcher_1/core/theme/app_text_styles.dart';
 import 'package:dispatcher_1/core/update/update_checker.dart';
 import 'package:dispatcher_1/core/theme/system_bar_style.dart';
 import 'package:dispatcher_1/core/widgets/no_internet_view.dart';
+import 'package:dispatcher_1/core/widgets/primary_button.dart';
 import 'package:dispatcher_1/features/catalog/catalog_categories_screen.dart';
+import 'package:dispatcher_1/features/executor_card/executor_card_screen.dart';
 import 'package:dispatcher_1/features/orders/my_orders_screen.dart';
 import 'package:dispatcher_1/features/profile/profile_screen.dart';
 import 'package:dispatcher_1/features/schedule/widgets/schedule_alerts.dart';
@@ -37,8 +41,8 @@ class MainShell extends StatefulWidget {
 }
 
 class _MainShellState extends State<MainShell> {
-  // Гость (без входа) видит ленту заказов, но «Заказы» и «Профиль» требуют
-  // входа — показываем заглушку с кнопкой «Войти». После входа приложение
+  // Гость видит стартовый экран создания профиля; живые заказы и аккаунтные
+  // разделы открываются после входа. После входа приложение
   // заходит во ВНОВЬ созданный MainShell (isGuest=false), поэтому фиксируем
   // флаг один раз при создании.
   late final bool _guest = isGuest;
@@ -46,10 +50,11 @@ class _MainShellState extends State<MainShell> {
     const CatalogCategoriesScreen(),
     _guest
         ? const GuestLockedView(
-            title: 'Войдите в аккаунт',
+            title: 'Сначала создайте профиль',
             subtitle:
-                'Чтобы откликаться на заказы и видеть свои — нужно войти.',
+                'Заполните профиль исполнителя, чтобы открыть каталог заказов и откликаться.',
             icon: Icons.assignment_outlined,
+            intent: GuestAuthIntent.createProfile,
           )
         : MyOrdersScreen(onGoToCatalog: () => MainShell.selectedTab.value = 0),
     _guest
@@ -100,9 +105,8 @@ class _MainShellState extends State<MainShell> {
   }
 
   void _openSupport() {
-    // Ассистент доступен и гостю — поиск заказов и общие вопросы работают по
-    // гостевой квоте (как в приложении заказчика). Создание услуги/карточки
-    // внутри чата гейтится на вход отдельно (см. chat_screen.dart).
+    // Ассистент доступен гостю для общих вопросов. Поиск заказов и создание
+    // профиля внутри чата гейтятся на вход отдельно (см. chat_screen.dart).
     // Стартовый экран ассистента показывается только один раз после
     // регистрации; по FAB всегда открываем чат напрямую.
     openAssistantChat(context);
@@ -148,7 +152,7 @@ class _MainShellState extends State<MainShell> {
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       bottomNavigationBar: MainBottomNavBar(
-        items: kMainNavItems,
+        items: _guest ? kGuestMainNavItems : kMainNavItems,
         currentIndex: index,
         onTap: (int i) => MainShell.selectedTab.value = i,
       ),
@@ -156,3 +160,62 @@ class _MainShellState extends State<MainShell> {
   }
 }
 
+/// Зарегистрированный исполнитель получает доступ к заказам только после того,
+/// как создал карточку. ValueListenableBuilder открывает каталог сразу после
+/// сохранения — без перезапуска приложения.
+class _ExecutorCatalogGate extends StatelessWidget {
+  const _ExecutorCatalogGate();
+
+  @override
+  Widget build(BuildContext context) => ValueListenableBuilder<bool>(
+    valueListenable: ExecutorCardState.notifier,
+    builder: (BuildContext context, bool cardCreated, _) {
+      if (cardCreated) return const CatalogCategoriesScreen();
+      return Center(
+        child: Padding(
+          padding: EdgeInsets.symmetric(horizontal: 20.w),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Container(
+                width: 64.r,
+                height: 64.r,
+                decoration: const BoxDecoration(
+                  color: AppColors.primaryTint,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.person_add_alt_1_rounded,
+                  color: AppColors.primary,
+                  size: 32.r,
+                ),
+              ),
+              SizedBox(height: 18.h),
+              Text(
+                'Сначала создайте профиль',
+                textAlign: TextAlign.center,
+                style: AppTextStyles.h3.copyWith(fontWeight: FontWeight.w700),
+              ),
+              SizedBox(height: 8.h),
+              Text(
+                'Так заказчики увидят вашу технику, а вы получите доступ к подходящим заказам.',
+                textAlign: TextAlign.center,
+                style: AppTextStyles.body.copyWith(
+                  color: AppColors.textTertiary,
+                ),
+              ),
+              SizedBox(height: 22.h),
+              SizedBox(
+                width: double.infinity,
+                child: PrimaryButton(
+                  label: 'Создать профиль',
+                  onPressed: () => context.push('/executor-card/edit'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+}

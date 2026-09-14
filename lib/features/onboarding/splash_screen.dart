@@ -73,9 +73,7 @@ class _SplashScreenState extends State<SplashScreen> {
     await minDelay;
     if (_disposed || !mounted) return;
     if (session == null) {
-      // Гость: после первого онбординга пускаем сразу в ленту заказов
-      // (просмотр без входа разрешён, см. миграцию 101). Вход требуется
-      // только в аккаунтных разделах и на действиях (см. guest_gate.dart).
+      // Гость после первого онбординга попадает на полезный стартовый экран.
       final bool onbSeen = await OnboardingPrefs.seen();
       if (_disposed || !mounted) return;
       context.go(onbSeen ? '/shell' : '/onboarding');

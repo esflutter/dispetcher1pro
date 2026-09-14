@@ -62,10 +62,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         curve: Curves.easeOut,
       );
     } else {
-      // Последний шаг — сразу в каталог (гость смотрит ленту без входа,
-      // App Store 5.1.1). Вход потребуется только на действиях и в аккаунтных
-      // разделах (см. guest_gate.dart). markSeen, чтобы онбординг не всплывал
-      // при каждом запуске.
+      // Последний шаг → на гостевой стартовый экран. Вход потребуется при
+      // создании профиля или открытии живого каталога заказов.
       OnboardingPrefs.markSeen();
       context.go('/shell');
     }

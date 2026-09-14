@@ -9,6 +9,7 @@ import 'package:dispatcher_1/core/catalog/catalog_service.dart';
 import 'package:dispatcher_1/core/catalog/format.dart';
 import 'package:dispatcher_1/core/catalog/machinery_visual.dart';
 import 'package:dispatcher_1/core/catalog/models.dart';
+import 'package:dispatcher_1/core/auth/guest_gate.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_spacing.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
@@ -154,6 +155,15 @@ class _CatalogCategoriesScreenState extends State<CatalogCategoriesScreen> {
                 imageScale: v.scale,
                 imageOffset: v.offset,
                 onTap: () {
+                  if (isGuest) {
+                    showGuestAuthPrompt(
+                      context,
+                      message:
+                          'Зарегистрируйтесь, чтобы просматривать заказы и откликаться на них.',
+                      intent: GuestAuthIntent.browseCatalog,
+                    );
+                    return;
+                  }
                   // Выбор техники = быстрый фильтр: заменяем список техники
                   // на одну выбранную и инкрементим ревизию, чтобы лента
                   // перерисовалась с учётом фильтра.
@@ -212,15 +222,26 @@ class _CatalogCategoriesScreenState extends State<CatalogCategoriesScreen> {
           rentDate: formatRentDate(o),
           publishedAgo: formatPublishedAgo(o.publishedAt),
           equipment: o.machineryTitles,
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => OrderDetailScreen(
-                orderId: o.id,
-                initialTitle: o.title,
-                multipleEquipment: o.machineryTitles.length > 1,
+          onTap: () {
+            if (isGuest) {
+              showGuestAuthPrompt(
+                context,
+                message:
+                    'Зарегистрируйтесь, чтобы открыть заказ и откликнуться на него.',
+                intent: GuestAuthIntent.browseCatalog,
+              );
+              return;
+            }
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => OrderDetailScreen(
+                  orderId: o.id,
+                  initialTitle: o.title,
+                  multipleEquipment: o.machineryTitles.length > 1,
+                ),
               ),
-            ),
-          ),
+            );
+          },
         );
       },
     );
@@ -282,6 +303,15 @@ class _CatalogHeader extends StatelessWidget {
                         child: TextField(
                           controller: controller,
                           onChanged: onChanged,
+                          readOnly: isGuest,
+                          onTap: isGuest
+                              ? () => showGuestAuthPrompt(
+                                    context,
+                                    message:
+                                        'Зарегистрируйтесь, чтобы искать заказы в каталоге.',
+                                    intent: GuestAuthIntent.browseCatalog,
+                                  )
+                              : null,
                           inputFormatters: [LengthLimitingTextInputFormatter(100)],
                           textInputAction: TextInputAction.search,
                           cursorColor: AppColors.primary,
@@ -318,6 +348,15 @@ class _CatalogHeader extends StatelessWidget {
               SizedBox(width: 8.w),
               GestureDetector(
                 onTap: () async {
+                  if (isGuest) {
+                    await showGuestAuthPrompt(
+                      context,
+                      message:
+                          'Зарегистрируйтесь, чтобы использовать фильтры каталога.',
+                      intent: GuestAuthIntent.browseCatalog,
+                    );
+                    return;
+                  }
                   final bool? applied =
                       await context.push<bool>('/catalog/filter');
                   if (applied == true && context.mounted) {
@@ -374,4 +413,3 @@ class _CatalogLoadError extends StatelessWidget {
     );
   }
 }
-
