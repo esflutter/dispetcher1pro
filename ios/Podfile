@@ -56,6 +56,13 @@ post_install do |installer|
     # более высокой минимальной версии, чем стоит по умолчанию.
     target.build_configurations.each do |config|
       config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
+      # permission_handler по умолчанию вырезает запрос микрофона на iOS:
+      # без этого флага голосовой ввод ассистента сразу получал «запрещено»,
+      # а системное окно с вопросом не появлялось никогда.
+      defs = config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] || ['$(inherited)']
+      defs = [defs] if defs.is_a?(String)
+      defs << 'PERMISSION_MICROPHONE=1' unless defs.include?('PERMISSION_MICROPHONE=1')
+      config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] = defs
     end
   end
 end

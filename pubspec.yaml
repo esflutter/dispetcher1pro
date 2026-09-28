@@ -1,7 +1,7 @@
 name: dispatcher_1
 description: "Диспетчер №1 — Биржа услуг спецтехники"
 publish_to: 'none'
-version: 1.0.3+99
+version: 1.0.4+100
 
 environment:
   sdk: ^3.10.4
@@ -127,6 +127,17 @@ flutter_native_splash:
 
 flutter:
   uses-material-design: true
+
+  # iOS: НЕ переводить приложение на новую схему запуска (UIScene) при сборке.
+  # Flutter 3.41 делает это сам по умолчанию, а текущая библиотека пушей в этой
+  # схеме не отвечает на getInitialMessage — приложение висело на белой заставке
+  # (iPhone, версии 1.0.2–1.0.3). Вернуть можно только вместе с обновлением
+  # firebase_messaging до версии с поддержкой UIScene и проверкой на iPhone.
+  # Пока схема выключена, iOS-сборку делать на Xcode 26.x (см. codemagic.yaml).
+  # СРОК: с апреля 2027 App Store принимает только сборки на Xcode 27 — до этого
+  # обновить firebase_messaging, включить UIScene обратно и проверить на iPhone.
+  config:
+    enable-uiscene-migration: false
 
   assets:
     - assets/images/

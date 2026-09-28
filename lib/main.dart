@@ -78,11 +78,16 @@ Future<void> main() async {
   // поднять Firebase в своём изоляте. Под try/catch — без сервисов
   // Google (Huawei, Apple Silicon без Rosetta) Firebase падает, но
   // остальная часть приложения должна продолжать работать.
+  // Всё это идёт ДО показа интерфейса, поэтому каждое ожидание ограничено по
+  // времени: зависшая библиотека не должна оставлять человека на белой
+  // заставке (так было на iPhone в 1.0.2–1.0.3 — см. push_handler.dart).
   bool firebaseReady = false;
   try {
-    await Firebase.initializeApp(options: _firebaseOptions);
+    await Firebase.initializeApp(options: _firebaseOptions)
+        .timeout(const Duration(seconds: 8));
     FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
-    await PushHandler.instance.initialize();
+    await PushHandler.instance.initialize()
+        .timeout(const Duration(seconds: 5));
     PushService.instance.initTokenRefreshListener();
     firebaseReady = true;
     // Аналитика включается только при живом Firebase: на устройствах

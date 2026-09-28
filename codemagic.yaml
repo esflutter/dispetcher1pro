@@ -8,7 +8,7 @@
 #     (Codemagic → твоё приложение → Environment variables), все «Secure»:
 #       SUPABASE_URL              = https://jokaynapesbem.beget.app
 #       SUPABASE_ANON_KEY         = <полный anon-ключ из run_prod.bat>
-#       DADATA_API_KEY            = 4ea784d86f4db111966e8938977bf0892ebd53ca
+#       DADATA_API_KEY            = <Token DaData из run_prod.bat>
 #       MAPBOX_TOKEN              = <pk.… токен Mapbox из run_prod.bat>
 #       GOOGLE_SERVICE_INFO_PLIST = <GoogleService-Info.plist в base64>  (как сделать — ниже)
 #       CERTIFICATE_PRIVATE_KEY   = <ВСЁ содержимое файла «ios-cert-key (codemagic).pem»
@@ -40,8 +40,14 @@ workflows:
     environment:
       groups:
         - dispatcher_pro                        # переменные окружения (см. шапку)
+      vars:
+        # Дубль настройки из pubspec.yaml: не переводить iOS на UIScene при сборке.
+        FLUTTER_UISCENE_MIGRATION: "false"
       flutter: 3.41.7                           # как в локальной сборке
-      xcode: latest
+      # Xcode закреплён: пока новая схема запуска iOS (UIScene) выключена
+      # (pubspec.yaml → flutter: config:), собирать на Xcode 27 нельзя — такое
+      # приложение не запустится на iOS 27. «latest» переключится на 27 без спроса.
+      xcode: 26.6
       cocoapods: default
 
     scripts:
@@ -85,6 +91,14 @@ workflows:
           NEW=$((LATEST + 1))
           echo "App Store Connect: последний билд ${LATEST:-—}, собираем $NEW"
           echo "BUILD_NUMBER=$NEW" >> "$CM_ENV"
+      - name: Проверка переменных сборки
+        # Без адреса и ключа сервера приложение собирается «пустым» и висит на
+        # белом экране. Лучше упасть здесь, чем отправить такую сборку в стор.
+        script: |
+          test -n "$SUPABASE_URL" || { echo "Переменная SUPABASE_URL пуста — проверь группу dispatcher_pro"; exit 1; }
+          test -n "$SUPABASE_ANON_KEY" || { echo "Переменная SUPABASE_ANON_KEY пуста — проверь группу dispatcher_pro"; exit 1; }
+          test -n "$DADATA_API_KEY" || { echo "Переменная DADATA_API_KEY пуста — проверь группу dispatcher_pro"; exit 1; }
+          test -n "$MAPBOX_TOKEN" || { echo "Переменная MAPBOX_TOKEN пуста — проверь группу dispatcher_pro"; exit 1; }
       - name: Сборка IPA
         script: |
           flutter build ipa --release \
@@ -94,6 +108,22 @@ workflows:
             --dart-define=DADATA_API_KEY="$DADATA_API_KEY" \
             --dart-define=MAPBOX_TOKEN="$MAPBOX_TOKEN" \
             --export-options-plist=$HOME/export_options.plist
+      - name: Проверка готовой сборки
+        # Не пускаем в TestFlight сборку, которая на iPhone покажет белый экран:
+        # включённая новая схема запуска (UIScene) или нет адреса сервера.
+        script: |
+          APP="build/ios/archive/Runner.xcarchive/Products/Applications/Runner.app"
+          test -d "$APP" || { echo "Не найдено собранное приложение: $APP"; exit 1; }
+          if /usr/libexec/PlistBuddy -c "Print :UIApplicationSceneManifest" "$APP/Info.plist" >/dev/null 2>&1; then
+            echo "В сборке включена новая схема запуска (UIScene) — на iPhone будет белый экран. Не отправляем."
+            exit 1
+          fi
+          HOST=$(printf '%s' "$SUPABASE_URL" | sed -E 's#^[a-zA-Z]+://##; s#/.*$##')
+          if ! LC_ALL=C grep -a -q -F "$HOST" "$APP/Frameworks/App.framework/App"; then
+            echo "В сборке нет адреса сервера — приложение не запустится. Не отправляем."
+            exit 1
+          fi
+          echo "Сборка проверена: прежняя схема запуска, адрес сервера на месте."
 
     artifacts:
       - build/ios/ipa/*.ipa
