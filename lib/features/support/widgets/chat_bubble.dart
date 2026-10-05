@@ -144,7 +144,12 @@ class ChatBubble extends StatelessWidget {
             ),
             // Кнопка «Перейти» под ответом ассистента (если сервер прислал
             // подсказку раздела). На сообщениях пользователя её не бывает.
-            if (!isUser && message.navAction != null && message.navLabel != null) ...[
+            // Подсказку в выключенный раздел (график работы выключен из
+            // админ-панели) не рисуем.
+            if (!isUser &&
+                message.navAction != null &&
+                message.navLabel != null &&
+                isAssistantActionAvailable(message.navAction!)) ...[
               SizedBox(height: 10.h),
               _NavButton(action: message.navAction!, label: message.navLabel!),
             ],

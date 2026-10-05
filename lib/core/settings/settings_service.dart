@@ -2,27 +2,60 @@ import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-/// Разбор булева флага из таблицы настроек.
+/// Единый терпимый разбор булева флага из таблицы настроек.
 ///
 /// Одно и то же значение приходит в трёх видах, и все три реальны:
 /// админ-панель пишет переключатели числом `1`/`0`, миграции — настоящим
 /// булевым `true`/`false`, а через REST значение может прийти строкой.
-/// Ошибка здесь стоит дорого: неверно понятый флаг бесплатного режима
-/// покажет людям заслонку оплаты там, где платить не надо, — или наоборот.
 ///
-/// Всё неизвестное трактуем как включённый бесплатный режим. Платный контур
-/// должен появляться только после явного значения `false`/`0` с сервера.
-bool parseFreeModeFlag(Object? raw) {
+/// Правила те же, что на сервере (SQL-функция `schedule_enabled()` и
+/// edge-функции ассистента), — иначе приложение и сервер разошлись бы во
+/// мнении, включено ли что-то:
+///   - булево — как есть;
+///   - число — включено, если не ноль;
+///   - строка (регистр и пробелы по краям не важны): `1`/`true`/`t`/`yes`/
+///     `on` — включено, `0`/`false`/`f`/`no`/`off` — выключено;
+///   - всё прочее (нет ключа, мусор, список, словарь) — [fallback].
+bool parseSettingsFlag(Object? raw, {required bool fallback}) {
   if (raw is bool) return raw;
   if (raw is num) return raw != 0;
   if (raw is String) {
-    final String s = raw.trim().toLowerCase();
-    if (s == 'true' || s == '1') return true;
-    if (s == 'false' || s == '0') return false;
-    return true;
+    switch (raw.trim().toLowerCase()) {
+      case '1' || 'true' || 't' || 'yes' || 'on':
+        return true;
+      case '0' || 'false' || 'f' || 'no' || 'off':
+        return false;
+    }
   }
-  return true;
+  return fallback;
 }
+
+/// Значение флага для синхронных геттеров. Приоритет: свежие настройки с
+/// сервера → последнее известное значение, запомненное на устройстве →
+/// безопасный дефолт. Если ключ на сервере есть, но значение непонятное,
+/// берём дефолт — ровно так же поступает сервер.
+bool resolveSettingsFlag({
+  required Object? server,
+  required bool? device,
+  required bool fallback,
+}) {
+  if (server != null) return parseSettingsFlag(server, fallback: fallback);
+  return device ?? fallback;
+}
+
+/// Разбор флага бесплатного режима (`billing.free_mode`).
+///
+/// Ошибка здесь стоит дорого: неверно понятый флаг покажет людям заслонку
+/// оплаты там, где платить не надо, — или наоборот. Всё неизвестное
+/// трактуем как включённый бесплатный режим. Платный контур должен
+/// появляться только после явного «выключено» с сервера.
+bool parseFreeModeFlag(Object? raw) => parseSettingsFlag(raw, fallback: true);
+
+/// Разбор флага «График работы включён» (`schedule.enabled`). Всё
+/// неизвестное — включён: так приложение ведёт себя ровно как до появления
+/// переключателя.
+bool parseScheduleEnabledFlag(Object? raw) =>
+    parseSettingsFlag(raw, fallback: true);
 
 int? parsePaymentPriceRub(Object? raw) {
   final num? parsed = raw is num ? raw : num.tryParse(raw?.toString() ?? '');
@@ -72,6 +105,14 @@ class SettingsService with WidgetsBindingObserver {
 
   Map<String, dynamic>? _cache;
 
+  /// Сигнал «настройки обновились». Меняется после КАЖДОЙ успешной загрузки
+  /// (прогрев, вход, возврат из фона, принудительное перечитывание) и после
+  /// подъёма запомненных значений с устройства. Экраны, которые решают по
+  /// синхронным геттерам, что показывать (пункты профиля, заглушки), слушают
+  /// его и перерисовываются — иначе переключение в админ-панели доезжало бы
+  /// до уже открытого экрана только при его случайной перерисовке.
+  final ValueNotifier<int> revision = ValueNotifier<int>(0);
+
   // Дедуп параллельных загрузок: два геттера (или warmup + reload на старте)
   // не должны слать два запроса и перетирать кэш друг друга в произвольном
   // порядке — все ждут один и тот же сетевой вызов.
@@ -88,11 +129,10 @@ class SettingsService with WidgetsBindingObserver {
       final List<Map<String, dynamic>> rows = await _client
           .from('settings')
           .select('key, value');
-      _cache = <String, dynamic>{
+      _applyLoaded(<String, dynamic>{
         for (final Map<String, dynamic> r in rows)
           r['key'] as String: r['value'],
-      };
-      _rememberFreeMode(_parseBool(_cache!['billing.free_mode']));
+      });
     } catch (_) {
       // Кэш НЕ фиксируем пустым: офлайн-старт раньше навсегда (до перезапуска)
       // оставлял приложение на зашитых фолбэках. Оставляем null — следующий
@@ -100,6 +140,18 @@ class SettingsService with WidgetsBindingObserver {
     } finally {
       _inFlight = null;
     }
+  }
+
+  /// Принять свежие настройки с сервера: положить в кэш, запомнить на
+  /// устройстве флаги, которые нужны до сети на следующем холодном старте,
+  /// и подать сигнал [revision].
+  void _applyLoaded(Map<String, dynamic> values) {
+    _cache = values;
+    _rememberFreeMode(_parseBool(values['billing.free_mode']));
+    _rememberScheduleEnabled(
+      parseScheduleEnabledFlag(values[_kScheduleEnabledKey]),
+    );
+    revision.value++;
   }
 
   /// Настройки проверки обновлений: минимально допустимая версия (ниже неё —
@@ -123,10 +175,11 @@ class SettingsService with WidgetsBindingObserver {
   /// fire-and-forget вместе с CatalogService.warmup() — после этого все
   /// геттеры возвращают значения мгновенно, без сетевого запроса.
   ///
-  /// Перед сетью поднимаем с устройства последнее известное значение
-  /// бесплатного режима: иначе на холодном старте без сети приложение
-  /// на секунду считало бы себя платным и могло показать заслонку оплаты
-  /// там, где платить уже не нужно.
+  /// Перед сетью поднимаем с устройства последние известные значения
+  /// бесплатного режима и переключателя графика работы: иначе на холодном
+  /// старте без сети приложение на секунду считало бы себя платным и могло
+  /// показать заслонку оплаты там, где платить уже не нужно, или показать
+  /// выключенный из админ-панели график.
   Future<void> warmup() async {
     if (!_observing) {
       _observing = true;
@@ -134,6 +187,7 @@ class SettingsService with WidgetsBindingObserver {
       WidgetsBinding.instance.addObserver(this);
     }
     await _restoreFreeMode();
+    if (await _restoreScheduleEnabled()) revision.value++;
     await _load();
   }
 
@@ -186,10 +240,86 @@ class SettingsService with WidgetsBindingObserver {
   /// нельзя показывать экран, карту или текст об оплате: сервер всё равно
   /// остаётся единственной точкой, которая разрешает платёж после будущего
   /// включения монетизации.
-  bool get freeModeCached {
-    final Object? v = _values['billing.free_mode'];
-    if (v != null) return _parseBool(v);
-    return _stickyFreeMode ?? true;
+  bool get freeModeCached => resolveSettingsFlag(
+    server: _values['billing.free_mode'],
+    device: _stickyFreeMode,
+    fallback: true,
+  );
+
+  // ---------------------------------------------------------------
+  // Переключатель «График работы» (`schedule.enabled` в таблице настроек).
+  //
+  // Сделан по образцу бесплатного режима. Выключен — в приложении нет
+  // ничего про график: пункт «Мой график» в профиле спрятан, маршруты
+  // графика уводят на главный экран, ассистент не предлагает перейти
+  // в график, попап «Заполните график работы» не появляется. Экраны
+  // графика никуда не удалены — включение возвращает всё как было.
+  // По умолчанию (ключа нет, значение непонятно) график ВКЛЮЧЁН.
+  // ---------------------------------------------------------------
+
+  static const String _kScheduleEnabledKey = 'schedule.enabled';
+  static const String _kScheduleEnabledPrefsKey = 'schedule_enabled_v1';
+
+  /// Последнее известное значение, поднятое с устройства. `null` — ещё не
+  /// читали или ни разу не запоминали.
+  static bool? _stickyScheduleEnabled;
+
+  /// Поднять запомненное значение с устройства. true — что-то нашлось.
+  Future<bool> _restoreScheduleEnabled() async {
+    if (_stickyScheduleEnabled != null) return false;
+    try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      final bool? stored = prefs.getBool(_kScheduleEnabledPrefsKey);
+      // Пока читали диск, могли успеть прийти свежие настройки с сервера
+      // (перечитывание после входа идёт параллельно прогреву) — их не
+      // перетираем старым значением.
+      if (stored == null || _stickyScheduleEnabled != null) return false;
+      _stickyScheduleEnabled = stored;
+      return true;
+    } catch (_) {
+      /* нет доступа к хранилищу — останемся на серверном значении */
+      return false;
+    }
+  }
+
+  void _rememberScheduleEnabled(bool value) {
+    if (_stickyScheduleEnabled == value) return;
+    _stickyScheduleEnabled = value;
+    SharedPreferences.getInstance()
+        .then((SharedPreferences p) =>
+            p.setBool(_kScheduleEnabledPrefsKey, value))
+        .catchError((Object _) => false);
+  }
+
+  /// Включён ли график работы. Ждёт загрузку настроек.
+  Future<bool> scheduleEnabled() async {
+    await _load();
+    return scheduleEnabledCached;
+  }
+
+  /// Синхронная версия по уже прогретому кэшу — для решений прямо во время
+  /// отрисовки и в роутере. Приоритет: свежие настройки с сервера →
+  /// последнее известное значение с устройства → включён.
+  bool get scheduleEnabledCached => resolveSettingsFlag(
+    server: _values[_kScheduleEnabledKey],
+    device: _stickyScheduleEnabled,
+    fallback: true,
+  );
+
+  /// Только для тестов: подложить «загруженные с сервера» настройки тем же
+  /// путём, что и настоящая загрузка (кэш, запоминание на устройстве,
+  /// сигнал [revision]).
+  @visibleForTesting
+  void debugApplyLoaded(Map<String, dynamic> values) => _applyLoaded(values);
+
+  /// Только для тестов: забыть кэш и запомненные значения, как на свежем
+  /// запуске приложения.
+  @visibleForTesting
+  void debugReset() {
+    _cache = null;
+    _inFlight = null;
+    _stickyFreeMode = null;
+    _stickyScheduleEnabled = null;
   }
 
   /// Сбросить кэш и перечитать настройки. Зовётся ПОСЛЕ входа: прогрев в
@@ -276,13 +406,14 @@ class SettingsService with WidgetsBindingObserver {
   /// рабочий только если явно отмечен. Флаг серверный
   /// (schedule.unmarked_day_available), переключается вместе с релизом
   /// сборки — до флипа новые сборки ведут себя как старые (миграция 107).
+  /// Разбор общий с сервером ([parseSettingsFlag]): раньше строка '0'
+  /// здесь давала true, а сервер читал её как false.
   Future<bool> unmarkedDayAvailable() async {
     await _load();
-    final Object? v = _values['schedule.unmarked_day_available'];
-    if (v is bool) return v;
-    if (v is num) return v != 0;
-    if (v is String) return v.trim().toLowerCase() != 'false';
-    return true;
+    return parseSettingsFlag(
+      _values['schedule.unmarked_day_available'],
+      fallback: true,
+    );
   }
 
   /// Требуются ли документы при КАЖДОЙ публикации услуги

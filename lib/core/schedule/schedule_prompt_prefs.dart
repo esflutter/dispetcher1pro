@@ -44,6 +44,14 @@ class SchedulePromptPrefs {
     } catch (_) {/* не критично */}
   }
 
+  /// Погасить сигнал целиком — и в памяти, и на диске. Нужно, когда график
+  /// работы выключен из админ-панели: иначе забытый сигнал пережил бы
+  /// выключение и попап внезапно всплыл бы после включения графика.
+  static Future<void> clearPending() async {
+    pending = false;
+    await clearPendingStored();
+  }
+
   static Future<bool> seen() async {
     try {
       final SharedPreferences p = await SharedPreferences.getInstance();

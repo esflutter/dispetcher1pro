@@ -588,8 +588,10 @@ class _EditExecutorCardScreenState extends State<EditExecutorCardScreen> {
                   // и новички переставали бы про график узнавать, а без него
                   // их хуже находят. Вешаем сигнал на сохранение карточки:
                   // это ближайший момент, когда человек только-только стал
-                  // виден заказчикам.
-                  if (SettingsService.instance.freeModeCached) {
+                  // виден заказчикам. Если график работы выключен из
+                  // админ-панели — звать в него некуда, сигнал не поднимаем.
+                  if (SettingsService.instance.freeModeCached &&
+                      SettingsService.instance.scheduleEnabledCached) {
                     unawaited(SchedulePromptPrefs.setPending());
                   }
 

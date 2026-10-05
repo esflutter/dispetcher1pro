@@ -5,6 +5,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:dispatcher_1/core/schedule/schedule_prompt_prefs.dart';
+import 'package:dispatcher_1/core/settings/settings_service.dart';
 import 'package:dispatcher_1/features/executor_card/executor_card_screen.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_spacing.dart';
@@ -105,30 +106,56 @@ class ScheduleAlerts {
   /// уже создана и попап ещё ни разу не показывали — показывает его и по
   /// «Указать график» уводит в «Мой график». Показ фиксируется навсегда
   /// (persisted), поэтому больше одного раза попап не появится.
+  ///
+  /// Если график работы выключен из админ-панели, попапа нет вовсе.
   static Future<void> maybeShowFillSchedulePrompt(BuildContext context) async {
+    if (!await claimFillSchedulePrompt()) return;
+    if (!context.mounted) return;
+    final bool? go = await _showFillSchedulePrompt(context);
+    if (go == true && context.mounted) {
+      context.push('/schedule');
+    }
+  }
+
+  /// Решение «показывать ли попап «Заполните график работы» прямо сейчас»,
+  /// без UI (покрыто тестом). true — показ «забран»: сигнал погашен,
+  /// отметка «показан» поставлена, осталось нарисовать диалог.
+  static Future<bool> claimFillSchedulePrompt() async {
+    // График работы выключен из админ-панели — звать в него некуда.
+    // Сигнал «пора показать» ГАСИМ и в памяти, и на диске: иначе через
+    // месяцы, после включения графика, попап внезапно всплыл бы у давних
+    // пользователей. Отметку «показан» НЕ ставим — человек попап не видел.
+    if (!SettingsService.instance.scheduleEnabledCached) {
+      await SchedulePromptPrefs.clearPending();
+      return false;
+    }
     // Ждём карточку исполнителя: «Мой график» до её создания закрыт, и
     // попап сразу после оплаты уводил в раздел, куда обычным путём ещё не
     // попасть (жалоба теста). Сигнал НЕ гасим — попап покажется, когда
     // пользователь сохранит карточку.
-    if (!ExecutorCardState.cardCreated) return;
+    if (!ExecutorCardState.cardCreated) return false;
     if (!SchedulePromptPrefs.pending &&
         !await SchedulePromptPrefs.pendingStored()) {
-      return;
+      return false;
     }
     // Сбрасываем сигнал сразу — чтобы второй экран (shell + карточка
     // исполнителя) не попытался показать попап параллельно.
     SchedulePromptPrefs.pending = false;
     if (await SchedulePromptPrefs.seen()) {
       unawaited(SchedulePromptPrefs.clearPendingStored());
-      return;
+      return false;
+    }
+    // Перепроверяем по свежим настройкам: на холодном старте они могли
+    // ещё не доехать, а запомненное на устройстве значение — устареть.
+    // Показ уже «забран» (сигнал в памяти погашен), поэтому ожидание
+    // здесь не даёт второму экрану показать попап параллельно.
+    if (!await SettingsService.instance.scheduleEnabled()) {
+      await SchedulePromptPrefs.clearPendingStored();
+      return false;
     }
     await SchedulePromptPrefs.markSeen();
     unawaited(SchedulePromptPrefs.clearPendingStored());
-    if (!context.mounted) return;
-    final bool? go = await _showFillSchedulePrompt(context);
-    if (go == true && context.mounted) {
-      context.push('/schedule');
-    }
+    return true;
   }
 
   static Future<bool?> _showFillSchedulePrompt(BuildContext context) {

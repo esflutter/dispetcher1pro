@@ -17,6 +17,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:dispatcher_1/core/auth/guest_gate.dart';
+import 'package:dispatcher_1/core/settings/settings_service.dart';
 import 'package:dispatcher_1/core/utils/support_contact.dart';
 import 'package:dispatcher_1/features/shell/main_shell.dart';
 
@@ -45,12 +46,26 @@ Future<void> openAssistantChat(BuildContext context, {Object? extra}) async {
   await router.push(_kAssistantChat, extra: extra);
 }
 
+/// Доступно ли сейчас действие ассистента. График работы можно выключить
+/// из админ-панели — тогда кнопку «Перейти» в график не рисуем и переход
+/// не выполняем: сервер мог прислать такую подсказку по старой памяти
+/// (из кэша ответов или до своего обновления).
+bool isAssistantActionAvailable(String action) {
+  if (action == 'open_schedule') {
+    return SettingsService.instance.scheduleEnabledCached;
+  }
+  return true;
+}
+
 /// Перейти в раздел приложения по ключу действия от ассистента — это
 /// обработчик кнопки «Перейти» под ответом. Ключи приходят с сервера
 /// (см. _shared/navSuggest.ts). Корневые вкладки открываем переключением
 /// таба (а не push'ем второй копии), остальное — push'ем поверх чата.
 /// Неизвестный ключ — ничего не делаем (молча, без краша).
 void navigateAssistantAction(BuildContext context, String action) {
+  // Раздел выключен (график работы в админ-панели) — ничего не делаем,
+  // в том числе не зовём гостя входить ради раздела, которого нет.
+  if (!isAssistantActionAvailable(action)) return;
   // Гость: разделы аккаунта (услуги/подписка/график/карточка/документы/отзывы/
   // мои заказы/способы оплаты) доступны только после входа. Вместо «тупого»
   // перехода в экран для вошедших показываем приглашение войти. Каталог

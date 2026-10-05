@@ -63,6 +63,10 @@ class _ProfileScreenState extends State<ProfileScreen>
     // (push_handler бьёт по changeBeacon) — статус обновляется живьём, даже
     // если пользователь стоит на этом экране в момент одобрения.
     ProfileService.changeBeacon.addListener(_onProfileChanged);
+    // Настройки обновились (вход, возврат из фона) — перерисовываемся: от
+    // них зависят пункты меню («Мой график» прячется переключателем графика
+    // работы в админ-панели, «Подписка и оплата» — бесплатным режимом).
+    SettingsService.instance.revision.addListener(_refresh);
     // Возврат в приложение из фона — перечитываем статус: админ мог одобрить
     // документы, пока приложение было свёрнуто. Раньше требовался полный
     // перезапуск, чтобы «Верификация в процессе» сменилась на «пройдена».
@@ -155,6 +159,7 @@ class _ProfileScreenState extends State<ProfileScreen>
     VerificationStatus.notifier.removeListener(_refresh);
     AccountBlock.notifier.removeListener(_refresh);
     ProfileService.changeBeacon.removeListener(_onProfileChanged);
+    SettingsService.instance.revision.removeListener(_refresh);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -322,11 +327,16 @@ class _ProfileScreenState extends State<ProfileScreen>
               label: 'Мои услуги',
               onTap: () => _openCardGated('/services'),
             ),
-            SizedBox(height: 16.h),
-            _ProfileMenuItem(
-              label: 'Мой график',
-              onTap: () => _openCardGated('/schedule'),
-            ),
+            // График работы можно выключить из админ-панели — тогда пункт
+            // прячем целиком. Экран и маршрут остаются на месте: включение
+            // графика — переключение флага, а не новая сборка.
+            if (SettingsService.instance.scheduleEnabledCached) ...<Widget>[
+              SizedBox(height: 16.h),
+              _ProfileMenuItem(
+                label: 'Мой график',
+                onTap: () => _openCardGated('/schedule'),
+              ),
+            ],
             // Раздел оплаты прячем в бесплатном режиме: платить не за что,
             // а сохранённых карт быть не может — сервер не даёт их привязать.
             // Экран и маршрут остаются на месте, чтобы возврат платного

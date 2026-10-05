@@ -91,6 +91,15 @@ final GoRouter appRouter = GoRouter(
         SettingsService.instance.freeModeCached) {
       return '/shell';
     }
+
+    // График работы выключен из админ-панели: экраны графика спрятаны.
+    // Старая ссылка, подсказка ассистента из старой сборки или будущий пуш
+    // не должны открыть их напрямую — уводим на главный экран.
+    if ((state.uri.path == '/schedule' ||
+            state.uri.path.startsWith('/schedule/')) &&
+        !SettingsService.instance.scheduleEnabledCached) {
+      return '/shell';
+    }
     return null;
   },
   routes: <RouteBase>[

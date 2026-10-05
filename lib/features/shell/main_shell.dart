@@ -9,6 +9,7 @@ import 'package:dispatcher_1/core/ai/ai_navigation.dart';
 import 'package:dispatcher_1/core/auth/guest_gate.dart';
 import 'package:dispatcher_1/features/profile/account_block.dart';
 import 'package:dispatcher_1/core/network_status.dart';
+import 'package:dispatcher_1/core/settings/settings_service.dart';
 import 'package:dispatcher_1/core/theme/app_colors.dart';
 import 'package:dispatcher_1/core/theme/app_text_styles.dart';
 import 'package:dispatcher_1/core/update/update_checker.dart';
@@ -57,13 +58,7 @@ class _MainShellState extends State<MainShell> {
             intent: GuestAuthIntent.createProfile,
           )
         : MyOrdersScreen(onGoToCatalog: () => MainShell.selectedTab.value = 0),
-    _guest
-        ? const GuestLockedView(
-            title: 'Войдите в аккаунт',
-            subtitle: 'Профиль, услуги и график доступны после входа.',
-            icon: Icons.person_outline,
-          )
-        : const ProfileScreen(),
+    _guest ? const _GuestProfileLockedView() : const ProfileScreen(),
   ];
 
   Timer? _blockExpiryTimer;
@@ -158,6 +153,25 @@ class _MainShellState extends State<MainShell> {
       ),
     );
   }
+}
+
+/// Заглушка вкладки «Профиль» для гостя. Если график работы выключен из
+/// админ-панели, про график в тексте не говорим. Перерисовывается после
+/// каждой загрузки настроек (в том числе при возврате из фона).
+class _GuestProfileLockedView extends StatelessWidget {
+  const _GuestProfileLockedView();
+
+  @override
+  Widget build(BuildContext context) => ValueListenableBuilder<int>(
+    valueListenable: SettingsService.instance.revision,
+    builder: (BuildContext context, _, _) => GuestLockedView(
+      title: 'Войдите в аккаунт',
+      subtitle: SettingsService.instance.scheduleEnabledCached
+          ? 'Профиль, услуги и график доступны после входа.'
+          : 'Профиль и услуги доступны после входа.',
+      icon: Icons.person_outline,
+    ),
+  );
 }
 
 /// Зарегистрированный исполнитель получает доступ к заказам только после того,

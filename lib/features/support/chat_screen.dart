@@ -125,6 +125,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // Настройки перечитались (например, админ выключил график) — перерисовать
+    // ленту, чтобы под старыми ответами не остались кнопки в скрытые разделы.
+    SettingsService.instance.revision.addListener(_onSettingsChanged);
     // Прогреваем геопозицию заранее (best-effort, не блокирует): к первому
     // поиску координаты обычно уже готовы, расстояние показывается сразу.
     unawaited(UserLocation.ensure());
@@ -1052,9 +1055,14 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
   }
 
+  void _onSettingsChanged() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    SettingsService.instance.revision.removeListener(_onSettingsChanged);
     // Закрытие экрана с активной записью — обязательно отменяем, иначе
     // запись продолжится «в фоне», onAutoStop выстрелит на удалённом state.
     if (_isRecording) {
