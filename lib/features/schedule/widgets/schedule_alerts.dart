@@ -112,7 +112,10 @@ class ScheduleAlerts {
     if (!await claimFillSchedulePrompt()) return;
     if (!context.mounted) return;
     final bool? go = await _showFillSchedulePrompt(context);
-    if (go == true && context.mounted) {
+    // Пока окно было открыто, график могли выключить — тогда никуда не ведём.
+    if (go == true &&
+        context.mounted &&
+        SettingsService.instance.scheduleEnabledCached) {
       context.push('/schedule');
     }
   }
@@ -162,7 +165,8 @@ class ScheduleAlerts {
     return showDialog<bool>(
       context: context,
       barrierDismissible: true,
-      builder: (ctx) => Dialog(
+      builder: (ctx) => _CloseWhenScheduleOff(
+        child: Dialog(
         backgroundColor: AppColors.surface,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppSpacing.radiusL),
@@ -214,6 +218,7 @@ class ScheduleAlerts {
             ],
           ),
         ),
+      ),
       ),
     );
   }
@@ -275,4 +280,38 @@ class ScheduleAlerts {
       ),
     );
   }
+}
+
+/// Окно «Заполните график работы» закрывается само, если график выключили в
+/// админ-панели, пока окно на экране (настройки перечитались при возврате
+/// приложения из фона): звать в раздел, которого больше нет, незачем.
+class _CloseWhenScheduleOff extends StatefulWidget {
+  const _CloseWhenScheduleOff({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_CloseWhenScheduleOff> createState() => _CloseWhenScheduleOffState();
+}
+
+class _CloseWhenScheduleOffState extends State<_CloseWhenScheduleOff> {
+  @override
+  void initState() {
+    super.initState();
+    SettingsService.instance.revision.addListener(_onSettingsChanged);
+  }
+
+  void _onSettingsChanged() {
+    if (!mounted || SettingsService.instance.scheduleEnabledCached) return;
+    Navigator.of(context).pop(false);
+  }
+
+  @override
+  void dispose() {
+    SettingsService.instance.revision.removeListener(_onSettingsChanged);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:go_router/go_router.dart';
 
 import 'package:dispatcher_1/core/ai/ai_navigation.dart';
 import 'package:dispatcher_1/core/catalog/format.dart';
@@ -280,6 +281,11 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   @override
   void initState() {
     super.initState();
+    // График выключили в админ-панели, пока экран открыт (настройки
+    // перечитались при возврате из фона) — уходим на главный экран: раздела
+    // больше нет, и отмечать дни в нём незачем. Заодно закрывается и
+    // «Параметры дня», открытые поверх.
+    SettingsService.instance.revision.addListener(_onSettingsChanged);
     final now = DateTime.now();
     _selectedDate = DateTime(now.year, now.month, now.day);
     _weekStart = _mondayOf(_selectedDate);
@@ -438,8 +444,14 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     return TimeOfDay(hour: h, minute: m);
   }
 
+  void _onSettingsChanged() {
+    if (!mounted || SettingsService.instance.scheduleEnabledCached) return;
+    context.go('/shell');
+  }
+
   @override
   void dispose() {
+    SettingsService.instance.revision.removeListener(_onSettingsChanged);
     _pageCtrl.dispose();
     super.dispose();
   }
