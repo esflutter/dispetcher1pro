@@ -69,6 +69,11 @@ workflows:
         # применяем к Xcode-проекту. Учётные данные берутся из интеграции
         # dispatcher_appstore автоматически.
         script: |
+          # Любая ошибка — сразу стоп на этом шаге. Без этого отказ Apple
+          # (например, «A required agreement is missing or has expired») не
+          # останавливал шаг, и сборка падала позже, на «Сборке IPA», с
+          # непонятным «No valid code signing certificates were found».
+          set -e
           keychain initialize
           app-store-connect fetch-signing-files "com.dispatcher1.pro" \
             --type IOS_APP_STORE \
