@@ -54,6 +54,14 @@ class AuthService {
       } on FunctionException catch (e) {
         // Сервер отвечает понятным русским текстом — показываем как есть.
         final Object? d = e.details;
+        // «Код уже отправляли, повторно через N секунд» — отдаём в прежнем виде,
+        // его разбирают otpRetryAfterSeconds и экран ввода номера.
+        final Object? retry = d is Map ? d['retry_after'] : null;
+        if (retry is int && retry > 0) {
+          throw AuthException(
+            'For security purposes, you can only request this after $retry seconds.',
+          );
+        }
         final Object? msg = d is Map ? d['message'] : null;
         if (msg is String && msg.isNotEmpty) {
           throw AuthException('$ruMessagePrefix$msg');
