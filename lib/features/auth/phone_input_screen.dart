@@ -67,8 +67,7 @@ class _PhoneInputScreenState extends State<PhoneInputScreen> {
       // оставалась залипшей disabled-state, пока DNS/сеть не отвалятся
       // по системному таймауту (десятки секунд).
       await AuthService.instance
-          .sendOtp(e164)
-          .timeout(const Duration(seconds: 10));
+          .sendOtp(e164, context: context);
       if (!mounted) return;
       CropResult.userPhoneE164 = e164;
       CropResult.userPhone = PhoneFormat.toPretty(e164);

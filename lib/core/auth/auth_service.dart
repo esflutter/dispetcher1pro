@@ -1,5 +1,9 @@
+import 'dart:async';
+
+import 'package:flutter/widgets.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:dispatcher_1/core/auth/captcha_service.dart';
 import 'package:dispatcher_1/core/auth/otp_device_limit.dart';
 import 'package:dispatcher_1/core/realtime/realtime_service.dart';
 
@@ -16,16 +20,49 @@ class AuthService {
   User? get currentUser => _auth.currentUser;
   bool get isLoggedIn => _auth.currentSession != null;
 
+  /// Потолок ожидания сервера (без окна капчи): на плохой связи не висим молча.
+  static const Duration _networkTimeout = Duration(seconds: 10);
+
   /// Отправляет OTP на номер в E.164 (+7XXXXXXXXXX).
   /// В dev-режиме с настроенным `GOTRUE_SMS_TEST_OTP` реального SMS не
   /// будет — код задан в переменной окружения GoTrue.
-  Future<void> sendOtp(String e164) async {
+  ///
+  /// С [context] сначала проходим проверку «я не робот» (SmartCaptcha) и
+  /// просим код через серверную функцию request-code: она проверяет пропуск
+  /// ещё до отправки СМС. Если проверку выполнить не удалось (нет сети,
+  /// не загрузилась) — пробуем прежний прямой путь: пока он открыт на
+  /// сервере, человек всё равно войдёт.
+  Future<void> sendOtp(String e164, {BuildContext? context}) async {
     // Суточный лимит запросов с ЭТОГО устройства (см. OtpDeviceLimit) —
     // против ввода чужих номеров пачками. Маркер ловит authErrorToRu.
     if (!await OtpDeviceLimit.allowed()) {
       throw const AuthException('otp_device_daily_limit');
     }
-    await _auth.signInWithOtp(phone: e164);
+    final String? captchaToken =
+        context != null && context.mounted ? await SmartCaptcha.solve(context) : null;
+    if (captchaToken != null) {
+      try {
+        await _client.functions
+            .invoke(
+              'request-code',
+              body: <String, dynamic>{
+                'phone': e164,
+                'captcha_token': captchaToken,
+              },
+            )
+            .timeout(_networkTimeout);
+      } on FunctionException catch (e) {
+        // Сервер отвечает понятным русским текстом — показываем как есть.
+        final Object? d = e.details;
+        final Object? msg = d is Map ? d['message'] : null;
+        if (msg is String && msg.isNotEmpty) {
+          throw AuthException('$ruMessagePrefix$msg');
+        }
+        rethrow;
+      }
+    } else {
+      await _auth.signInWithOtp(phone: e164).timeout(_networkTimeout);
+    }
     await OtpDeviceLimit.record();
   }
 
@@ -125,6 +162,9 @@ int? otpRetryAfterSeconds(Object error) {
   return sec > 0 ? sec : 60;
 }
 
+/// Метка в тексте AuthException: сообщение уже по-русски (от нашего сервера).
+const String ruMessagePrefix = 'ru:';
+
 /// Переводит технические ошибки авторизации в человекочитаемый русский
 /// текст. Supabase/GoTrue отдаёт сообщения на английском (ограничение
 /// частоты запросов кода, неверный код, сетевые сбои) — показывать их
@@ -132,6 +172,9 @@ int? otpRetryAfterSeconds(Object error) {
 /// русский фолбэк, чтобы английский текст не утёк на экран.
 String authErrorToRu(Object error) {
   final String raw = error is AuthException ? error.message : error.toString();
+  if (raw.startsWith(ruMessagePrefix)) {
+    return raw.substring(ruMessagePrefix.length);
+  }
   final String lower = raw.toLowerCase();
 
   // Нет сети / DNS / VPN.

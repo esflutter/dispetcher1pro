@@ -324,8 +324,7 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
                                   // Таймаут 10 с: на плохой связи не висим
                                   // молча, а быстро показываем ошибку.
                                   await AuthService.instance
-                                      .sendOtp(e164)
-                                      .timeout(const Duration(seconds: 10));
+                                      .sendOtp(e164, context: context);
                                 } catch (e) {
                                   if (!context.mounted) return;
                                   // Отправка не удалась — снимаем кулдаун и
