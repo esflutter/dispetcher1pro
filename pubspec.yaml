@@ -1,7 +1,7 @@
 name: dispatcher_1
 description: "Диспетчер №1 — Биржа услуг спецтехники"
 publish_to: 'none'
-version: 1.0.5+101
+version: 1.0.6+102
 
 environment:
   sdk: ^3.10.4
